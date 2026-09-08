@@ -59,6 +59,68 @@ write plain files and let the sync client do its job.
 Do not add: an ORM, a task queue broker, Docker as the primary install path, or any auth framework.
 Background work uses a simple in-process worker with a JSONL job file so it survives restart.
 
+## Settled decisions
+
+Made during phase 1. Binding on every later phase. Do not relitigate; if one genuinely blocks you,
+raise it rather than working around it.
+
+**Device identity lives outside the vault** at `~/.config/health-agent/device`, with a
+`HEALTH_DEVICE` override. It cannot come from `config.toml`, because that file syncs to every machine
+and they would all write to the same shard — precisely the conflicted-copy data loss the
+one-file-per-device rule exists to prevent. Stored as `{id, label, created, hostname, platform}`;
+`id` is `{hostname-slug}-{4 random chars}`. A hostname/platform mismatch at startup means the file
+was cloned or restored from backup: refuse to append, require re-issue or `HEALTH_DEVICE`.
+
+**`sync_profile` is not a storage abstraction.** `local | dropbox | gdrive | nextcloud | other`,
+default `local`. Every option is a folder on disk; the desktop clients present as ordinary
+filesystems and we never call their APIs. There are no `LocalBackend` / `DropboxBackend` classes and
+there never will be — a backend interface is the seam through which someone later adds a real API
+client and silently breaks the privacy model. The profile selects only: which conflict filename
+patterns the scan reports, placeholder handling, readback verification on virtual drives, and setup
+warning copy. Per-device sharding applies under `local` too, so the invariant holds when the folder
+is later moved into a sync client.
+
+**Shard filename grammar, not the profile, keeps forks out of the merged view.** Anything failing
+`YYYY-MM.{device}.jsonl` is excluded regardless of profile, so a misconfigured profile cannot cause
+double-counted events. The profile only labels the fork in the report.
+
+**Ordering is `(ts, id)` parsed, never string-compared.** `…11.5Z` sorts before `…11Z` as text.
+
+**Torn final lines are never rewritten.** A crash mid-write leaves truncated bytes as their own
+malformed-and-reported line; the next append leads with a newline and lands cleanly. Capture never
+fails because a previous process died.
+
+**Placeholders are probed, not inferred from `st_blocks`.** Filesystems that inline small files
+report zero blocks for real data. Appending to a shard that has not downloaded is refused outright.
+
+**Secrets are rejected at config load.** Any key matching `key|token|secret|password` with a
+non-empty string value is a startup failure. `api_key_env`, `header` and `scheme` are allowed as
+references.
+
+**`check` writes nothing** unless `--fix` is passed.
+
+Added in phase 2:
+
+**Sidecars append `.json` to the full artefact name**, not replacing the extension —
+`…_a3f91c.jpg.json`. Replacing it collides when the artefact is itself JSON, and leaves a directory
+scan unable to tell sidecars from artefacts since both parse as valid names.
+
+**`ingested_ts` drives the raw filename**, never `captured_ts`. See the four-timestamp table.
+
+**Raw artefacts are `0o400`, sidecars `0o600`.** A guardrail against accident, not a security
+control — directory permissions still allow deletion, so never describe it as immutability. A mode
+change is not corruption: restore-from-backup and resync both lose modes and `verify()` must not
+report that as a data problem.
+
+**Short hashes lengthen on collision**, never overwrite. 24 bits collides around four thousand
+artefacts and a lifetime record will pass that. Prefix length is a module constant so tests can
+force real collisions.
+
+**Recorded paths are validated before any write.** A path in an event payload that is absolute or
+climbs out of the vault is refused — hand-edited and sync-corrupted payloads are both realistic.
+
+**OS metadata files are ignored, not reported.** `.DS_Store`, `Thumbs.db`, `.nextcloud` markers.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -67,8 +129,8 @@ The vault root is user-nominated. Everything below is relative to it.
 health/
   config.toml
   raw/
-    2026/09/2026-09-08T1432Z_a3f91c.jpg        # original, never modified
-    2026/09/2026-09-08T1432Z_a3f91c.json       # sidecar: hash, mime, capture context
+    2026/09/2026-09-08T1432Z_a3f91c.jpg            # original, never modified
+    2026/09/2026-09-08T1432Z_a3f91c.jpg.json       # sidecar: hash, mime, capture context
   events/
     2026-09.elwood-laptop.jsonl                # one file per device per month
     2026-09.elwood-phone.jsonl
@@ -108,7 +170,7 @@ rewrite a line. Never delete a line. Corrections are new events.
 
 ```json
 {
-  "id": "01J8F2K3M4N5P6Q7R8S9T0",
+  "id": "01J8F2K3M4N5P6Q7R8S9T0V1W2",
   "type": "claim.proposed",
   "ts": "2026-09-08T14:32:11Z",
   "device": "elwood-laptop",
@@ -156,24 +218,23 @@ better one you need to re-derive everything and diff it, and you cannot do that 
   "occurred_at": { "value": "2026-06-04", "precision": "day", "uncertainty_days": 0 },
   "artifact_ts": "2026-06-04T00:00:00Z",
   "captured_ts": "2026-09-02T09:11:00Z",
-  "ingested_ts": "2026-09-02T09:11:04Z"
+  "ingested_ts": "2026-09-02T09:14:03Z"
 }
 ```
 
-**Four timestamps, always.** They diverge constantly and conflating any two of them corrupts the
-timeline.
+**Four timestamps, always.** These diverge constantly and conflating any two corrupts the timeline.
 
-| Field | Means | Known when |
+| Field | Meaning | Known? |
 |---|---|---|
-| `ingested_ts` | The bytes landed in the vault. | Always. Set on every artefact, and the timestamp used in the `raw/` filename. |
-| `captured_ts` | The photo was taken or the audio recorded. | Only on a live capture path (camera, microphone), or later from EXIF. |
-| `artifact_ts` | The artefact itself was created — the script was written 4 June. | Only after extraction reads a date off the document. |
-| `occurred_at` | The thing described happened — symptom onset. | Only when a claim says so. Carries `precision` and `uncertainty_days`. |
+| `ingested_ts` | When the bytes entered the vault. Drives the raw filename. | Always |
+| `captured_ts` | When the photo/recording was made. | Only on live capture, or later from EXIF |
+| `artifact_ts` | When the artefact itself was created — script written 4 June. | Needs a model read |
+| `occurred_at` | When the thing happened — symptom onset. | Needs a model read |
 
-**If a value is unknown, write `null` — never substitute another timestamp.** In particular ingest
-time is not capture time. They are equal only when the bytes come from a live camera or mic; drag in
-a photo taken three days ago and a substituted `captured_ts` is silently wrong by three days.
-Nothing looks broken, which is what makes it the worst kind of error this record can hold.
+Only `ingested_ts` is always known. **Every other field is explicit `null` until genuinely
+established.** Never substitute one timestamp for another to fill a gap — ingest time is not capture
+time the moment someone drags in a photo taken three days ago, and that substitution is invisible
+until it has already corrupted months of timeline.
 
 **Date uncertainty is first-class.** A voice note says "the headaches started around Easter."
 Store `{"value": "2026-04-05", "precision": "month", "uncertainty_days": 14}` and render the band. A
