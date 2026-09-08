@@ -121,6 +121,31 @@ climbs out of the vault is refused — hand-edited and sync-corrupted payloads a
 
 **OS metadata files are ignored, not reported.** `.DS_Store`, `Thumbs.db`, `.nextcloud` markers.
 
+Added in phase 3:
+
+**Projection is a pure function of `(events, as_of)`.** No wall-clock read inside it, no generation
+timestamp in any derived file. `as_of` defaults to now only at the CLI boundary.
+
+**Determinism has three environmental leaks, all closed by construction**: the clock (`as_of`),
+newlines (binary writes with explicit `\n`, never text mode), and locale (fixed month-name table,
+never `%B`/`%A`, code-point sorting only). The rebuild test replays under a different TZ and LANG.
+
+**Consequence tier is recomputed from the predicate, never read from the payload.** The payload's
+value is kept for provenance and a disagreement is reported as an anomaly, but code decides. This is
+what makes the gate hold against a buggy or compromised extractor rather than a cooperative one.
+
+**The writer deletes only files the previous manifest lists, whose bytes still match.** Anything
+else in `wiki/` is foreign — a hand-dropped note, a sync client's conflicted copy — and is reported,
+never removed. A missing manifest authorises zero deletions.
+
+**Render the literal, compare the normalised.** Every value carries the source's span and a
+normalised key. `5mg` renders `5mg`, never `5.0mg`. Arithmetic uses `Fraction`/`Decimal`; a float
+never reaches frontmatter.
+
+**Number words parse conservatively.** "a tablet" is not quantity 1 unless followed by a recognised
+unit, and a span with no cardinal yields nothing rather than a guess. A wrong quantity ages a
+medication to `stale` on fiction.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -267,8 +292,15 @@ This is the hard part of the project. Get it right before building anything pret
    silently pick one. Do not average.
 4. **Staleness, not deletion.** Compute an expected exhaustion date from the script (30 tablets, one
    daily, no repeats → 30 days). Past that with no confirming evidence, mark the medication
-   `stale — last confirmed 8 months ago`. It stays on the list. Only an explicit
-   `claim.corrected` with `status: stopped` moves it to `stopped`.
+   `stale — last confirmed 8 months ago`. It stays on the list.
+   Moving to `stopped` requires an explicit user action: either a `claim.corrected` carrying
+   `status: stopped`, or a `claim.proposed` stop the user explicitly confirmed. The rule's target is
+   **inference from silence**, not the model reading a document that says to cease. Two constraints
+   on the confirmed-proposal path: the proposal must be `prescriber-issued` or `lab-issued` —
+   `patient-reported` and `inferred` can never produce a stop — and the review UI must render stop
+   proposals as their own distinct action, never as a generic accept in a tap-through queue. A
+   careless tap must not be able to drop a medication.
+   A `stopped` medication keeps its file and its full history. Nothing is ever removed.
 5. **Merges are reversible events, never silent normalisation.** Map to ATC/RxNorm codes where
    possible as a *hint* to the merge proposer, but treat the mapping as fallible and always ask.
 
@@ -299,7 +331,7 @@ status: active            # active | stale | stopped | conflicted
 dose: 5mg daily
 started: 2024-11-02
 last_confirmed: 2026-06-04
-expected_exhaustion: 2026-09-04
+expected_exhaustion: 2026-07-04
 evidence_tier: prescriber-issued
 sources: [a3f91c, 77b210]
 ---
@@ -307,7 +339,7 @@ sources: [a3f91c, 77b210]
 Started by Dr Nguyen for hypertension.[^a3f91c] Dose unchanged since commencement.
 
 Last confirmed by a script dated 4 June 2026; 30 tablets, no repeats. Expected to have run out
-around 4 September 2026 — confirm whether this is still being taken.
+around 4 July 2026 — confirm whether this is still being taken.
 
 [^a3f91c]: Photographed prescription, 2 September 2026 → `raw/2026/09/2026-09-02T0911Z_a3f91c.jpg`
 ```
