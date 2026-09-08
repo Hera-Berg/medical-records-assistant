@@ -2,6 +2,8 @@
 
 Read this before writing any code. It defines invariants that override convenience.
 
+@MODELS.md
+
 ## What this is
 
 A self-hosted, single-user agent that maintains a longitudinal health record owned entirely by the
@@ -343,6 +345,43 @@ Do not start a phase before the previous one's tests pass.
 7. **Review inbox.** Consequence gating, correction flow.
 8. **Consultation summary + print view.**
 9. **Wearable bulk import.** Fitbit/Apple Health export parsing, summary-only events.
+10. **Querying the record.** Not before phase 9. See below.
+
+## Querying the record
+
+Deferred to phase 10 deliberately — it depends on the wiki, the index and citations all being solid,
+and building it early produces a system that sounds impressive and cites nothing. Do not build
+abstraction for it in earlier phases. No changes to phases 1–9 are needed to enable it.
+
+Scope: **questions about the record, answered only from the record.** "When did I start
+perindopril?" "What did Dr Nguyen say about the statin?" "How many times have I mentioned the
+headaches?" Not "what does this result mean" and not "should I be worried".
+
+Architecture: **deterministic retrieval, single grounded generation.** Not an agent loop.
+
+1. Resolve entities mentioned in the question against the wiki index in code — exact and normalised
+   string match, plus code-system lookup. No model call.
+2. Retrieve the matching entity files and the events that produced them, bounded to a fixed budget.
+3. One generation pass with that context and the question. No planning, no tool calls, no
+   multi-turn refinement.
+
+Rules, all enforced in code rather than requested in the prompt:
+
+- **Every sentence carries a citation** to an artefact or event. A sentence that cannot be attributed
+  is dropped before rendering, not shipped with a hedge.
+- **Empty retrieval returns "nothing in your record covers that."** It never falls through to the
+  model's general knowledge. Test this with a question whose answer the model certainly knows and the
+  record certainly does not contain.
+- **Refuse interpretation, by classifier not by vibes.** Questions asking what something means,
+  whether something is serious, or what to do get a fixed response pointing at the consultation
+  summary feature. Draw the line at the question, before retrieval, where it is cheap and legible.
+- **Queries are not events.** Asking a question changes nothing and appends nothing to the log except
+  an optional local access record. A query must never create or modify a claim.
+- **Answers are ephemeral.** Never written to `wiki/`. The wiki contains what artefacts support, not
+  what the model once said about them.
+
+If this ever starts wanting a tool loop, that is a signal the retrieval layer is too weak, not that
+the system needs a planner.
 
 ## Testing
 
@@ -371,8 +410,12 @@ Do not decide these unilaterally.
 
 ## Things not to build
 
-- Any chat interface that answers health questions. A 9B model confidently reassuring someone about
-  chest pain is the worst outcome this project can produce.
+- Any interface that answers **health questions** — as opposed to questions about the record. A 9B
+  model confidently reassuring someone about chest pain is the worst outcome this project can
+  produce. Querying your own record is a different thing and is phase 10; see "Querying the record".
+- An agent framework, a tool-calling loop in the ingest path, or a planner. Ingest is a deterministic
+  pipeline and must stay one — a nondeterministic ingest path breaks byte-identical rebuild, which
+  every other guarantee depends on.
 - Trend detection, risk scores, anomaly alerts, "you should see a doctor about this".
 - Automatic sharing with practices or health services.
 - Multi-user accounts, roles, or an auth system. Single user, localhost-bound. If it needs to be
