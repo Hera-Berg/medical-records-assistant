@@ -11,6 +11,12 @@ config file this program invented is one nobody has read.
 
 ``ingest`` copies a file into ``raw/`` and appends one event. It never moves or
 alters the file it was given.
+
+``rebuild`` regenerates ``wiki/`` from the log. It appends nothing and touches
+neither ``raw/`` nor ``events/``, and it removes only files a previous rebuild
+wrote — see ``agent.projection.writer``. ``--as-of`` pins the moment staleness
+and the seven-day review window are measured from, which is what makes two
+rebuilds of an unchanged log produce identical bytes.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ import sys
 from typing import Any, TextIO
 
 from . import ingest as ingest_mod
+from . import projection as projection_mod
 from . import vault as vault_mod
 from .errors import HealthAgentError
 from .vault import Vault
@@ -164,6 +171,50 @@ def cmd_ingest(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_PROBLEMS if failures else EXIT_OK
 
 
+def cmd_rebuild(args: argparse.Namespace, out: TextIO) -> int:
+    """Replay the event log into wiki/."""
+    vault = Vault.open(args.vault)
+    report = projection_mod.rebuild(vault, as_of=args.as_of)
+
+    if args.json:
+        json.dump(report.to_dict(), out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_PROBLEMS if report.problems else EXIT_OK
+
+    stats = report.projection.stats()
+    print(
+        f"rebuilt   {stats['entities']} entities, {stats['files']} files, "
+        f"{stats['timeline_rows']} timeline rows",
+        file=out,
+    )
+    print(
+        f"wrote     {len(report.write.written)} changed, "
+        f"{len(report.write.unchanged)} unchanged, {len(report.write.removed)} removed",
+        file=out,
+    )
+
+    queue = report.projection.review_by_tier
+    if queue:
+        summary = ", ".join(
+            f"{len(queue[tier])} {tier}" for tier in ("high", "medium", "low") if tier in queue
+        )
+        print(f"review    {summary} awaiting you", file=out)
+        for item in report.projection.review:
+            print(f"          [{item.consequence}] {item.summary}", file=out)
+    else:
+        print("review    nothing awaiting you", file=out)
+
+    if stats["conflicts"]:
+        print(f"conflicts {stats['conflicts']} unresolved, shown in the wiki", file=out)
+
+    for anomaly in report.projection.anomalies:
+        print(f"note      {anomaly}", file=out)
+    for problem in report.problems:
+        print(f"PROBLEM   {problem}", file=out)
+
+    return EXIT_PROBLEMS if report.problems else EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="health-agent",
@@ -220,6 +271,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument("--json", action="store_true", help="machine-readable output")
     ingest.set_defaults(func=cmd_ingest)
+
+    rebuild = subparsers.add_parser(
+        "rebuild",
+        help="regenerate wiki/ from the event log; writes nothing to events/ or raw/",
+    )
+    rebuild.add_argument(
+        "--as-of",
+        default=None,
+        dest="as_of",
+        help=(
+            "the moment to measure staleness and the review window from, as "
+            "YYYY-MM-DDTHH:MM:SSZ; defaults to now. Pinning it makes the output "
+            "reproducible."
+        ),
+    )
+    rebuild.add_argument("--json", action="store_true", help="machine-readable output")
+    rebuild.set_defaults(func=cmd_rebuild)
     return parser
 
 

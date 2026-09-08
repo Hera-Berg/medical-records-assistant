@@ -57,3 +57,17 @@ class IngestError(HealthAgentError):
     to tidy up after a failure, because a file with no event is recoverable and
     an event with no file is a broken citation.
     """
+
+
+class ProjectionError(HealthAgentError):
+    """The wiki could not be derived from the log.
+
+    Raised for a fault in this code — an uncited sentence, a value that cannot
+    be serialised — never for bad data in the log. Bad data is reported and the
+    claim is excluded; a projection that raised on it would let one malformed
+    line take the whole record offline.
+    """
+
+
+class WikiWriteError(ProjectionError):
+    """Writing the derived files would have destroyed something it did not write."""
