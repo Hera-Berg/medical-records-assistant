@@ -8,6 +8,9 @@ by hand. Subcommands from the start because this grows into ``rebuild``,
 the vault directories, and issuing this machine's device identity. It never
 writes ``config.toml`` — it prints a template for the user to save, because a
 config file this program invented is one nobody has read.
+
+``ingest`` copies a file into ``raw/`` and appends one event. It never moves or
+alters the file it was given.
 """
 
 from __future__ import annotations
@@ -17,7 +20,10 @@ import json
 import sys
 from typing import Any, TextIO
 
+from . import ingest as ingest_mod
 from . import vault as vault_mod
+from .errors import HealthAgentError
+from .vault import Vault
 
 EXIT_OK = 0
 EXIT_PROBLEMS = 1
@@ -84,6 +90,14 @@ def _render(report: dict[str, Any], out: TextIO) -> None:
             bad = f"  {shard['malformed']} malformed" if shard["malformed"] else ""
             line("", f"{shard['name']}  {shard['state']}  {shard['events']} events{bad}{detail}")
 
+    raw_info = report.get("raw")
+    if raw_info:
+        depth = "re-hashed" if raw_info["deep"] else "not re-hashed"
+        line(
+            "raw",
+            f"{raw_info['artifacts']} artefacts  {raw_info['bytes']} bytes  ({depth})",
+        )
+
     conflicts = report.get("conflicts")
     if conflicts:
         line("conflicts", f"{len(conflicts)} sync fork(s)")
@@ -105,13 +119,49 @@ def _render(report: dict[str, Any], out: TextIO) -> None:
 
 
 def cmd_check(args: argparse.Namespace, out: TextIO) -> int:
-    report = vault_mod.diagnose(args.vault, fix=args.fix)
+    report = vault_mod.diagnose(args.vault, fix=args.fix, deep=args.deep)
     if args.json:
         json.dump(report, out, indent=2, sort_keys=True)
         print("", file=out)
     else:
         _render(report, out)
     return EXIT_OK if report.get("ok") else EXIT_PROBLEMS
+
+
+def cmd_ingest(args: argparse.Namespace, out: TextIO) -> int:
+    """Copy files into the vault. The originals are left where they are."""
+    vault = Vault.open(args.vault)
+    results: list[dict[str, Any]] = []
+    failures = 0
+
+    for path in args.paths:
+        context = ingest_mod.CaptureContext(source=args.source, note=args.note)
+        try:
+            result = ingest_mod.ingest_path(vault, path, context)
+        except HealthAgentError as exc:
+            failures += 1
+            results.append({"input": str(path), "status": "failed", "error": str(exc)})
+            if not args.json:
+                print(f"failed   {path}\n         {exc}", file=out)
+            continue
+        results.append(
+            {
+                "input": str(path),
+                "status": result.status,
+                "hash": result.digest,
+                "path": result.rel,
+                "bytes": result.size,
+                "mime": result.mime,
+                "event": result.event.id,
+            }
+        )
+        if not args.json:
+            print(result.describe(), file=out)
+
+    if args.json:
+        json.dump(results, out, indent=2, sort_keys=True)
+        print("", file=out)
+    return EXIT_PROBLEMS if failures else EXIT_OK
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -141,8 +191,35 @@ def build_parser() -> argparse.ArgumentParser:
             "identity; never writes config.toml"
         ),
     )
+    check.add_argument(
+        "--deep",
+        action="store_true",
+        help=(
+            "re-hash every stored artefact to confirm the bytes still match the "
+            "record; reads the whole raw store"
+        ),
+    )
     check.add_argument("--json", action="store_true", help="machine-readable output")
     check.set_defaults(func=cmd_check)
+
+    ingest = subparsers.add_parser(
+        "ingest",
+        help="copy files into raw/ and record them; the originals are not moved",
+    )
+    ingest.add_argument("paths", nargs="+", help="files to ingest")
+    ingest.add_argument(
+        "--source",
+        default="cli",
+        choices=sorted(ingest_mod.CAPTURE_SOURCES),
+        help="where these bytes came from (recorded as capture context)",
+    )
+    ingest.add_argument(
+        "--note",
+        default=None,
+        help="a short note about this capture, stored with it",
+    )
+    ingest.add_argument("--json", action="store_true", help="machine-readable output")
+    ingest.set_defaults(func=cmd_ingest)
     return parser
 
 

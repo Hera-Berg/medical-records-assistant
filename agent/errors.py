@@ -47,3 +47,13 @@ class EventValidationError(HealthAgentError):
 
 class AppendError(HealthAgentError):
     """A write to a shard did not land."""
+
+
+class IngestError(HealthAgentError):
+    """A file could not be taken into the raw store.
+
+    Raised only where nothing has been recorded yet. Once bytes are on disk the
+    ingest path stops raising and starts reporting: raw bytes are never removed
+    to tidy up after a failure, because a file with no event is recoverable and
+    an event with no file is a broken citation.
+    """

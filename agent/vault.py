@@ -25,6 +25,7 @@ from .errors import ConfigError, DeviceIdentityError, VaultError
 from .events import log
 from .events.envelope import Event
 from .events.scan import ShardState, find_conflicts
+from .ingest.store import RawStore, ingested_records
 
 ENV_VAULT = "HEALTH_VAULT"
 
@@ -175,15 +176,25 @@ class Vault:
     def conflicts(self):
         return find_conflicts(self.root, self.profile)
 
+    @property
+    def raw(self) -> RawStore:
+        """The ``raw/`` store: originals, never modified, never derived."""
+        return RawStore(self.root, self.profile)
 
-def diagnose(explicit: str | os.PathLike[str] | None = None, fix: bool = False) -> dict[str, Any]:
+
+def diagnose(
+    explicit: str | os.PathLike[str] | None = None,
+    fix: bool = False,
+    deep: bool = False,
+) -> dict[str, Any]:
     """Assemble the full state of the vault for ``health-agent check``.
 
     Reports rather than raises: the point is to describe a broken vault, not to
     fall over on one. ``fix`` permits exactly two writes — creating the vault
     directories and issuing this machine's device identity. It never writes
     ``config.toml``, because a config this program invented is a config nobody
-    has read.
+    has read. ``deep`` re-hashes every stored artefact, which is a full read of
+    the raw store and so is asked for rather than assumed.
     """
     report: dict[str, Any] = {"problems": [], "notes": []}
     problems: list[str] = report["problems"]
@@ -371,6 +382,62 @@ def diagnose(explicit: str | os.PathLike[str] | None = None, fix: bool = False) 
 
     for conflict in conflicts:
         problems.append(conflict.describe(root))
+
+    # --- raw store ----------------------------------------------------------
+    records, duplicate_ingests = ingested_records(read.events)
+    raw = RawStore(root, profile).verify(records, deep=deep, duplicates=duplicate_ingests)
+    report["raw"] = {
+        "artifacts": raw.artifacts,
+        "bytes": raw.bytes,
+        "deep": raw.deep,
+        "orphans": list(raw.orphans),
+        "missing": list(raw.missing),
+        "sidecar_missing": list(raw.sidecar_missing),
+        "sidecar_disagrees": list(raw.sidecar_disagrees),
+        "sidecar_orphaned": list(raw.sidecar_orphaned),
+        "hash_mismatch": list(raw.hash_mismatch),
+        "foreign": list(raw.foreign),
+        "partials": list(raw.partials),
+        "unavailable": list(raw.unavailable),
+        "duplicate_events": list(raw.duplicate_events),
+    }
+
+    for rel in raw.missing:
+        problems.append(
+            f"{rel} is recorded in the event log but is not on disk; anything citing "
+            f"it resolves to nothing. Restore it from a backup or from the sync "
+            f"client's trash, or re-ingest the same file to put it back."
+        )
+    for rel in raw.orphans:
+        problems.append(
+            f"{rel} is in raw/ but no artifact.ingested event records it; it is not "
+            f"part of the record. Re-ingest it with `health-agent ingest`."
+        )
+    for rel in raw.sidecar_missing:
+        problems.append(
+            f"{rel} has no sidecar; the file is still readable but the folder no "
+            f"longer describes it on its own"
+        )
+    for detail in raw.sidecar_disagrees:
+        problems.append(f"sidecar disagrees with the artefact beside it: {detail}")
+    for rel in raw.sidecar_orphaned:
+        problems.append(f"{rel} describes an artefact that is not there")
+    for detail in raw.hash_mismatch:
+        problems.append(detail)
+    for rel in raw.foreign:
+        problems.append(
+            f"{rel} is in raw/ but does not match the artefact filename grammar, so "
+            f"nothing can cite it. Ingest it or move it out of raw/."
+        )
+    for detail in raw.duplicate_events:
+        problems.append(detail)
+    for rel in raw.partials:
+        notes.append(
+            f"{rel} is a leftover from an interrupted ingest and holds no recorded "
+            f"artefact; it is safe to delete"
+        )
+    for detail in raw.unavailable:
+        notes.append(f"{detail} — not readable until the sync client downloads it")
 
     report["ok"] = not problems
     return report
