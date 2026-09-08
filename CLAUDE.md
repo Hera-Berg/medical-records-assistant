@@ -155,14 +155,25 @@ better one you need to re-derive everything and diff it, and you cannot do that 
   "confidence": 0.82,
   "occurred_at": { "value": "2026-06-04", "precision": "day", "uncertainty_days": 0 },
   "artifact_ts": "2026-06-04T00:00:00Z",
-  "captured_ts": "2026-09-02T09:11:00Z"
+  "captured_ts": "2026-09-02T09:11:00Z",
+  "ingested_ts": "2026-09-02T09:11:04Z"
 }
 ```
 
-**Three timestamps, always.** When the artefact was created (script written 4 June), when it was
-captured (photo taken 2 September), and when the thing happened (symptom onset). These diverge
-constantly and conflating them corrupts the timeline. If a value is unknown, write `null` — never
-substitute another timestamp.
+**Four timestamps, always.** They diverge constantly and conflating any two of them corrupts the
+timeline.
+
+| Field | Means | Known when |
+|---|---|---|
+| `ingested_ts` | The bytes landed in the vault. | Always. Set on every artefact, and the timestamp used in the `raw/` filename. |
+| `captured_ts` | The photo was taken or the audio recorded. | Only on a live capture path (camera, microphone), or later from EXIF. |
+| `artifact_ts` | The artefact itself was created — the script was written 4 June. | Only after extraction reads a date off the document. |
+| `occurred_at` | The thing described happened — symptom onset. | Only when a claim says so. Carries `precision` and `uncertainty_days`. |
+
+**If a value is unknown, write `null` — never substitute another timestamp.** In particular ingest
+time is not capture time. They are equal only when the bytes come from a live camera or mic; drag in
+a photo taken three days ago and a substituted `captured_ts` is silently wrong by three days.
+Nothing looks broken, which is what makes it the worst kind of error this record can hold.
 
 **Date uncertainty is first-class.** A voice note says "the headaches started around Easter."
 Store `{"value": "2026-04-05", "precision": "month", "uncertainty_days": 14}` and render the band. A
