@@ -20,7 +20,6 @@ the old value scrubbed out of it.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Iterable
 
 REDACTED = "••••"

@@ -46,7 +46,13 @@ from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
 from . import vault as vault_mod
-from .extract import jobs as jobs_mod, probe as probe_mod, runner as runner_mod, session
+from .extract import (
+    evaluate as evaluate_mod,
+    jobs as jobs_mod,
+    probe as probe_mod,
+    runner as runner_mod,
+    session,
+)
 from .llm import credentials as credentials_mod
 from .errors import HealthAgentError
 from .vault import Vault
@@ -412,6 +418,36 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
+    """Score the model against the golden corpus. Run before accepting a swap.
+
+    Needs the box, so it is a command rather than a test: nothing in the
+    ordinary suite may depend on a machine being awake.
+    """
+    from tests.fixtures import corpus  # noqa: PLC0415 - only needed here
+
+    vault = Vault.open(args.vault)
+    fixtures = corpus.for_phase(4)
+    with session.open_client(vault) as client:
+        report = evaluate_mod.run_corpus(client, fixtures, locale=vault.config.locale)
+
+    if args.json:
+        json.dump(report.to_dict(), out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_OK if report.ok else EXIT_PROBLEMS
+
+    for line in report.describe():
+        print(line, file=out)
+    skipped = [f.name for f in corpus.FIXTURES if f.phase > 4]
+    if skipped:
+        print(
+            f"\nnot run   {', '.join(skipped)} — these need the speech model, "
+            f"which is phase 6",
+            file=out,
+        )
+    return EXIT_OK if report.ok else EXIT_PROBLEMS
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="health-agent",
@@ -566,6 +602,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     set_key.set_defaults(func=cmd_set_key)
+
+    evaluate = subparsers.add_parser(
+        "eval",
+        help=(
+            "score the configured model against the golden corpus; run this "
+            "before accepting a model or prompt change"
+        ),
+    )
+    evaluate.add_argument("--json", action="store_true", help="machine-readable output")
+    evaluate.set_defaults(func=cmd_eval)
     return parser
 
 

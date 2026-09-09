@@ -16,6 +16,7 @@ from __future__ import annotations
 from . import (
     crossverify,
     dates,
+    evaluate,
     images,
     jobs,
     probe,
@@ -31,6 +32,7 @@ from . import (
 __all__ = [
     "crossverify",
     "dates",
+    "evaluate",
     "images",
     "jobs",
     "probe",

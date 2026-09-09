@@ -21,7 +21,6 @@ import pytest
 from PIL import Image
 
 from agent import ingest as ingest_mod
-from agent.errors import AuthRejected
 from agent.extract import jobs as jobs_mod
 from agent.extract import propose, runner
 from agent.extract.runner import Extractor
