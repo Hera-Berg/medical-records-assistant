@@ -200,3 +200,79 @@ def test_a_claim_about_an_unknown_predicate_still_gates_high():
     result = _project([ingested(DEVICE), proposed])
     assert result.entities == {}
     assert result.review[0].consequence == "high"
+
+
+def test_a_decision_naming_no_target_is_reported_not_dropped():
+    """Rule 3: a user act the rules cannot apply still has to be findable.
+
+    A confirmation or rejection with no target has no subject and so no page to
+    appear on, which leaves the anomaly list as its only possible home. It is
+    still not allowed to vanish — the user tapped something.
+    """
+    from agent.events import envelope
+
+    events = [ingested(DEVICE, "a3f91c")]
+    events += _confirmed("med:metformin", "dose", "500mg twice daily", ts=on_day(5))
+    blank = envelope.new("claim.confirmed", DEVICE, payload={}, ts=on_day(6))
+    events.append(blank)
+
+    result = _project(events)
+    assert any(blank.id in note and "names no target" in note for note in result.anomalies)
+
+
+def test_a_decision_on_a_claim_that_is_not_here_is_reported():
+    """Hand-edited logs and half-synced shards both produce this, and it is a
+    decision the user made that the record cannot honour."""
+    from agent.events import envelope
+
+    events = [ingested(DEVICE, "a3f91c")]
+    events += _confirmed("med:metformin", "dose", "500mg twice daily", ts=on_day(5))
+    orphan = envelope.new(
+        "claim.rejected", DEVICE, payload={"target": "01J0000000000000000000MISS"},
+        ts=on_day(6),
+    )
+    events.append(orphan)
+
+    result = _project(events)
+    notes = [n for n in result.anomalies if orphan.id in n]
+    assert notes and "rejected" in notes[0] and "not a proposed claim" in notes[0]
+
+
+def test_a_decision_on_an_unreadable_claim_is_reported():
+    """The claim is already in `problems`; the tap on it would otherwise vanish."""
+    from agent.events import envelope
+
+    broken = envelope.new(
+        "claim.proposed", DEVICE, actor="agent",
+        payload={"subject": "med:metformin", "predicate": "dose"}, ts=on_day(5),
+    )
+    events = [ingested(DEVICE, "a3f91c"), broken, confirm(DEVICE, broken.id, ts=on_day(6))]
+
+    result = _project(events)
+    assert result.problems
+    assert any("could not be read" in note for note in result.anomalies)
+
+
+def test_endorsement_survives_being_outranked():
+    """`Slot.endorsed` records the tap before ranking, which is what buries it."""
+    events = [ingested(DEVICE, "a3f91c"), ingested(DEVICE, "77b210")]
+    weak = claim(
+        DEVICE, "med:metformin", "dose", "500mg twice daily", ts=on_day(5),
+        tier="patient-reported", occurred={"value": "2026-07-01"},
+    )
+    events += [weak, confirm(DEVICE, weak.id, ts=on_day(5, hour=10))]
+    events += _confirmed(
+        "med:metformin", "dose", "850mg twice daily", ts=on_day(6),
+        artifact="77b210", occurred={"value": "2026-07-02"},
+    )
+
+    result = _project(events)
+    slot = result.entities["med:metformin"].slots["dose"]
+
+    assert slot.winner.value.literal == "850mg twice daily"
+    assert weak.id in slot.endorsed
+    assert weak.id in {c.event_id for c in slot.endorsed_claims()}
+    # And it is still on the page, under earlier readings.
+    assert "500mg twice daily" in result.files[
+        result.entities["med:metformin"].rel_path
+    ].decode("utf-8")

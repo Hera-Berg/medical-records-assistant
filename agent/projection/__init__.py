@@ -99,6 +99,16 @@ def project(events: Iterable[Event], as_of: datetime | str | None = None) -> Pro
 
     reconciliation = reconcile.reconcile(events, moment)
     entities = entities_mod.build_all(reconciliation, moment)
+    # Some review items can only be known once an entity is assembled — a stop
+    # the tier rule declined to act on is a fact about a medication's lifecycle,
+    # not about a single slot. Rule 3 requires them in the queue as well as on
+    # the page, so they are merged back in here and sorted with the rest.
+    review = tuple(
+        sorted(
+            reconciliation.review + entities_mod.derived_review(entities),
+            key=lambda item: item.sort_key,
+        )
+    )
     artifacts = citations_mod.index_artifacts(events)
     citer = citations_mod.Citer(artifacts, events)
 
@@ -119,7 +129,7 @@ def project(events: Iterable[Event], as_of: datetime | str | None = None) -> Pro
         entities=entities,
         rows=rows,
         files=files,
-        review=reconciliation.review,
+        review=review,
         problems=reconciliation.problems,
         anomalies=reconciliation.anomalies,
         unresolved_citations=tuple(sorted(citer.unresolved)),

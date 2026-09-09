@@ -33,6 +33,11 @@ class MedicationRow:
     expected_exhaustion: str | None
     stale: bool
     conflicted: bool
+    #: Set when the patient reported stopping this and the tier rule declined to
+    #: act on it. The row stays on the list; the clinician reading it sees both
+    #: what was prescribed and what the patient says they take.
+    stop_reported: str | None
+    stop_reported_tier: str | None
     sources: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -46,6 +51,8 @@ class MedicationRow:
             "expected_exhaustion": self.expected_exhaustion,
             "stale": self.stale,
             "conflicted": self.conflicted,
+            "stop_reported": self.stop_reported,
+            "stop_reported_tier": self.stop_reported_tier,
             "sources": list(self.sources),
         }
 
@@ -78,6 +85,12 @@ def current_medications(entities: Mapping[str, Entity]) -> tuple[MedicationRow, 
                 ),
                 stale=entity.stale,
                 conflicted=entity.status == entities_mod.CONFLICTED,
+                stop_reported=(
+                    entity.stop_report.iso if entity.stop_report is not None else None
+                ),
+                stop_reported_tier=(
+                    entity.stop_report.tier if entity.stop_report is not None else None
+                ),
                 sources=entity.sources,
             )
         )

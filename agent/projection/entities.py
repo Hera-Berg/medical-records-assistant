@@ -12,6 +12,26 @@ the user confirmed. Both are the "explicit user tap" the consequence table
 requires. A model's unconfirmed reading never stops a medication, and neither
 does silence.
 
+The confirmed-proposal path carries an extra constraint the correction path does
+not: the proposal must be ``prescriber-issued`` or ``lab-issued``. Confirming is
+one tap and typing a correction is not, so the cheaper act is the one that has to
+be backed by a document that can actually cease a medication.
+
+**A stop below that tier annotates rather than transitions, and is never
+discarded.** Declining to act on a user's tap is legitimate; making it vanish is
+not, and is worse than the outcome the gate was protecting against — the user
+believes they told the record something. So the status stays ``active`` or
+``stale`` and the entity carries a :class:`StopReport`, which becomes
+``stop_reported`` and ``stop_reported_tier`` in frontmatter, a cited sentence in
+the body, and an entry in the review queue.
+
+That is not a grudging compromise. A patient saying they stopped taking something
+is real information: they are the authority on what they actually take, while the
+prescriber is the authority on what was prescribed, and a record showing both with
+the discrepancy visible is more useful to a clinician than either alone. It is a
+discrepancy and not ``conflicted`` — that status is reserved for contradictory
+sources for the same fact.
+
 ``status`` is one field but a medication can be in several states at once, so the
 field carries the most urgent — ``stopped`` before ``conflicted`` before ``stale``
 before ``active`` — and ``stale``, ``last_confirmed``, ``expected_exhaustion``
@@ -39,8 +59,43 @@ CONFLICTED = "conflicted"
 #: Most urgent first. The single ``status`` field takes the first that applies.
 STATUS_PRECEDENCE = (STOPPED, CONFLICTED, STALE, ACTIVE)
 
+#: Review queue kind for a stop the tier rule declined to act on. Its own kind
+#: rather than a ``conflict``: nothing here contradicts anything, the patient and
+#: the prescriber are simply answering different questions.
+STOP_REPORTED = "reported-stop"
+
 #: Values of a ``status`` predicate that mean the thing is over.
 _STOPPED_WORDS = frozenset({"stopped", "ceased", "discontinued", "stop", "resolved", "inactive"})
+
+#: Evidence tiers a *proposed* stop may carry. A confirmed proposal is one tap,
+#: and a tap is cheaper than a correction, so the document behind the proposal
+#: has to be one that can actually cease a medication. ``patient-reported`` and
+#: ``inferred`` can never produce a stop however emphatically they are confirmed
+#: — the user saying "I think I stopped that" is a correction to type, not a
+#: proposal to accept. A ``claim.corrected`` is exempt: the user authored the
+#: value itself, so there is no extractor's reading to vouch for.
+#:
+#: This is one half of the guard. The other half is phase 7's: the review inbox
+#: must render a stop proposal as its own distinct action, never as a generic
+#: accept in a tap-through queue. See rule 4 in ``CLAUDE.md``.
+_STOP_TIERS = frozenset({"prescriber-issued", "lab-issued"})
+
+
+@dataclass(frozen=True)
+class StopReport:
+    """A stop the user endorsed that the tier rule declined to act on.
+
+    Kept beside the status rather than folded into it: the medication is still
+    on the list, and this says who reported it stopped and when.
+    """
+
+    claim: Claim
+    tier: str
+    when: FuzzyDate | None
+
+    @property
+    def iso(self) -> str | None:
+        return self.when.iso if self.when is not None else None
 
 
 @dataclass(frozen=True)
@@ -60,6 +115,9 @@ class Entity:
     evidence_tier: str | None = None
     sources: tuple[str, ...] = ()
     review: tuple[ReviewItem, ...] = ()
+    #: A stop the user endorsed that could not transition the status. Never
+    #: ``None`` merely because the rule declined it — see the module docstring.
+    stop_report: StopReport | None = None
     merged_into: str | None = None
     merged_from: tuple[str, ...] = ()
     #: The merge event that created this stub, so its page can cite the decision
@@ -145,6 +203,35 @@ def _latest_evidence(claims: tuple[Claim, ...]) -> FuzzyDate | None:
     return best
 
 
+def _stated_stop(claim: Claim) -> bool:
+    """Whether this ``status`` claim says the thing is over."""
+    stated = claim.value.fields.get("status") or claim.value.literal.strip().lower()
+    return stated in _STOPPED_WORDS
+
+
+def _stop_report(slot: Slot | None) -> StopReport | None:
+    """A user-endorsed stop the tier rule will not act on.
+
+    Searched across everything the gate admitted, not just the winner: a
+    higher-tier ``status`` reading can outrank the patient's, and the whole point
+    of this function is that being outranked must not be the same as being
+    forgotten.
+    """
+    if slot is None:
+        return None
+    candidates = [
+        c
+        for c in slot.endorsed_claims()
+        if not c.is_correction and _stated_stop(c) and c.evidence_tier not in _STOP_TIERS
+    ]
+    if not candidates:
+        return None
+    # The most recent one the user endorsed. Earlier ones stay in the slot's
+    # history, which the page's "Earlier readings" section prints.
+    claim = max(candidates, key=lambda c: c.sort_key)
+    return StopReport(claim=claim, tier=claim.evidence_tier, when=_slot_date(claim))
+
+
 def _is_stop(slot: Slot) -> bool:
     """Whether this ``status`` slot records an explicit stop by the user.
 
@@ -152,14 +239,22 @@ def _is_stop(slot: Slot) -> bool:
     user confirmed a proposal that said so — both are explicit acts recorded
     under a user actor in the log, which is what the consequence table means by
     a tap.
+
+    The two paths are not equally cheap, so they are not equally trusted. A
+    correction is the user authoring the value and stands on its own. A confirmed
+    proposal is one tap on an extractor's reading, so the reading has to come
+    from a source that can cease a medication: see :data:`_STOP_TIERS`.
     """
     winner = slot.winner
     if winner is None:
         return False
-    stated = winner.value.fields.get("status") or winner.value.literal.strip().lower()
-    if stated not in _STOPPED_WORDS:
+    if not _stated_stop(winner):
         return False
-    return winner.is_correction or slot.review_state == reconcile.REVIEW_CONFIRMED
+    if winner.is_correction:
+        return True
+    if slot.review_state != reconcile.REVIEW_CONFIRMED:
+        return False
+    return winner.evidence_tier in _STOP_TIERS
 
 
 def _pick_dispense(claims: tuple[Claim, ...]) -> tuple[Dispense | None, Claim | None]:
@@ -227,6 +322,10 @@ def build(
 
     status_slot = slots.get("status")
     stopped = status_slot is not None and _is_stop(status_slot)
+    # Only worth reporting while the medication is still on the list. Once a
+    # prescriber-issued stop has transitioned it there is no discrepancy left to
+    # show, and the earlier report stays visible in the slot's history.
+    stop_report = None if stopped else _stop_report(status_slot)
     conflicted = any(slot.is_conflicted for slot in slots.values())
 
     if stopped:
@@ -245,6 +344,22 @@ def build(
 
     sources = tuple(sorted({claim.cite for claim in claims}))
 
+    if stop_report is not None:
+        review = review + (
+            ReviewItem(
+                kind=STOP_REPORTED,
+                consequence=status_slot.consequence,
+                subject_id=subject.id,
+                predicate="status",
+                summary=(
+                    f"{subject.id} status: you confirmed a {stop_report.tier} stop. It is "
+                    f"recorded on the page, but only a prescriber-issued or lab-issued "
+                    f"source can take a medication off the list"
+                ),
+                claims=(stop_report.claim,),
+            ),
+        )
+
     return Entity(
         subject=subject,
         name=name,
@@ -259,8 +374,24 @@ def build(
         evidence_tier=tier,
         sources=sources,
         review=review,
+        stop_report=stop_report,
         merged_from=merged_from,
     )
+
+
+def derived_review(entities: Mapping[str, Entity]) -> tuple[ReviewItem, ...]:
+    """Review items that only exist once entities are assembled.
+
+    :func:`reconcile.reconcile` works slot by slot and cannot see a medication's
+    lifecycle, so the reported-stop item is raised here and merged back into the
+    projection's queue.
+    """
+    items: list[ReviewItem] = []
+    for subject_id in sorted(entities):
+        items.extend(
+            item for item in entities[subject_id].review if item.kind == STOP_REPORTED
+        )
+    return tuple(items)
 
 
 def build_all(reconciliation: Reconciliation, as_of: datetime) -> dict[str, Entity]:

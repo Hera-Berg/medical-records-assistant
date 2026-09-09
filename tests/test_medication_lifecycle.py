@@ -162,3 +162,183 @@ def test_status_precedence_never_hides_a_state():
     assert "status: conflicted" in page
     assert "stale: true" in page
     assert "conflicts:" in page
+
+
+@pytest.mark.parametrize(
+    "tier, stops",
+    [
+        ("prescriber-issued", True),
+        ("lab-issued", True),
+        ("device-recorded", False),
+        ("patient-reported", False),
+        ("inferred", False),
+    ],
+)
+def test_a_confirmed_stop_needs_a_prescriber_or_lab_source(tier, stops):
+    """Confirming is one tap, so the reading behind it has to be able to cease a drug.
+
+    ``patient-reported`` and ``inferred`` can never produce a stop, however
+    emphatically they are confirmed — a careless tap must not be able to drop a
+    medication. The user saying they stopped something is a correction to type,
+    not a proposal to accept; the correction path below is unconstrained.
+    """
+    stop = claim(DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20), tier=tier)
+    result = _med(
+        "2026-09-30T00:00:00Z",
+        extra=[stop, confirm(DEVICE, stop.id, ts=on_day(21))],
+    )
+    entity = result.entities["med:perindopril"]
+
+    assert (entity.status == entities_mod.STOPPED) is stops
+    # Whichever way it went, the medication is still on file with its history.
+    assert entity.rel_path in result.files
+    assert b"5mg daily" in result.files[entity.rel_path]
+    # Declining to act on the tap is legitimate; losing it is not.
+    assert (entity.stop_report is not None) is not stops
+
+
+def test_the_tier_constraint_does_not_reach_the_correction_path():
+    """A ``claim.corrected`` stop stands at any tier — the user typed the value.
+
+    The constraint guards the tap, not the user. Correcting a medication to
+    stopped is the deliberate act the consequence table asks for, and there is no
+    extractor's reading to vouch for.
+    """
+    stop = claim(DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20),
+                 tier="inferred")
+    result = _med(
+        "2026-09-30T00:00:00Z",
+        extra=[stop, correct(DEVICE, value="stopped", target=stop.id, ts=on_day(21))],
+    )
+    assert result.entities["med:perindopril"].status == entities_mod.STOPPED
+
+
+def _reported_stop(tier="patient-reported", as_of="2026-09-30T00:00:00Z", extra=()):
+    stop = claim(
+        DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20), tier=tier,
+        occurred={"value": "2026-09-20", "precision": "day", "uncertainty_days": 0},
+    )
+    return _reported_stop_result(stop, as_of, extra), stop
+
+
+def _reported_stop_result(stop, as_of, extra):
+    return _med(as_of, extra=[stop, confirm(DEVICE, stop.id, ts=on_day(21))] + list(extra))
+
+
+def test_a_declined_stop_annotates_and_is_never_invisible():
+    """The whole of rule 3's second paragraph, on the path that motivated it.
+
+    Status does not transition, and the tap is nonetheless findable in all three
+    places the rule names: frontmatter, body prose, and the review queue.
+    """
+    result, stop = _reported_stop()
+    entity = result.entities["med:perindopril"]
+
+    assert entity.status == entities_mod.ACTIVE
+    assert entity.stop_report is not None
+    assert entity.stop_report.tier == "patient-reported"
+    assert entity.stop_report.iso == "2026-09-20"
+
+    page = result.files[entity.rel_path].decode("utf-8")
+    assert "status: active" in page
+    assert "stop_reported: 2026-09-20" in page
+    assert "stop_reported_tier: patient-reported" in page
+    assert "## Reported stopped" in page
+    assert "saying this was stopped on 20 September 2026" in page
+
+    # A sentence in the wiki without a footnote is a bug, this one included.
+    stop_lines = [line for line in page.splitlines() if "was stopped on" in line]
+    assert stop_lines and all("[^" in line for line in stop_lines)
+
+    items = [item for item in result.review if item.kind == entities_mod.STOP_REPORTED]
+    assert len(items) == 1
+    assert items[0].subject_id == "med:perindopril"
+    assert items[0].claims[0].event_id == stop.id
+    # High-consequence, so it sorts to the front of the inbox with the rest.
+    assert items[0].consequence == "high"
+    assert result.review[0].kind == entities_mod.STOP_REPORTED
+
+
+def test_the_page_never_states_both_active_and_stopped_flatly():
+    """A bare "Status — stopped" bullet under `status: active` is a contradiction.
+
+    The reported-stop section says the same thing with the context that makes it
+    true, so the bullet stands down rather than being printed beside it.
+    """
+    result, _ = _reported_stop()
+    page = result.files[result.entities["med:perindopril"].rel_path].decode("utf-8")
+
+    assert "**Status** — stopped" not in page
+    assert "## Reported stopped" in page
+
+
+def test_a_reported_stop_is_a_discrepancy_not_a_conflict():
+    """`conflicted` stays reserved for contradictory sources for the same fact."""
+    result, _ = _reported_stop()
+    entity = result.entities["med:perindopril"]
+
+    assert entity.status != entities_mod.CONFLICTED
+    assert entity.conflicts == ()
+    assert not any(item.kind == "conflict" for item in result.review)
+
+
+def test_a_reported_stop_stays_on_the_current_medications_view():
+    """The list a clinician reads carries both facts, not just the prescribed one."""
+    result, _ = _reported_stop()
+    row = result.current_medications[0]
+
+    assert row.id == "med:perindopril"
+    assert row.status == entities_mod.ACTIVE
+    assert row.dose == "5mg daily"
+    assert row.stop_reported == "2026-09-20"
+    assert row.stop_reported_tier == "patient-reported"
+    assert row.to_dict()["stop_reported_tier"] == "patient-reported"
+
+
+def test_an_outranked_stop_is_still_reported():
+    """Being outranked must not be the same as being forgotten.
+
+    A prescriber-issued ``status`` reading beats the patient's on tier and takes
+    the slot's winner, which is where a naive implementation would stop looking.
+    """
+    keep = claim(
+        DEVICE, "med:perindopril", "status", "active", ts=on_day(22),
+        tier="prescriber-issued", artifact="77b210",
+        occurred={"value": "2026-09-22", "precision": "day", "uncertainty_days": 0},
+    )
+    result, stop = _reported_stop(
+        extra=[ingested(DEVICE, "77b210"), keep, confirm(DEVICE, keep.id, ts=on_day(23))]
+    )
+    entity = result.entities["med:perindopril"]
+
+    assert entity.slots["status"].winner.event_id == keep.id
+    assert entity.status == entities_mod.ACTIVE
+    assert entity.stop_report is not None
+    assert entity.stop_report.claim.event_id == stop.id
+    assert "stop_reported_tier: patient-reported" in result.files[entity.rel_path].decode()
+
+
+def test_an_unconfirmed_stop_proposal_is_not_a_reported_stop():
+    """The annotation records a *user* act, not every reading the model offers.
+
+    An untouched proposal is already in the queue as awaiting-confirmation;
+    printing it on the page as well would state a change nobody has accepted.
+    """
+    stop = claim(DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20),
+                 tier="patient-reported")
+    result = _med("2026-09-30T00:00:00Z", extra=[stop])
+    entity = result.entities["med:perindopril"]
+
+    assert entity.stop_report is None
+    assert "stop_reported" not in result.files[entity.rel_path].decode()
+    assert [item.kind for item in result.review] == ["awaiting-confirmation"]
+
+
+def test_a_transitioned_stop_needs_no_annotation():
+    """Once a prescriber-issued stop transitions, there is no discrepancy left."""
+    result, _ = _reported_stop(tier="prescriber-issued")
+    entity = result.entities["med:perindopril"]
+
+    assert entity.status == entities_mod.STOPPED
+    assert entity.stop_report is None
+    assert "stop_reported" not in result.files[entity.rel_path].decode()

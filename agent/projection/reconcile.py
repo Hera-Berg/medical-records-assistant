@@ -84,6 +84,11 @@ class Slot:
     superseded: tuple[Claim, ...] = ()
     #: Claims the consequence gate is holding back.
     pending: tuple[Claim, ...] = ()
+    #: Event ids of admitted claims the user personally endorsed — confirmed, or
+    #: authored as a correction. Ranking can move any of these out of ``winner``,
+    #: so a rule that needs to know "did the user actually say this" has to ask
+    #: the slot rather than reading the winner and calling it the whole story.
+    endorsed: frozenset[str] = frozenset()
 
     @property
     def is_conflicted(self) -> bool:
@@ -99,6 +104,27 @@ class Slot:
         if self.winner is not None:
             return (self.winner,)
         return self.readings
+
+    @property
+    def admitted(self) -> tuple[Claim, ...]:
+        """Every claim the gate let in, whether or not ranking kept it.
+
+        ``superseded`` and ``contradicted_by`` hold claims that lost but were
+        never discarded, and a user-endorsed claim can be sitting in either.
+        """
+        seen: dict[str, Claim] = {}
+        for claim in (
+            ((self.winner,) if self.winner is not None else ())
+            + self.readings
+            + self.superseded
+            + self.contradicted_by
+        ):
+            seen.setdefault(claim.event_id, claim)
+        return tuple(seen[key] for key in sorted(seen))
+
+    def endorsed_claims(self) -> tuple[Claim, ...]:
+        """The admitted claims the user personally confirmed or authored."""
+        return tuple(c for c in self.admitted if c.event_id in self.endorsed)
 
 
 @dataclass(frozen=True)
@@ -149,23 +175,36 @@ class Reconciliation:
         return tuple(sorted({subject for subject, _ in self.slots}))
 
 
-def _latest_decision(events: Iterable[Event]) -> dict[str, Event]:
+def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[str]]:
     """The last user decision recorded against each proposed claim.
 
     Ordering is by ``(ts, id)`` like everything else, so two devices deciding the
     same item resolve identically wherever the log is read.
+
+    A decision naming no target cannot be acted on, and rule 3 does not allow it
+    to simply disappear: it comes back as an anomaly. The user tapped something
+    and is entitled to find out that the record could not tell what.
     """
     latest: dict[str, Event] = {}
+    anomalies: list[str] = []
     for event in events:
         if event.type not in ("claim.confirmed", "claim.rejected", "claim.corrected"):
             continue
         target = event.payload.get("target")
         if not isinstance(target, str) or not target:
+            # A correction can stand on its own terms if it names a subject and
+            # predicate itself; the other two decide *about* a claim and have
+            # nothing left to mean without one.
+            if event.type != "claim.corrected":
+                anomalies.append(
+                    f"{event.id}: {event.type} names no target claim, so your decision "
+                    f"could not be applied to anything"
+                )
             continue
         current = latest.get(target)
         if current is None or event.sort_key > current.sort_key:
             latest[target] = event
-    return latest
+    return latest, anomalies
 
 
 def _alias_map(events: Iterable[Event]) -> tuple[dict[str, str], dict[str, str], list[str]]:
@@ -309,6 +348,11 @@ def _resolve(
         else (pending[0].consequence if pending else tiers.HIGH)
     )
     review: list[ReviewItem] = []
+    # Recorded before ranking, because ranking is exactly what can bury one of
+    # these behind a higher-tier reading.
+    endorsed = frozenset(
+        c.event_id for c in admitted if review_states.get(c.event_id) == REVIEW_CONFIRMED
+    )
 
     corrections = [c for c in admitted if c.is_correction]
     extractions = [c for c in admitted if not c.is_correction]
@@ -349,6 +393,7 @@ def _resolve(
                 contradicted_by=disagreeing,
                 superseded=tuple(sorted(others, key=lambda c: c.sort_key, reverse=True)),
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
+                endorsed=endorsed,
             ),
             review,
         )
@@ -362,6 +407,7 @@ def _resolve(
                 resolution=SETTLED,
                 winner=None,
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
+                endorsed=endorsed,
             ),
             review,
         )
@@ -402,6 +448,7 @@ def _resolve(
                 readings=tuple(readings),
                 superseded=tuple(sorted(superseded, key=lambda c: c.sort_key, reverse=True)),
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
+                endorsed=endorsed,
             ),
             review,
         )
@@ -418,9 +465,14 @@ def _resolve(
             review_state=review_states.get(winner.event_id, REVIEW_AUTO),
             superseded=tuple(sorted(superseded, key=lambda c: c.sort_key, reverse=True)),
             pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
+            endorsed=endorsed,
         ),
         review,
     )
+
+
+#: How a decision event reads in prose, for the anomaly lines above.
+_DECIDED = {"claim.confirmed": "confirmed", "claim.rejected": "rejected"}
 
 
 _REVIEW_ORDER = {REVIEW_UNREVIEWED: 0, REVIEW_AUTO: 1, REVIEW_CONFIRMED: 2}
@@ -434,8 +486,9 @@ def _review_order(state: str) -> int:
 def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
     """Reduce the event stream into fact slots, a review queue, and problems."""
     events = list(events)
-    decisions = _latest_decision(events)
+    decisions, decision_anomalies = _latest_decision(events)
     aliases, alias_events, anomalies = _alias_map(events)
+    anomalies = list(anomalies) + decision_anomalies
 
     problems: list[ClaimProblem] = []
     proposals: dict[str, Claim] = {}
@@ -448,6 +501,8 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
     def slot_key(claim: Claim) -> tuple[str, str]:
         return (aliases.get(claim.subject.id, claim.subject.id), claim.predicate)
 
+    unreadable: set[str] = set()
+
     # Proposals first: a correction may need the claim it is amending.
     for event in events:
         if event.type != "claim.proposed":
@@ -455,6 +510,7 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         parsed = claims_mod.parse(event)
         if isinstance(parsed, ClaimProblem):
             problems.append(parsed)
+            unreadable.add(event.id)
             continue
         proposals[event.id] = parsed
         anomaly = claims_mod.declared_tier_anomaly(parsed)
@@ -500,6 +556,24 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             Admission(parsed, ADMITTED, REVIEW_CONFIRMED, "your correction, which always stands")
         )
         admitted_by_slot.setdefault(slot_key(parsed), []).append(parsed)
+
+    # Rule 3: a decision the rules could not act on is still a thing the user
+    # said. A confirmation or rejection whose target is not in this log has no
+    # subject and so no page to appear on, which makes the anomaly list its only
+    # possible home — but it is never simply dropped.
+    for target_id, decision in sorted(decisions.items(), key=lambda kv: kv[1].sort_key):
+        if decision.type == "claim.corrected" or target_id in proposals:
+            continue
+        if target_id in unreadable:
+            anomalies.append(
+                f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, whose claim "
+                f"could not be read; the decision is recorded but applies to nothing"
+            )
+        else:
+            anomalies.append(
+                f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, which is not "
+                f"a proposed claim in this log; the decision could not be applied"
+            )
 
     slots: dict[tuple[str, str], Slot] = {}
     for key in sorted(set(admitted_by_slot) | set(pending_by_slot)):

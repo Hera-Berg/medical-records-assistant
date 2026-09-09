@@ -121,6 +121,34 @@ def _supply_section(document: Document, entity: Entity, citer: Citer, as_of_date
     document.paragraph(*sentences)
 
 
+def _reported_stop_section(document: Document, entity: Entity, citer: Citer) -> None:
+    """The patient said they stopped; the prescriber's record says otherwise.
+
+    Both are stated, both are cited, and neither is resolved here. The patient is
+    the authority on what they actually take and the prescriber is the authority
+    on what was prescribed, so a clinician reading both learns something that
+    either one alone would hide.
+    """
+    report = entity.stop_report
+    if report is None:
+        return
+    document.heading("Reported stopped")
+    citation = citer.cite(report.claim.cite, _correction_description(report.claim))
+    when = f" on {report.when.render()}" if report.when is not None else ""
+    document.paragraph(
+        Sentence(
+            f"You confirmed a {report.tier} source saying this was stopped{when}",
+            [citation],
+        ),
+        Sentence(
+            f"It is recorded here and the entry stays on the current list as "
+            f"`{entity.status}`, because only a prescriber-issued or lab-issued source "
+            f"can take a medication off that list",
+            [citation],
+        ),
+    )
+
+
 def _conflicts_section(document: Document, entity: Entity, citer: Citer) -> None:
     conflicts = entity.conflicts
     if not conflicts:
@@ -221,6 +249,12 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     document.field_("status", entity.status)
     if entity.stale:
         document.field_("stale", True)
+    if entity.stop_report is not None:
+        # Beside the status, never instead of it. The medication is still on the
+        # list and the frontmatter says so; this says the patient reported
+        # otherwise, and a reader gets both facts without having to open the log.
+        document.field_("stop_reported", entity.stop_report.iso)
+        document.field_("stop_reported_tier", entity.stop_report.tier)
 
     for predicate in sorted(entity.slots):
         if predicate in _FRONTMATTER_SKIP:
@@ -266,10 +300,16 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     for predicate in sorted(entity.slots):
         if predicate == "name":
             continue
+        if predicate == "status" and entity.stop_report is not None:
+            # A bare "Status — stopped" bullet under a page whose status field
+            # reads active is a flat contradiction. The reported-stop section
+            # below says the same thing with the context that makes it true.
+            continue
         _slot_bullet(document, entity.slots[predicate], citer)
 
     if entity.subject.kind == "med":
         _supply_section(document, entity, citer, as_of_date)
+    _reported_stop_section(document, entity, citer)
     _conflicts_section(document, entity, citer)
     _review_section(document, entity, citer)
     _history_section(document, entity, citer)
