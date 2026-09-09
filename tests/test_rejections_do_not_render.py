@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from agent import projection
+from agent.projection import reconcile
 
 from .conftest import claim, confirm, ingested, reject, on_day
 
@@ -131,8 +132,15 @@ def test_saying_otherwise_lifts_the_suppression_for_later_re_extractions_too():
     assert {c.event_id for c in slot.all_claims} == {again.id, third.id}
 
 
-def test_a_later_rejection_suppresses_again():
-    """The rule reads the user's most recent word, in either direction."""
+def test_a_later_rejection_withdraws_what_was_confirmed_earlier():
+    """Confirmed then rejected: the later decision governs, and the content comes out.
+
+    Both are explicit user acts, so this is not the projection declining to
+    honour a tap — it is the same latest-decision-wins rule that applies
+    everywhere else among acts of equal authority. It fails in the safe
+    direction: withdrawing and re-confirming is one tap, and un-printing a
+    clinician's copy is not.
+    """
     first, again, third = _reading(2), _reading(9), _reading(20)
     result = _project(
         [
@@ -144,12 +152,59 @@ def test_a_later_rejection_suppresses_again():
             third,
         ]
     )
-    slot = result.entities[SUBJECT].slots[PREDICATE]
 
-    # The claim they explicitly confirmed still stands — declining to honour a
-    # user's tap is not something the projection may do on its own — but the
-    # undecided re-extraction does not come back.
-    assert {c.event_id for c in slot.all_claims} == {first.id}
+    _assert_absent(result)
+    assert SUBJECT not in result.entities
+
+
+def test_a_withdrawal_names_the_artefact_and_not_the_content():
+    """The direction of the mistake is unknowable, so the ambiguity is raised.
+
+    The item carries no claims at all. Anything phase 7 renders from it can only
+    name the artefact, which is the whole point: reproducing the content in the
+    inbox would put back what the withdrawal took out.
+    """
+    first, again = _reading(2), _reading(9)
+    result = _project(
+        [
+            ingested(DEVICE),
+            first,
+            confirm(DEVICE, first.id, ts=on_day(3)),
+            again,
+            reject(DEVICE, again.id, ts=on_day(10)),
+        ]
+    )
+
+    items = [item for item in result.review if item.kind == reconcile.WITHDRAWN]
+    assert len(items) == 1
+    item = items[0]
+    assert item.subject_id == SUBJECT
+    assert item.cite == "a3f91c"
+    assert item.claims == ()
+    assert "a3f91c" in item.summary
+    assert REJECTED_TEXT not in item.summary
+    assert "confirm it again if that is not what you meant" in item.summary
+
+
+def test_an_earlier_rejection_does_not_reach_forward_to_a_later_decision():
+    """Latest word, not "a rejection exists anywhere".
+
+    Rejected on day 3 and confirmed again on day 10 is the user changing their
+    mind in the other direction, and the confirmation stands.
+    """
+    first, again = _reading(2), _reading(9)
+    result = _project(
+        [
+            ingested(DEVICE),
+            first,
+            reject(DEVICE, first.id, ts=on_day(3)),
+            again,
+            confirm(DEVICE, again.id, ts=on_day(10)),
+        ]
+    )
+
+    assert result.entities[SUBJECT].slots[PREDICATE].winner.event_id == again.id
+    assert not [item for item in result.review if item.kind == reconcile.WITHDRAWN]
 
 
 def test_a_second_artefact_saying_the_same_thing_is_new_evidence():

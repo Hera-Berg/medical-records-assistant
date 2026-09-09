@@ -52,6 +52,10 @@ PENDING = "pending"
 REJECTED = "rejected"
 SUPERSEDED = "superseded"
 
+#: Review kind for a reading the user confirmed and later rejected. Carries no
+#: claims, deliberately: the content is what was withdrawn.
+WITHDRAWN = "withdrawn-by-rejection"
+
 # How a slot resolved.
 SETTLED = "settled"
 CONFLICTED = "conflicted"
@@ -114,6 +118,9 @@ class Admission:
     review_state: str
     reason: str
     decided_by: str | None = None
+    #: Set when a later rejection overruled this claim's own earlier decision.
+    #: The ambiguity is raised for review; the content comes out either way.
+    withdrawn: bool = False
 
 
 @dataclass(frozen=True)
@@ -188,12 +195,16 @@ class Slot:
 class ReviewItem:
     """Something waiting on a person. Phase 7 renders these; phase 3 counts them."""
 
-    kind: str  # awaiting-confirmation | conflict | contradiction
+    kind: str  # awaiting-confirmation | conflict | contradiction | withdrawn-by-rejection
     consequence: str
     subject_id: str
     predicate: str
     summary: str
     claims: tuple[Claim, ...] = ()
+    #: The artefact this item is about, when the item deliberately carries no
+    #: claims. A withdrawal names its artefact and nothing else: the point of it
+    #: is that the content must not be reproduced anywhere.
+    cite: str | None = None
 
     @property
     def sort_key(self) -> tuple[Any, ...]:
@@ -203,6 +214,7 @@ class ReviewItem:
             self.predicate,
             self.kind,
             tuple(c.event_id for c in self.claims),
+            self.cite or "",
         )
 
 
@@ -336,9 +348,26 @@ def _admit(
     A decision on *this* claim is read first, so confirming a re-proposal is how
     the user says otherwise about an earlier rejection of the same reading.
     """
+    rejection = suppressed.get(suppression_key(claim))
     if decision is not None:
         if decision.type == "claim.rejected":
             return Admission(claim, REJECTED, REVIEW_CONFIRMED, "rejected by you", decision.id)
+        # Two contradictory user decisions on the same reading: the later one
+        # governs. A rejection is an explicit user act and it is the more recent
+        # one, and everywhere else here the latest decision wins among acts of
+        # equal authority. The direction of the mistake is unknowable, so this
+        # fails safe — withdrawing and re-confirming is one tap, and un-printing
+        # a clinician's copy is not. The ambiguity is raised for review.
+        if rejection is not None and rejection.sort_key > decision.sort_key:
+            return Admission(
+                claim,
+                REJECTED,
+                REVIEW_CONFIRMED,
+                "you rejected this reading after deciding about it earlier; the later "
+                "decision governs, so it has been withdrawn",
+                rejection.id,
+                withdrawn=True,
+            )
         if decision.type == "claim.corrected":
             return Admission(
                 claim, SUPERSEDED, REVIEW_CONFIRMED, "replaced by your correction", decision.id
@@ -349,7 +378,6 @@ def _admit(
     # retracted, and a rejected low-consequence reading would otherwise apply
     # itself the moment a better model proposed it again. Independent of order:
     # the suppression is built from the whole log before anything is admitted.
-    rejection = suppressed.get(suppression_key(claim))
     if rejection is not None:
         return Admission(
             claim,
@@ -662,6 +690,22 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             # was, but their correction is unauditable without it: a mistyped
             # 5mg for 50mg is undetectable once the original is gone.
             replaced_by_slot.setdefault(slot_key(parsed), []).append(parsed)
+        elif admission.withdrawn:
+            review.append(
+                ReviewItem(
+                    kind=WITHDRAWN,
+                    consequence=parsed.consequence,
+                    subject_id=slot_key(parsed)[0],
+                    predicate=parsed.predicate,
+                    summary=(
+                        f"{slot_key(parsed)[0]} {parsed.predicate}: you decided about a "
+                        f"reading of artefact {parsed.cite} and later rejected it. The "
+                        f"later decision governs, so it has been withdrawn — confirm it "
+                        f"again if that is not what you meant"
+                    ),
+                    cite=parsed.cite,
+                )
+            )
         elif admission.state == PENDING:
             pending_by_slot.setdefault(slot_key(parsed), []).append(parsed)
             review.append(
