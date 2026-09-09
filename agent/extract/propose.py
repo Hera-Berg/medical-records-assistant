@@ -204,6 +204,10 @@ def claim_event(
     notes = list(claim.notes)
     payload: dict[str, Any] = {
         "subject": claim.subject,
+        # The source's own wording, beside the normalised id. Salt variants are
+        # filed under the base drug by the projection, so this is the only place
+        # the label's actual words survive in a form anything renders.
+        "subject_name": claim.subject_literal,
         "predicate": claim.predicate,
         "value": claim.value_literal,
         "evidence_tier": claim.evidence_tier,

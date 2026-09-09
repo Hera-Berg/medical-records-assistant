@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from . import anomalies as anomalies_mod
 from . import dates, reconcile, subjects, tiers
@@ -100,6 +100,24 @@ class StopReport:
 
 
 @dataclass(frozen=True)
+class SaltName:
+    """One salt variant of this drug, as a source wrote it.
+
+    Both halves are needed. ``literal`` is what the label said, which is what
+    the page prints; ``salt`` is the table's own word for it, which is what
+    distinguishes two readings of the same drug whose numbers differ because the
+    salts do.
+    """
+
+    literal: str
+    salt: str
+    subject_id: str
+    #: The claim the wording came off, so the sentence disclosing it is cited
+    #: like every other sentence in the wiki.
+    claim: Claim
+
+
+@dataclass(frozen=True)
 class Entity:
     """One wiki page's worth of state."""
 
@@ -119,6 +137,11 @@ class Entity:
     #: A stop the user endorsed that could not transition the status. Never
     #: ``None`` merely because the rule declined it — see the module docstring.
     stop_report: StopReport | None = None
+    #: Salt variants filed under this entity: the label's own wording, and the
+    #: salt it named. Present so the page can say "the label read X, filed under
+    #: Y" — an aliased variant gets no stub page of its own, so this and the
+    #: artefact citation are the whole of the disclosure.
+    salt_names: tuple[SaltName, ...] = ()
     #: Anomalies that resolve to this subject. Subject-less ones stay in the
     #: rebuild report; these appear here as well, because this page is where a
     #: reader asking "is this claim gated correctly" would look.
@@ -279,6 +302,36 @@ def _pick_dispense(claims: tuple[Claim, ...]) -> tuple[Dispense | None, Claim | 
     return None, None
 
 
+def _salt_names(subject: Subject, claims: Iterable[Claim]) -> tuple[SaltName, ...]:
+    """Salt variants filed under this entity, as their sources wrote them.
+
+    Read off the claims rather than passed in, because the claim's own subject
+    id *is* where the label's wording landed — a second copy could disagree with
+    it. Deduplicated on the wording, keeping the earliest claim that used it, so
+    five scripts saying "Perindopril Arginine" disclose once and cite the first.
+
+    A claim whose subject already is the entity contributes nothing: an ordinary
+    "Perindopril" reading has no salt to disclose and no discrepancy to explain.
+    """
+    found: dict[tuple[str, str], SaltName] = {}
+    for claim in sorted(claims, key=lambda c: c.sort_key):
+        if claim.subject.id == subject.id:
+            continue
+        salt = claim.salt
+        if salt is None:
+            continue
+        found.setdefault(
+            (salt, claim.subject_literal),
+            SaltName(
+                literal=claim.subject_literal,
+                salt=salt,
+                subject_id=claim.subject.id,
+                claim=claim,
+            ),
+        )
+    return tuple(found[key] for key in sorted(found))
+
+
 def build(
     subject: Subject,
     slots: Mapping[str, Slot],
@@ -296,6 +349,7 @@ def build(
         for claim in slots[name].all_claims:
             cited[claim.event_id] = claim
     claims = tuple(supporting[key] for key in sorted(supporting))
+    salt_names = _salt_names(subject, (cited[key] for key in sorted(cited)))
 
     name_slot = slots.get("name")
     name = (
@@ -401,6 +455,7 @@ def build(
         sources=sources,
         review=review,
         stop_report=stop_report,
+        salt_names=salt_names,
         anomalies=notes,
         merged_from=merged_from,
     )
@@ -447,6 +502,13 @@ def build_all(reconciliation: Reconciliation, as_of: datetime) -> dict[str, Enti
 
     # A merged-away name keeps a stub, so following an old citation or an old
     # filename still lands somewhere that explains what happened.
+    #
+    # `reconciliation.aliases` only — never `normalised`. A confirmed merge is a
+    # user decision that has to stay visible and reversible, so the name they
+    # merged away earns a page. A salt variant is normalisation: a rebuild from
+    # scratch would never have created `med:perindopril-arginine`, the label's
+    # own wording is disclosed on the base drug's page with its citation, and
+    # keeping stubs would accumulate one page per salt ever photographed.
     for source, into in sorted(reconciliation.aliases.items()):
         if source in entities or into not in entities:
             continue

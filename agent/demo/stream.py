@@ -129,10 +129,15 @@ def build(
     # 30 tablets, one daily, no repeats, dated three weeks ago: still inside its
     # expected exhaustion, so `active` with a date in the near future. This is
     # the shape most of the record looks like when nothing is wrong.
+    # The label really does say PERINDOPRIL ARGININE, so the claim says so too.
+    # It files under `med:perindopril` — one entry per drug, with the wording
+    # disclosed on the page. The `started` claim below comes off the cardiology
+    # letter, which writes the plain name, so the entity carries both.
     dose = propose(
-        "perindopril-script", "med:perindopril", "dose", "5mg daily", 20,
+        "perindopril-script", "med:perindopril-arginine", "dose", "5mg daily", 20,
         occurred=_fuzzy(clock.date(20)), document_date=20,
         dispense={"quantity": "30 tablets", "frequency": "one daily", "repeats": "no repeats"},
+        subject_name="Perindopril Arginine",
     )
     confirm(dose, 20)
     started = propose(
@@ -146,9 +151,10 @@ def build(
     # Absence of evidence is not evidence of absence. It stays on the current
     # list, marked stale, with how long it has been since anything confirmed it.
     metformin = propose(
-        "metformin-script", "med:metformin", "dose", "500mg twice daily", 240,
+        "metformin-script", "med:metformin-hydrochloride", "dose", "500mg twice daily", 240,
         occurred=_fuzzy(clock.date(240)), document_date=240,
         dispense={"quantity": "60 tablets", "frequency": "twice daily", "repeats": "no repeats"},
+        subject_name="Metformin Hydrochloride",
     )
     confirm(metformin, 240)
 
@@ -206,9 +212,10 @@ def build(
     # original stays visible under "Earlier readings" with what replaced it,
     # which is the only way a mistyped correction could ever be caught.
     misread = propose(
-        "levothyroxine-script", "med:levothyroxine", "dose", "5Omcg daily", 55,
+        "levothyroxine-script", "med:levothyroxine-sodium", "dose", "5Omcg daily", 55,
         occurred=_fuzzy(clock.date(56)), document_date=56,
         dispense={"quantity": "90 tablets", "frequency": "one daily", "repeats": "no repeats"},
+        subject_name="Levothyroxine Sodium",
     )
     events.append(
         authoring.correct(

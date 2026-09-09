@@ -27,7 +27,7 @@ from typing import Any
 from ..events.envelope import Event, parse_ts_or_none
 from . import dispense as dispense_mod
 from .anomalies import Anomaly
-from . import subjects, tiers, values
+from . import drugs, subjects, tiers, values
 from .dates import FuzzyDate, parse_occurred_at
 from .subjects import Subject
 from .values import Value
@@ -51,6 +51,15 @@ class Claim:
     device: str
     kind: str  # PROPOSED | CORRECTED
     subject: Subject
+    #: What the source itself called this subject — "Perindopril Arginine" off a
+    #: label, where the id is `med:perindopril`. Everywhere else this codebase
+    #: renders the literal and compares the normalised; subjects were the one
+    #: place that rule was not applied, and normalising the slug without this
+    #: would destroy the only rendered copy of what the label said.
+    #:
+    #: Falls back to a name derived from the slug for events written before the
+    #: field existed, so an older log renders exactly as it did.
+    subject_literal: str
     predicate: str
     value: Value
     evidence_tier: str
@@ -75,6 +84,16 @@ class Claim:
     @property
     def is_correction(self) -> bool:
         return self.kind == CORRECTED
+
+    @property
+    def salt(self) -> str | None:
+        """The salt this claim's own subject named, where it named one.
+
+        Derived from the subject rather than stored, because the subject id is
+        where the label's wording landed and a second copy could disagree with
+        it. See :mod:`.drugs`.
+        """
+        return drugs.salt_of(self.subject)
 
     @property
     def slot(self) -> tuple[str, str]:
@@ -128,6 +147,25 @@ def _confidence(payload: dict[str, Any]) -> tuple[float | None, str | None]:
     if not 0.0 <= float(raw) <= 1.0:
         return None, f"confidence must be between 0 and 1, got {raw!r}"
     return float(raw), None
+
+
+def _subject_literal(
+    payload: dict[str, Any], subject: Subject, target: "Claim | None"
+) -> str:
+    """What the source called this subject, or the best available stand-in.
+
+    Three sources in order. The payload's own ``subject_name``, which is what an
+    extraction now records. The target's, for a correction that restates neither
+    — a correction is a better reading of the same thing, not a new name for it.
+    Otherwise a name derived from the slug, which is exactly what the page
+    rendered before the field existed, so an older log is unchanged by it.
+    """
+    written = payload.get("subject_name")
+    if isinstance(written, str) and written.strip():
+        return written.strip()
+    if target is not None and payload.get("subject") is None:
+        return target.subject_literal
+    return subjects.display_name(subject)
 
 
 def _artifact_of(event: Event, payload: dict[str, Any]) -> str | None:
@@ -234,6 +272,7 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
         device=event.device,
         kind=kind,
         subject=subject,
+        subject_literal=_subject_literal(payload, subject, target),
         predicate=predicate,
         value=value,
         evidence_tier=evidence_tier,

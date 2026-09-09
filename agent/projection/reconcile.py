@@ -37,7 +37,7 @@ from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
 from . import claims as claims_mod
-from . import dates, temporal, tiers
+from . import dates, drugs, temporal, tiers
 from .anomalies import Anomaly
 from .claims import Claim, ClaimProblem
 
@@ -61,6 +61,19 @@ WITHDRAWN = "withdrawn-by-rejection"
 #: the record holds the phrase, and only the person who said it can turn it into
 #: a date. See `.temporal` and CLAUDE.md, "Unresolvable temporal references".
 DATEABLE = "dateable"
+
+#: Two entities that may be the same thing — "Panadol" and "paracetamol".
+#:
+#: **Nothing emits this yet.** The salt table handles the deterministic case
+#: without a tap (see `.drugs`), and a brand-name proposer needs an inbox to
+#: render proposals in, which is phase 7. The kind exists now so that phase 7
+#: has somewhere to put one and so the queue, the page and the sort order
+#: already account for it — a review kind added at the same time as its producer
+#: is a review kind nothing downstream was ever checked against.
+MERGE_PROPOSED = "merge-proposed"
+
+#: A claim the gate has not applied, waiting on a tap.
+AWAITING = "awaiting-confirmation"
 
 # How a slot resolved.
 SETTLED = "settled"
@@ -201,7 +214,7 @@ class Slot:
 class ReviewItem:
     """Something waiting on a person. Phase 7 renders these; phase 3 counts them."""
 
-    kind: str  # awaiting-confirmation | conflict | contradiction | withdrawn-by-rejection
+    kind: str  # AWAITING | conflict | contradiction | WITHDRAWN | DATEABLE | MERGE_PROPOSED
     consequence: str
     subject_id: str
     predicate: str
@@ -274,6 +287,11 @@ class Reconciliation:
     review: tuple[ReviewItem, ...] = ()
     problems: tuple[ClaimProblem, ...] = ()
     anomalies: tuple[str, ...] = ()
+    #: Confirmed entity merges only. Salt variants are *not* here: they resolve
+    #: in `slot_key` and never become an alias anything can act on, which is
+    #: what keeps them from earning the stub page and the `merged_from` line a
+    #: user's merge decision earns. See CLAUDE.md, "An aliased entity gets no
+    #: stub page"; disclosure happens on the entity — see `.entities`.
     aliases: Mapping[str, str] = field(default_factory=dict)
     #: Artefact short hash -> how far its claims have been decided.
     artifacts: Mapping[str, ArtifactReview] = field(default_factory=dict)
@@ -680,9 +698,23 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
     replaced_by_slot: dict[tuple[str, str], list[Claim]] = {}
     review_states: dict[str, str] = {}
     review: list[ReviewItem] = []
+    #: (subject, predicate, normalised value, reason) -> the claims asserting it.
+    #: Keyed on the *normalised* value so "5mg daily" and "5.0mg daily" off two
+    #: scripts are one item, and on the reason so two pendings the gate held for
+    #: different causes are never folded into one sentence that fits neither.
+    awaiting: dict[tuple[str, str, str, str], list[Claim]] = {}
 
     def slot_key(claim: Claim) -> tuple[str, str]:
-        return (aliases.get(claim.subject.id, claim.subject.id), claim.predicate)
+        """The entity and predicate a claim belongs to.
+
+        Table first, then confirmed merges. A salt variant resolves to its base
+        drug before any merge decision is consulted, because a merge the user
+        confirmed was made against the drug they saw on a page — the base — and
+        a variant id that skipped normalisation would slip straight past it.
+        """
+        subject_id = claim.subject.id
+        base = drugs.alias_for(claim.subject) or subject_id
+        return (aliases.get(base, base), claim.predicate)
 
     unreadable: set[str] = set()
     order: list[Claim] = []
@@ -760,18 +792,11 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             )
         elif admission.state == PENDING:
             pending_by_slot.setdefault(slot_key(parsed), []).append(parsed)
-            review.append(
-                ReviewItem(
-                    kind="awaiting-confirmation",
-                    consequence=parsed.consequence,
-                    subject_id=slot_key(parsed)[0],
-                    predicate=parsed.predicate,
-                    summary=(
-                        f"{slot_key(parsed)[0]} {parsed.predicate}: {admission.reason}"
-                    ),
-                    claims=(parsed,),
-                )
-            )
+            # Collected, not emitted. Two documents asserting the same value for
+            # the same slot are one fact and one review — see the fold below.
+            awaiting.setdefault(
+                (*slot_key(parsed), parsed.value.key, admission.reason), []
+            ).append(parsed)
 
     for event in events:
         if event.type != "claim.corrected":
@@ -850,6 +875,25 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         short: ArtifactReview(short, claims=c[0], decided=c[1], rejected=c[2])
         for short, c in sorted(counts.items())
     }
+
+    # One review item per fact, not per source. Two scripts stating the same
+    # dose are one thing to decide, confirmed in one tap that emits one
+    # `claim.confirmed` per claim — the wiki already cites several sources for
+    # one fact, and a queue asking twice about one fact is what makes an inbox
+    # uncompletable. Different values for the same slot stay separate: that is a
+    # conflict, not a duplicate, and the key above keeps them apart.
+    for (subject_id, predicate, _value_key, reason), pending in sorted(awaiting.items()):
+        ordered = sorted(pending, key=lambda c: c.sort_key)
+        review.append(
+            ReviewItem(
+                kind=AWAITING,
+                consequence=ordered[0].consequence,
+                subject_id=subject_id,
+                predicate=predicate,
+                summary=f"{subject_id} {predicate}: {reason}",
+                claims=tuple(ordered),
+            )
+        )
 
     slots: dict[tuple[str, str], Slot] = {}
     for key in sorted(set(admitted_by_slot) | set(pending_by_slot) | set(replaced_by_slot)):

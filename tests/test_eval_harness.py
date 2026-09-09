@@ -27,6 +27,7 @@ from .fixtures import corpus
 def _claim(subject, predicate, value):
     return ReadClaim(
         subject=subject,
+        subject_literal=subject.split(":", 1)[-1].replace("-", " ").title(),
         predicate=predicate,
         value_literal=value,
         evidence_tier="prescriber-issued",
@@ -347,3 +348,27 @@ def test_every_fixture_survives_preprocessing_within_the_image_budget(fixture, t
         assert max(page.width, page.height) <= 1280
         # 16k is the configured context cap. An image alone must not approach it.
         assert page.vision_tokens < 4000
+
+
+def test_a_salt_name_and_a_plain_name_score_as_one_reading():
+    """The corpus writes this fixture's perindopril with its salt, because the
+    label does. A model that answered with the plain name has still read the
+    page right — the projection files both under `med:perindopril` — and
+    scoring it a miss would block a model swap for being correct, on the one
+    metric MODELS.md says must never be traded away.
+    """
+    fixture = corpus.by_name("printed-script-two-medications")
+    assert any(
+        e.subject == "med:perindopril-arginine" for e in fixture.expected
+    ), "the fixture still writes the salt the label carries"
+
+    result = evaluate.score(
+        fixture,
+        [
+            _claim("med:perindopril", "dose", "5mg daily"),
+            _claim("med:atorvastatin", "dose", "20mg at night"),
+        ],
+    )
+
+    assert result.missed == ()
+    assert result.ok

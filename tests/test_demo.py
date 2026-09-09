@@ -567,3 +567,25 @@ def test_a_table_that_would_not_load_is_refused_at_the_source(tmp_path, real_con
     assert "does not load" in str(raised.value)
     assert str(real_config) in str(raised.value)
     assert not root.exists()
+
+
+def test_the_demo_demonstrates_the_salt_variant_case(seeded):
+    """The labels the demo renders carry salt names — PERINDOPRIL ARGININE,
+    METFORMIN HYDROCHLORIDE, LEVOTHYROXINE SODIUM — so the claims seeded against
+    them do too, and reading the folder by hand shows one entry per drug rather
+    than one per label."""
+    entities = seeded.rebuild.projection.entities
+
+    for base in ("med:perindopril", "med:metformin", "med:levothyroxine"):
+        assert base in entities, f"{base} is the entry the salt variants file under"
+        assert entities[base].salt_names, f"{base} does not disclose its label wording"
+    for variant in (
+        "med:perindopril-arginine",
+        "med:metformin-hydrochloride",
+        "med:levothyroxine-sodium",
+    ):
+        assert variant not in entities, "a table alias gets no page of its own"
+
+    page = (seeded.root / "wiki" / "medications" / "perindopril.md").read_text("utf-8")
+    assert "also_labelled: [Perindopril Arginine]" in page
+    assert "## Names on sources" in page

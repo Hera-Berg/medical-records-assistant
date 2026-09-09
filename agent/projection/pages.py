@@ -40,6 +40,7 @@ _FRONTMATTER_SKIP = frozenset(
         "sources",
         "stop_reported",
         "stop_reported_tier",
+        "also_labelled",
     }
 )
 
@@ -131,9 +132,18 @@ def _claim_phrase(claim, citer: Citer, extra: str | None = None) -> tuple[str, C
     The value is always the literal span the source used. The parenthesis says
     where it came from and when, so the tier is visible on every line without a
     reader having to hold the page's structure in their head.
+
+    The salt joins that list where the source named one. Perindopril arginine
+    5mg is the equivalent of perindopril erbumine 4mg, so two readings on one
+    page can differ by a whole milligram and still describe the same therapy —
+    and a reader has no way to tell unless each line says which salt it came
+    off. This is what makes filing both under one drug safe.
     """
     citation = citer.cite(claim.cite, _correction_description(claim))
-    qualifiers = [claim.evidence_tier, *_when_phrases(claim)]
+    qualifiers = [claim.evidence_tier]
+    if claim.salt:
+        qualifiers.append(f"labelled {claim.subject_literal}")
+    qualifiers.extend(_when_phrases(claim))
     if extra:
         qualifiers.append(extra)
     return f"{claim.value.literal} ({', '.join(qualifiers)})", citation
@@ -322,6 +332,34 @@ def _reported_stop_section(document: Document, entity: Entity, citer: Citer) -> 
     )
 
 
+def _salt_names_section(document: Document, entity: Entity, citer: Citer) -> None:
+    """"The label read X, filed under Y", cited to the label that said it.
+
+    An aliased variant gets no page of its own — see CLAUDE.md, "An aliased
+    entity gets no stub page" — so this section and the artefact citation are
+    the whole of the disclosure. Normalisation the reader cannot see is
+    indistinguishable from the record having lost the wording.
+
+    Naming the salt is not pedantry. Salt choice can change the number:
+    perindopril arginine 5mg is the equivalent of perindopril erbumine 4mg, so a
+    reader comparing two doses on this page has to be able to see that they came
+    off differently salted products.
+    """
+    if not entity.salt_names:
+        return
+    document.heading("Names on sources")
+    for name in entity.salt_names:
+        citation = citer.cite(name.claim.cite, _correction_description(name.claim))
+        document.bullet(
+            Sentence(
+                f"A source labelled this \u201c{name.literal}\u201d — the {name.salt} "
+                f"salt — and it is filed here under `{entity.id}`, so the drug has one "
+                f"entry rather than one per label",
+                [citation],
+            )
+        )
+
+
 def _conflicts_section(document: Document, entity: Entity, citer: Citer) -> None:
     conflicts = entity.conflicts
     if not conflicts:
@@ -368,13 +406,37 @@ def _dateable_paragraphs(document: Document, entity: Entity, citer: Citer) -> No
             )
 
 
+def _merge_paragraphs(document: Document, entity: Entity, citer: Citer) -> None:
+    """Merges proposed against this entity, waiting on a decision.
+
+    Nothing emits :data:`reconcile.MERGE_PROPOSED` yet — a brand-name proposer
+    is phase 7 work, and salt variants are handled by the table without a tap.
+    The branch is here so the page already accounts for the kind: a review item
+    the queue counts and no page renders is a user act with nowhere to be seen,
+    which is the failure rule 3 exists to stop.
+
+    Like a pending change, it states that a decision is waiting and not what the
+    decision would do. A merge is an assertion that two entries are one thing,
+    and printing it as though it had happened is exactly the confusion the tap
+    is there to resolve.
+    """
+    for item in entity.review:
+        if item.kind != reconcile.MERGE_PROPOSED:
+            continue
+        citations = [citer.cite(c.cite, _correction_description(c)) for c in item.claims]
+        if not citations and item.cite:
+            citations = [citer.cite(item.cite, "Proposed merge")]
+        document.paragraph(Sentence(item.summary, citations))
+
+
 def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
     contradictions = entity.contradictions
     pending = [
-        item for item in entity.review if item.kind == "awaiting-confirmation"
+        item for item in entity.review if item.kind == reconcile.AWAITING
     ]
     dateable = [item for item in entity.review if item.kind == reconcile.DATEABLE]
-    if not contradictions and not pending and not dateable:
+    merges = [item for item in entity.review if item.kind == reconcile.MERGE_PROPOSED]
+    if not contradictions and not pending and not dateable and not merges:
         return
     document.heading("Needs review")
 
@@ -410,6 +472,7 @@ def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
             )
         )
 
+    _merge_paragraphs(document, entity, citer)
     _dateable_paragraphs(document, entity, citer)
 
 
@@ -446,12 +509,33 @@ def _anomalies_section(document: Document, entity: Entity, citer: Citer) -> None
         document.bullet(Sentence(str(note), citations))
 
 
+def _is_restatement(claim, winner) -> bool:
+    """Whether a superseded reading says exactly what replaced it.
+
+    A repeat script stating the dose the last one stated has not corrected
+    anything — it corroborates, and the `sources:` list already records that it
+    exists. Printing it under "Earlier readings" as "5mg daily, replaced by 5mg
+    daily" tells a reader a change happened where none did, and teaches them to
+    skim the one section whose whole job is to make a real change auditable.
+
+    Salt is part of the comparison, deliberately. Two readings of one number off
+    differently salted products are *not* the same statement — perindopril
+    arginine 5mg and erbumine 5mg are different therapies — so those stay
+    printed even though their values match.
+    """
+    if winner is None or winner.is_correction:
+        return False
+    return claim.value.agrees_with(winner.value) and claim.salt == winner.salt
+
+
 def _history_section(document: Document, entity: Entity, citer: Citer) -> None:
     rows: list[tuple[str, list[Citation]]] = []
     for predicate in sorted(entity.slots):
         slot = entity.slots[predicate]
         replacement, replacement_citations = _replacement_phrase(slot, citer)
         for claim in slot.superseded:
+            if _is_restatement(claim, slot.winner):
+                continue
             phrase, citation = _claim_phrase(claim, citer)
             rows.append(
                 (
@@ -490,6 +574,13 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     document.field_("status", entity.status)
     if entity.stale:
         document.field_("stale", True)
+    if entity.salt_names:
+        # The label's own words, in the machine-readable half of the page. An
+        # aliased variant has no page of its own, so a reader searching the
+        # folder for "perindopril arginine" has to be able to find it here.
+        document.field_(
+            "also_labelled", [name.literal for name in entity.salt_names]
+        )
     if entity.stop_report is not None:
         # Beside the status, never instead of it. The medication is still on the
         # list and the frontmatter says so; this says the patient reported
@@ -564,6 +655,7 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     if entity.subject.kind == "med":
         _supply_section(document, entity, citer, as_of_date)
     _reported_stop_section(document, entity, citer)
+    _salt_names_section(document, entity, citer)
     _conflicts_section(document, entity, citer)
     _review_section(document, entity, citer)
     _history_section(document, entity, citer)

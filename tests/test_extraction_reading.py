@@ -429,6 +429,7 @@ def test_a_recording_is_not_sent_to_the_vision_model(tmp_path):
 def _read_claim(value="5mg daily", subject="med:perindopril"):
     return validate.ReadClaim(
         subject=subject,
+        subject_literal=subject.split(":", 1)[-1].replace("-", " ").title(),
         predicate="dose",
         value_literal=value,
         evidence_tier="prescriber-issued",

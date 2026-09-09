@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Iterable, Sequence
 
-from ..projection import values
+from ..projection import drugs, subjects, values
 from .validate import ReadClaim
 
 
@@ -45,10 +45,20 @@ def _key(subject: str, predicate: str, value: str) -> tuple[str, str, str]:
     correct readings and push the next prompt change in exactly the wrong
     direction, which for a corpus whose entire job is gating a model swap would
     be worse than having no corpus.
+
+    The subject is folded through the salt table for the same reason. A label
+    reading ``PERINDOPRIL ARGININE`` mints ``med:perindopril-arginine``, which
+    the projection files under ``med:perindopril``; a model that read the page
+    exactly right would otherwise score a miss against a fixture written with
+    the plain name, and on a corpus where medication recall must be 100% that
+    miss would block a model swap for being correct.
     """
+    normalised = subject.strip().lower()
+    parsed_subject = subjects.parse(normalised)
+    normalised = drugs.alias_for(parsed_subject) or normalised
     parsed = values.parse(value)
     key = parsed.key if parsed is not None else values.normalise_text(value)
-    return (subject.strip().lower(), predicate.strip().lower(), key)
+    return (normalised, predicate.strip().lower(), key)
 
 
 @dataclass(frozen=True)

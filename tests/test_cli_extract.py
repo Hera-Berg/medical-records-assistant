@@ -819,3 +819,22 @@ def test_json_output_is_only_json(monkeypatch, configured):
     assert output.lstrip().startswith("{")
     assert len(report["queued"]) == 1
     assert report["stats"]["claims"] == 1
+
+
+def test_the_proposal_records_the_wording_the_source_used(monkeypatch, configured):
+    """Salt variants are filed under the base drug by the projection, so the
+    claim payload is the only place the label's own words survive in a form
+    anything renders."""
+    ingest_mod.ingest_bytes(
+        configured, _image(), ingest_mod.CaptureContext(source="camera")
+    )
+    body = _answer(claims=[_claim(subject_name="Perindopril Arginine")])
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=body))
+
+    _run(["extract"], configured)
+    proposed = next(
+        e for e in configured.read().events if e.type == "claim.proposed"
+    )
+
+    assert proposed.payload["subject"] == "med:perindopril-arginine"
+    assert proposed.payload["subject_name"] == "Perindopril Arginine"

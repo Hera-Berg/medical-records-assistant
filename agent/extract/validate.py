@@ -57,6 +57,11 @@ class ReadClaim:
     """One claim the model made, validated and normalised. Not yet an event."""
 
     subject: str
+    #: What the source called it — "Perindopril Arginine" — beside the
+    #: normalised id. The projection files salt variants under the base drug,
+    #: and without the label's own wording travelling with the claim there
+    #: would be no rendered copy of what the page actually said.
+    subject_literal: str
     predicate: str
     value_literal: str
     evidence_tier: str
@@ -251,6 +256,7 @@ def _read_claim(
     return (
         ReadClaim(
             subject=subject.id,
+            subject_literal=str(name).strip(),
             predicate=raw["predicate"],
             value_literal=raw["value_literal"].strip(),
             evidence_tier=tier,
