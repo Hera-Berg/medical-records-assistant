@@ -146,6 +146,19 @@ never reaches frontmatter.
 unit, and a span with no cardinal yields nothing rather than a guess. A wrong quantity ages a
 medication to `stale` on fiction.
 
+**Superseded readings are rendered, never discarded.** A value replaced by a correction, a later
+script, or a higher-tier source appears in the entity's `## Earlier readings` section with its
+citation and what replaced it. "What did I correct, and from what" must be answerable from the
+folder alone — a correction whose original has vanished is unverifiable, and a mistyped correction
+becomes undetectable.
+
+**Anomalies live in the rebuild report, not the wiki**, when they have no subject — a malformed
+payload or a shard naming violation is integrity information about the log, not record content.
+An anomaly that *does* resolve to a subject (a payload disagreeing with the computed consequence
+tier for `med:perindopril`) attaches to that entity as well. Anomalies are regenerable from the log,
+so they need no persistence, but they must be surfaced: `/api/health` in phase 5 and the review
+inbox in phase 7 both report the count, so they cannot scroll past unseen.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
