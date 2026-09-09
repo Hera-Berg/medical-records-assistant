@@ -137,6 +137,21 @@ class Document:
     _citations: dict[str, Citation] = field(default_factory=dict)
 
     def field_(self, key: str, value: Any) -> None:
+        """Add one frontmatter key.
+
+        Refuses a duplicate. Frontmatter is the machine-readable canonical state,
+        and a repeated key makes it ambiguous — a YAML reader takes one of the two
+        and every reader may take a different one. This is caught here rather than
+        left to a caller's discipline because the page builds its fields from two
+        places, a loop over the entity's predicates and a list of dedicated
+        fields, and a predicate named like a dedicated field is a collision
+        nothing else would notice.
+        """
+        if any(existing == key for existing, _ in self.front):
+            raise ValueError(
+                f"frontmatter key {key!r} written twice; the canonical state cannot "
+                f"say two things"
+            )
         self.front.append((key, value))
 
     def heading(self, text: str, level: int = 2) -> None:

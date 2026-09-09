@@ -1,0 +1,2 @@
+[console_scripts]
+health-agent = agent.cli:main

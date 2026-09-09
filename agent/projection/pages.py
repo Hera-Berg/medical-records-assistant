@@ -19,8 +19,28 @@ from .entities import Entity
 from .reconcile import Slot
 from .render import Document, Sentence
 
-#: Predicates whose value is already carried by a dedicated frontmatter field.
-_FRONTMATTER_SKIP = frozenset({"name", "status"})
+#: Frontmatter keys the page writes itself. A predicate sharing one of these
+#: names is rendered in the body only: the dedicated field is the normalised,
+#: machine-readable one, and writing both would put the same key in twice.
+_FRONTMATTER_SKIP = frozenset(
+    {
+        "id",
+        "name",
+        "status",
+        "stale",
+        "started",
+        "last_confirmed",
+        "expected_exhaustion",
+        "evidence_tier",
+        "reviewed",
+        "conflicts",
+        "merged_from",
+        "merged_into",
+        "sources",
+        "stop_reported",
+        "stop_reported_tier",
+    }
+)
 
 
 def _label(predicate: str) -> str:
@@ -62,6 +82,23 @@ def _slot_bullet(document: Document, slot: Slot, citer: Citer) -> None:
         Sentence(
             f"**{_label(slot.predicate)}** — not resolved: "
             f"{len(slot.readings)} sources of equal standing disagree",
+            citations,
+        )
+    )
+
+
+def _bare_entity_note(document: Document, entity: Entity, citer: Citer) -> None:
+    """The whole body of a page whose only recorded fact is that it exists."""
+    claims: list = []
+    for predicate in sorted(entity.slots):
+        claims.extend(entity.slots[predicate].supporting)
+    if not claims:
+        return
+    citations = [citer.cite(c.cite, _correction_description(c)) for c in claims]
+    document.paragraph(
+        Sentence(
+            "This entry is on the record by name, and nothing further about it has "
+            "been recorded",
             citations,
         )
     )
@@ -134,7 +171,15 @@ def _reported_stop_section(document: Document, entity: Entity, citer: Citer) -> 
         return
     document.heading("Reported stopped")
     citation = citer.cite(report.claim.cite, _correction_description(report.claim))
-    when = f" on {report.when.render()}" if report.when is not None else ""
+    # "on" only for an exact day. `render()` already says "around August 2026
+    # (±10 days)" for a band, and "on around August 2026" reads as a typo.
+    when = ""
+    if report.when is not None:
+        when = (
+            f" on {report.when.render()}"
+            if report.when.is_exact
+            else f" {report.when.render()}"
+        )
     document.paragraph(
         Sentence(
             f"You confirmed a {report.tier} source saying this was stopped{when}",
@@ -302,7 +347,7 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         if slot.winner is not None:
             document.field_(predicate, slot.winner.value.literal)
 
-    if entity.subject.kind == "med":
+    if entity.subject.kind == "med" or "started" in entity.slots:
         document.field_("started", entity.started.iso if entity.started else None)
     document.field_(
         "last_confirmed", entity.last_confirmed.iso if entity.last_confirmed else None
@@ -335,16 +380,28 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         document.field_("merged_from", list(entity.merged_from))
     document.field_("sources", list(entity.sources))
 
-    document.heading("Current")
-    for predicate in sorted(entity.slots):
-        if predicate == "name":
-            continue
-        if predicate == "status" and entity.stop_report is not None:
-            # A bare "Status — stopped" bullet under a page whose status field
-            # reads active is a flat contradiction. The reported-stop section
-            # below says the same thing with the context that makes it true.
-            continue
-        _slot_bullet(document, entity.slots[predicate], citer)
+    shown = [
+        predicate
+        for predicate in sorted(entity.slots)
+        # `name` is the page's title and its frontmatter; repeating it as a
+        # bullet says nothing. A "Status — stopped" bullet under a page whose
+        # status field reads active is a flat contradiction, and the
+        # reported-stop section below says the same thing with the context that
+        # makes it true.
+        if predicate != "name"
+        and not (predicate == "status" and entity.stop_report is not None)
+    ]
+    if shown:
+        document.heading("Current")
+        for predicate in shown:
+            _slot_bullet(document, entity.slots[predicate], citer)
+
+    if not shown:
+        # An entity whose only claim is its name would otherwise render as
+        # frontmatter and nothing else — no prose, and no footnote, so the file
+        # does not say where it came from. That is a page that has lost its
+        # citation, which is the one thing every page must keep.
+        _bare_entity_note(document, entity, citer)
 
     if entity.subject.kind == "med":
         _supply_section(document, entity, citer, as_of_date)

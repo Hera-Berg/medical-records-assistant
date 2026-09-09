@@ -12,6 +12,10 @@ config file this program invented is one nobody has read.
 ``ingest`` copies a file into ``raw/`` and appends one event. It never moves or
 alters the file it was given.
 
+``demo`` seeds a scratch vault with an invented record and rebuilds it, so the
+renderer can be read by hand before phase 4 produces anything. It refuses to
+touch a folder that is not empty.
+
 ``rebuild`` regenerates ``wiki/`` from the log. It appends nothing and touches
 neither ``raw/`` nor ``events/``, and it removes only files a previous rebuild
 wrote — see ``agent.projection.writer``. ``--as-of`` pins the moment staleness
@@ -26,6 +30,7 @@ import json
 import sys
 from typing import Any, TextIO
 
+from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
 from . import vault as vault_mod
@@ -215,6 +220,44 @@ def cmd_rebuild(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_PROBLEMS if report.problems else EXIT_OK
 
 
+def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
+    """Seed a scratch vault with invented data and rebuild it."""
+    report = demo_mod.seed(args.path, as_of=projection_mod.parse_as_of(args.as_of))
+
+    if args.json:
+        json.dump(report.to_dict(), out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_OK
+
+    stats = report.rebuild.projection.stats()
+    print(f"seeded    {report.root}", file=out)
+    print(
+        f"          {report.artifacts} artefacts in raw/, {report.events} events, "
+        f"device {demo_mod.DEMO_DEVICE}",
+        file=out,
+    )
+    print(
+        f"rebuilt   {stats['entities']} entities, {stats['files']} files, "
+        f"{stats['timeline_rows']} timeline rows",
+        file=out,
+    )
+
+    queue = report.rebuild.projection.review_by_tier
+    if queue:
+        summary = ", ".join(
+            f"{len(queue[tier])} {tier}" for tier in ("high", "medium", "low") if tier in queue
+        )
+        print(f"review    {summary} awaiting you", file=out)
+    for anomaly in report.rebuild.projection.anomalies:
+        print(f"note      {anomaly}", file=out)
+    for problem in report.rebuild.problems:
+        print(f"PROBLEM   {problem}", file=out)
+
+    print(f"\nThis is invented data. See {report.root / demo_mod.MARKER_FILENAME}.", file=out)
+    print(f"Start reading at {report.root / 'wiki'}.", file=out)
+    return EXIT_PROBLEMS if report.rebuild.problems else EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="health-agent",
@@ -288,13 +331,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebuild.add_argument("--json", action="store_true", help="machine-readable output")
     rebuild.set_defaults(func=cmd_rebuild)
+
+    demo = subparsers.add_parser(
+        "demo",
+        help=(
+            "seed an empty folder with an invented record and rebuild it, for "
+            "reading the renderer's output by hand"
+        ),
+    )
+    demo.add_argument("path", help="a folder that does not exist, or is empty")
+    demo.add_argument(
+        "--as-of",
+        default=None,
+        dest="as_of",
+        help=(
+            "the moment the scenario is anchored to; every document date is an "
+            "offset back from it. Defaults to now, which is what keeps the demo "
+            "looking the same whenever it is run."
+        ),
+    )
+    demo.add_argument("--json", action="store_true", help="machine-readable output")
+    demo.set_defaults(func=cmd_demo)
     return parser
 
 
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args, out or sys.stdout)
+    stream = out or sys.stdout
+    try:
+        return args.func(args, stream)
+    except HealthAgentError as exc:
+        # Every refusal in this program is written to be read — an unresolvable
+        # vault, a device identity from another machine, a demo pointed at a real
+        # folder. A traceback in front of that message hides the sentence that
+        # tells the user what to do.
+        print(f"error: {exc}", file=stream)
+        return EXIT_PROBLEMS
 
 
 if __name__ == "__main__":

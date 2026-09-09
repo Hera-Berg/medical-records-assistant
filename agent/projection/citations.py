@@ -75,6 +75,33 @@ def _describe_kind(mime: str, source: str | None) -> str:
     return "File"
 
 
+def artifact_noun(mime: str, source: str | None = None) -> str:
+    """"A photograph", "An audio recording" — the same words the footnote uses.
+
+    Shared with the timeline so the two never drift: a page that footnotes a file
+    as an audio recording while the timeline calls it a file is describing one
+    artefact in two vocabularies, and a reader has to work out they are the same
+    thing.
+    """
+    kind = _describe_kind(mime, source)
+    article = "An" if kind[0] in "AEIOU" else "A"
+    return f"{article} {kind[0].lower()}{kind[1:]}" if kind != "PDF document" else "A PDF document"
+
+
+def _capture_verb(mime: str, source: str | None) -> str:
+    """How this artefact came to exist at ``captured_ts``.
+
+    A pathology PDF downloaded from a portal was not photographed, and neither
+    was a voice note. The verb is small and it is the kind of wrongness that
+    makes a record read as machine-generated.
+    """
+    if mime.startswith(("audio/", "video/")):
+        return "recorded"
+    if mime.startswith("image/") and source in ("camera", "recorder"):
+        return "photographed"
+    return "captured"
+
+
 def _date_phrase(stamp: str | None) -> str | None:
     parsed = parse_ts_or_none(stamp) if stamp else None
     return dates.render_date(parsed.date()) if parsed else None
@@ -123,7 +150,7 @@ def _string_or_none(value: object) -> str | None:
 def for_artifact(artifact: Artifact) -> Citation:
     """The footnote for a stored file."""
     kind = _describe_kind(artifact.mime, artifact.source)
-    verb = "recorded" if artifact.mime.startswith("audio/") else "photographed"
+    verb = _capture_verb(artifact.mime, artifact.source)
 
     parts: list[str] = [kind]
     captured = _date_phrase(artifact.captured_ts)

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
-from . import dates
+from . import citations, dates
 from .claims import Claim
 from .dates import FuzzyDate
 from .reconcile import Reconciliation
@@ -109,6 +109,14 @@ def _artifact_date(event: Event) -> tuple[FuzzyDate, str] | None:
     return (parsed, RECORDED) if parsed else None
 
 
+def _capture_source(event: Event) -> str | None:
+    capture = event.payload.get("capture")
+    if isinstance(capture, dict):
+        source = capture.get("source")
+        return source if isinstance(source, str) else None
+    return None
+
+
 def _note_text(event: Event) -> str:
     payload = event.payload
     for name in ("text", "transcript", "note"):
@@ -148,7 +156,10 @@ def build(
                     date=placed[0],
                     date_kind=placed[1],
                     marker=MARKER_ARTEFACT,
-                    text=f"{_artifact_noun(mime)} added to the record",
+                    text=(
+                        f"{citations.artifact_noun(mime, _capture_source(event))} was "
+                        f"added to the record"
+                    ),
                     cite=short,
                     event_id=event.id,
                     sort_key=event.sort_key,
@@ -192,14 +203,6 @@ def build(
     return tuple(rows)
 
 
-def _artifact_noun(mime: str) -> str:
-    if mime.startswith("image/"):
-        return "A photograph was"
-    if mime == "application/pdf":
-        return "A PDF document was"
-    if mime.startswith("audio/"):
-        return "An audio recording was"
-    return "A file was"
 
 
 def by_month(rows: Iterable[Row]) -> dict[str, list[Row]]:

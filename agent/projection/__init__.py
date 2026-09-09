@@ -91,6 +91,15 @@ class Projection:
         }
 
 
+def parse_as_of(as_of: datetime | str | None) -> datetime | None:
+    """A CLI ``--as-of`` string as a moment, or ``None`` to mean now.
+
+    The projection defaults ``as_of`` to now only at this boundary, which is what
+    keeps the reduction itself free of any clock read.
+    """
+    return None if as_of is None else _as_datetime(as_of)
+
+
 def _as_datetime(as_of: datetime | str | None) -> datetime:
     if as_of is None:
         return datetime.now(timezone.utc)

@@ -212,3 +212,85 @@ def test_frontmatter_writes_an_unknown_date_as_an_explicit_null():
 def test_frontmatter_refuses_a_float():
     with pytest.raises(ProjectionError, match="float"):
         frontmatter([("dose", 2.5)])
+
+
+def test_frontmatter_refuses_a_duplicate_key():
+    """The canonical state cannot say two things.
+
+    A medication with a `started` claim used to emit `started:` twice — once from
+    the loop over predicates and once from the dedicated field — and a YAML
+    reader takes whichever it likes. Caught in the document rather than left to
+    each caller to remember.
+    """
+    document = Document()
+    document.field_("started", "2024-11-02")
+    with pytest.raises(ValueError) as raised:
+        document.field_("started", "November 2024")
+    assert "twice" in str(raised.value)
+
+
+def test_a_predicate_named_like_a_dedicated_field_renders_only_in_the_body():
+    events = [ingested(DEVICE, "a3f91c")]
+    dose = claim(DEVICE, "med:perindopril", "dose", "5mg daily", ts=on_day(2))
+    started = claim(
+        DEVICE, "med:perindopril", "started", "November 2024", ts=on_day(2),
+        occurred={"value": "2024-11-02", "precision": "month", "uncertainty_days": 15},
+    )
+    events += [dose, confirm(DEVICE, dose.id, ts=on_day(3))]
+    events += [started, confirm(DEVICE, started.id, ts=on_day(3, hour=10))]
+
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    page = result.files["wiki/medications/perindopril.md"].decode("utf-8")
+    front = page.split("---")[1]
+
+    assert front.count("started:") == 1
+    assert "started: 2024-11-02" in front, "the normalised value is the canonical one"
+    assert "**Started** — November 2024" in page, "and the literal is still rendered"
+
+
+def test_an_entity_with_only_a_name_still_says_where_it_came_from():
+    """No empty heading, and no page without a citation.
+
+    A problem whose only claim is its name rendered a `## Current` heading with
+    nothing under it, and once that was suppressed the page had no body and so no
+    footnote at all — a file that cannot say what it is derived from.
+    """
+    events = [ingested(DEVICE, "a3f91c")]
+    named = claim(DEVICE, "problem:hypertension", "name", "Hypertension", ts=on_day(2))
+    events += [named, confirm(DEVICE, named.id, ts=on_day(3))]
+
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    page = result.files["wiki/problems/hypertension.md"].decode("utf-8")
+
+    assert "## Current" not in page
+    assert "nothing further about it has been recorded" in page
+    assert "[^a3f91c]" in page
+
+
+@pytest.mark.parametrize(
+    "mime, source, noun, verb",
+    [
+        ("image/jpeg", "camera", "A photograph", "photographed"),
+        ("application/pdf", "import", "A PDF document", "captured"),
+        ("audio/webm", "recorder", "An audio recording", "recorded"),
+    ],
+)
+def test_an_artefact_is_described_the_same_way_everywhere(mime, source, noun, verb):
+    """The footnote and the timeline share one vocabulary.
+
+    A pathology PDF was described as "photographed", and a voice note appeared as
+    "An audio recording" in its footnote and "A file" in the timeline — one
+    artefact in two vocabularies, which a reader has to reconcile themselves.
+    """
+    events = [
+        ingested(DEVICE, "a3f91c", mime=mime, source=source, captured_ts=on_day(1)),
+    ]
+    proposed = claim(DEVICE, "person:dr-nguyen", "role", "Cardiologist", ts=on_day(2))
+    events += [proposed, confirm(DEVICE, proposed.id, ts=on_day(3))]
+
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    timeline_page = result.files["wiki/timeline/2026-09.md"].decode("utf-8")
+
+    assert f"{noun} was added to the record" in timeline_page
+    assert f"{verb} " in timeline_page, "the footnote's capture verb suits the medium"
+    assert "photographed" not in timeline_page or verb == "photographed"
