@@ -105,6 +105,24 @@ def _scrub_args(args: Any) -> Any:
     return scrub(args)
 
 
+def scrub_structure(value: Any) -> Any:
+    """Scrub every string inside a nested structure, keeping its shape.
+
+    For the places where what gets written down is an object rather than a line:
+    a validation error carrying the request body back to the caller, a report
+    serialised to JSON. Recursion is depth-first over lists, tuples and dicts,
+    and dictionary keys are scrubbed too — a secret can end up as a key when a
+    payload is echoed back verbatim.
+    """
+    if isinstance(value, dict):
+        return {scrub_structure(k): scrub_structure(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub_structure(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(scrub_structure(item) for item in value)
+    return scrub(value)
+
+
 def install(logger_name: str = "agent") -> logging.Logger:
     """Attach the filter to *logger_name*, once. Idempotent."""
     logger = logging.getLogger(logger_name)

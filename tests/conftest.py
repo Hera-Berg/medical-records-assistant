@@ -86,6 +86,42 @@ def proposal(device: str, ts: str | None = None, **payload) -> envelope.Event:
     )
 
 
+# --- phase 5: the HTTP layer -------------------------------------------------
+
+
+@pytest.fixture
+def app(vault):
+    """The application over a scaffolded vault, with the worker switched off.
+
+    ``worker=False`` is passed explicitly rather than relied on. The default is
+    already off under pytest — see :func:`agent.server.state.under_pytest` — but
+    a test that depends on a default is a test that changes meaning when the
+    default does, and a background thread reading artefacts underneath an
+    assertion is exactly the kind of flake that takes a day to find.
+    """
+    from agent.server import create_app
+
+    return create_app(vault, worker=False)
+
+
+@pytest.fixture
+def client(app):
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as started:
+        yield started
+
+
+def api_client(vault, **kwargs):
+    """A client over *vault* for tests that need non-default app options."""
+    from fastapi.testclient import TestClient
+
+    from agent.server import create_app
+
+    kwargs.setdefault("worker", False)
+    return TestClient(create_app(vault, **kwargs))
+
+
 # --- phase 3: hand-authored claims ------------------------------------------
 #
 # The constructors themselves live in ``agent.demo.authoring``: the demo command
@@ -107,6 +143,7 @@ from agent.demo.authoring import (  # noqa: E402
 
 __all__ = [
     "DEFAULT_ARTIFACT",
+    "api_client",
     "claim",
     "confirm",
     "correct",

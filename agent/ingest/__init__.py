@@ -170,6 +170,54 @@ def ingest_bytes(
     return _ingest(vault, lambda: io.BytesIO(data), context or CaptureContext(source="upload"))
 
 
+class _Borrowed:
+    """A handle this module reads from but does not own.
+
+    :func:`_ingest` closes what its opener returns, which is right for the file
+    it opened itself and wrong for one a caller lent it. An HTTP upload's
+    spooled file is still needed by the framework afterwards, so it is wrapped
+    rather than handed over.
+    """
+
+    def __init__(self, handle: BinaryIO):
+        self._handle = handle
+
+    def read(self, size: int = -1) -> bytes:
+        return self._handle.read(size)
+
+    def __enter__(self) -> "_Borrowed":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def ingest_fileobj(
+    vault: Vault,
+    handle: BinaryIO,
+    context: CaptureContext | None = None,
+) -> IngestResult:
+    """Take whatever *handle* reads into the vault, without buffering it in memory.
+
+    The path an HTTP upload takes. A scanned specialist letter is tens of
+    megabytes and several may arrive at once, so the bytes stream through
+    :meth:`agent.ingest.store.RawStore.stage` into their destination directory
+    exactly as a file ingest does. The caller keeps ownership of *handle*.
+    """
+
+    def opener() -> _Borrowed:
+        try:
+            handle.seek(0)
+        except (OSError, ValueError):
+            # Not seekable — a stream already positioned at its start. Reading
+            # from wherever it is, is the only available behaviour, and the
+            # hash check on readback is what would catch a short read.
+            pass
+        return _Borrowed(handle)
+
+    return _ingest(vault, opener, context or CaptureContext(source="upload"))
+
+
 def _ingest(vault: Vault, opener, context: CaptureContext) -> IngestResult:
     context.validate()
     # Refuse before writing anything if this machine must not append: bytes in
@@ -371,6 +419,7 @@ __all__ = [
     "STATUS_STORED",
     "hashing",
     "ingest_bytes",
+    "ingest_fileobj",
     "ingest_path",
     "ingested_records",
     "mime",

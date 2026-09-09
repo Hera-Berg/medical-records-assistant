@@ -63,6 +63,12 @@ class Row:
     cite: str
     event_id: str
     sort_key: tuple[Any, ...]
+    #: The entity this row is about, where it is about one. Artefact and note
+    #: rows carry ``None``: an artefact is not yet about anything — what a
+    #: document says is the model's reading of it, and this row is written
+    #: before anything has read it. Present so a reader can filter the timeline
+    #: to one medication without the filter having to re-derive from the text.
+    subject_id: str | None = None
     #: How the footnote introduces whatever ``cite`` points at. Carried on the
     #: row rather than chosen when the page is written, so that one event is
     #: described the same way wherever it is cited: a `claim.corrected` footnoted
@@ -200,6 +206,7 @@ def build(
                 marker=claim.evidence_tier,
                 text=f"{name} — {claim.predicate}: {claim.value.literal}",
                 cite=claim.cite,
+                subject_id=claim.subject.id,
                 cite_description=(
                     "Your correction" if claim.is_correction else "Recorded claim"
                 ),
