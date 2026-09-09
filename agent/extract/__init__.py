@@ -13,12 +13,26 @@ byte-identical rebuild, which every other guarantee in the project depends on.
 
 from __future__ import annotations
 
-from . import crossverify, dates, images, prompts, schema, text, validate
+from . import (
+    crossverify,
+    dates,
+    images,
+    jobs,
+    prompts,
+    propose,
+    runner,
+    schema,
+    text,
+    validate,
+)
 
 __all__ = [
     "crossverify",
     "dates",
     "images",
+    "jobs",
+    "propose",
+    "runner",
     "prompts",
     "schema",
     "text",
