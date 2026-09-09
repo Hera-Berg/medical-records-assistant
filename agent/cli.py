@@ -13,8 +13,10 @@ config file this program invented is one nobody has read.
 alters the file it was given.
 
 ``demo`` seeds a scratch vault with an invented record and rebuilds it, so the
-renderer can be read by hand before phase 4 produces anything. It refuses to
-touch a folder that is not empty.
+renderer can be read by hand and extraction can be run over something. It
+refuses to touch a folder that is not empty, and it reaches no inference
+endpoint unless ``--endpoint-from`` copies one out of a config you name — which
+it then says, on the terminal and in the folder.
 
 ``rebuild`` regenerates ``wiki/`` from the log. It appends nothing and touches
 neither ``raw/`` nor ``events/``, and it removes only files a previous rebuild
@@ -252,7 +254,11 @@ def cmd_rebuild(args: argparse.Namespace, out: TextIO) -> int:
 
 def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
     """Seed a scratch vault with invented data and rebuild it."""
-    report = demo_mod.seed(args.path, as_of=projection_mod.parse_as_of(args.as_of))
+    report = demo_mod.seed(
+        args.path,
+        as_of=projection_mod.parse_as_of(args.as_of),
+        endpoint_from=args.endpoint_from,
+    )
 
     if args.json:
         json.dump(report.to_dict(), out, indent=2, sort_keys=True)
@@ -266,6 +272,20 @@ def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
         f"device {demo_mod.DEMO_DEVICE}",
         file=out,
     )
+    if report.endpoint is None:
+        print("endpoint  none — a demo vault reaches no model by default", file=out)
+    else:
+        # Named, every time, and never merely implied by the absence of a
+        # warning. A vault of invented data that can reach a real box is a thing
+        # the person who made it has to have been told about in so many words.
+        print(f"endpoint  [models.vlm] copied from {report.endpoint.source}", file=out)
+        print(
+            "          that table and [models.vlm.auth] only — no credential, no "
+            "sync_profile",
+            file=out,
+        )
+        for name in report.endpoint.dropped:
+            print(f"          not copied: {name} is not a scalar setting", file=out)
     print(
         f"rebuilt   {stats['entities']} entities, {stats['files']} files, "
         f"{stats['timeline_rows']} timeline rows",
@@ -616,6 +636,18 @@ def build_parser() -> argparse.ArgumentParser:
             "the moment the scenario is anchored to; every document date is an "
             "offset back from it. Defaults to now, which is what keeps the demo "
             "looking the same whenever it is run."
+        ),
+    )
+    demo.add_argument(
+        "--endpoint-from",
+        default=None,
+        dest="endpoint_from",
+        metavar="CONFIG",
+        help=(
+            "copy [models.vlm] and [models.vlm.auth] out of this config.toml (or "
+            "the vault root holding one) so extraction can be run against the demo. "
+            "Nothing else is copied — no credential, no sync_profile. Off by "
+            "default: a demo vault reaches no model"
         ),
     )
     demo.add_argument("--json", action="store_true", help="machine-readable output")

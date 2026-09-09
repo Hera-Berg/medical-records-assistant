@@ -346,3 +346,224 @@ def _vault(seeded):
     from agent.vault import Vault
 
     return Vault.open(seeded.root)
+
+
+# --- --endpoint-from -------------------------------------------------------
+#
+# A demo vault reaches no model by default. `--endpoint-from` copies one across
+# so extraction can be exercised against the demo, and copies *only*
+# [models.vlm] and [models.vlm.auth]: a scratch folder must not inherit a
+# sync_profile, a port, a locale, or a speech model from somebody's real vault.
+
+REAL_CONFIG = """\
+sync_profile = "dropbox"
+port = 8123
+locale = "en-au"
+
+[models.vlm]
+base_url   = "https://macbook-pro.tailb017fc.ts.net/v1"
+model      = "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"
+ctx        = 8192
+temperature       = 0.0
+thinking          = false
+
+[models.vlm.auth]
+api_key_env = "HEALTH_VLM_TOKEN"
+header      = "X-API-Key"
+scheme      = "Token"
+
+[models.asr]
+name         = "faster-whisper-medium"
+compute_type = "float16"
+"""
+
+
+@pytest.fixture
+def real_config(tmp_path):
+    path = tmp_path / "real" / "config.toml"
+    path.parent.mkdir()
+    path.write_text(REAL_CONFIG, encoding="utf-8")
+    return path
+
+
+def _seeded_config(root):
+    import tomllib
+
+    return tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
+
+
+def test_only_the_two_endpoint_tables_are_copied(tmp_path, real_config):
+    """Everything else in the source file stays in the source file."""
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config)
+    data = _seeded_config(report.root)
+
+    assert data["models"]["vlm"]["model"] == "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"
+    assert data["models"]["vlm"]["base_url"].endswith("ts.net/v1")
+    assert data["models"]["vlm"]["ctx"] == 8192
+    assert data["models"]["vlm"]["auth"]["header"] == "X-API-Key"
+
+    # A scratch folder is not on anybody's Dropbox, and a demo vault claiming to
+    # be would have the scan reporting sync forks that cannot exist.
+    assert data["sync_profile"] == "local"
+    assert data["port"] == 7777
+    assert data["locale"] == "en"
+    # Speech is the demo's own: it runs locally and needs nothing from the source.
+    assert data["models"]["asr"]["name"] == "faster-whisper-small"
+
+
+def test_the_copied_endpoint_is_one_the_inference_layer_can_open(tmp_path, real_config):
+    """The copy is validated before it is written, so a demo vault is never
+    seeded with a table that fails to load later — where the error would be
+    about the demo rather than about the file it came from."""
+    from agent.extract import session
+    from agent.vault import Vault
+
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config)
+    settings = session.settings_for(Vault.open(report.root))
+
+    assert settings.vlm.model == "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"
+    assert settings.vlm.auth.header == "X-API-Key"
+    assert settings.vlm.ctx == 8192
+
+
+def test_the_default_is_still_no_endpoint(seeded):
+    assert seeded.endpoint is None
+    assert "vlm" not in _seeded_config(seeded.root).get("models", {})
+
+
+def test_the_seeded_config_names_the_file_it_copied_from(tmp_path, real_config):
+    """The run that made the vault scrolls away; the vault stays."""
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config)
+    config = (report.root / "config.toml").read_text(encoding="utf-8")
+
+    assert str(real_config) in config
+    assert "copied by `demo --endpoint-from`" in config
+
+
+def test_the_marker_says_the_demo_vault_can_reach_a_real_box(tmp_path, real_config):
+    """A folder of invented data that talks to a real endpoint is a thing the
+    person who made it has to have been told, in the folder and not only once."""
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config)
+    marker = (report.root / demo_mod.MARKER_FILENAME).read_text(encoding="utf-8")
+
+    assert "This vault has a real inference endpoint" in marker
+    assert str(real_config) in marker
+
+
+def test_a_credential_in_the_copied_table_refuses_before_anything_is_written(
+    tmp_path, real_config
+):
+    real_config.write_text(
+        REAL_CONFIG.replace(
+            'api_key_env = "HEALTH_VLM_TOKEN"', 'api_key = "sk-live-0123456789"'
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "demo"
+
+    with pytest.raises(HealthAgentError) as raised:
+        demo_mod.seed(root, endpoint_from=real_config)
+
+    assert "models.vlm.auth.api_key" in str(raised.value)
+    assert "in the very table this would copy" in str(raised.value)
+    assert not root.exists(), "a half-seeded folder is one somebody has to reason about"
+
+
+def test_a_credential_elsewhere_in_the_source_refuses_too(tmp_path, real_config):
+    """Scoping the copy already stops the key reaching the demo vault. Refusing
+    anyway is consistent with `config.parse`, which will not load that file at
+    all — and this is the moment someone is looking at it."""
+    real_config.write_text(
+        REAL_CONFIG + '\n[extra]\napi_token = "sk-live-9876543210"\n', encoding="utf-8"
+    )
+    root = tmp_path / "demo"
+
+    with pytest.raises(HealthAgentError) as raised:
+        demo_mod.seed(root, endpoint_from=real_config)
+
+    assert "outside the table this would copy" in str(raised.value)
+    assert "already disclosed" in str(raised.value)
+    assert not root.exists()
+
+
+def test_a_source_with_no_endpoint_says_so_and_names_the_file(tmp_path):
+    source = tmp_path / "plain.toml"
+    source.write_text("port = 7777\n", encoding="utf-8")
+    root = tmp_path / "demo"
+
+    with pytest.raises(HealthAgentError) as raised:
+        demo_mod.seed(root, endpoint_from=source)
+
+    assert "has no [models.vlm] table" in str(raised.value)
+    assert str(source) in str(raised.value)
+    assert not root.exists()
+
+
+def test_a_source_that_is_not_there_says_what_the_flag_takes(tmp_path):
+    with pytest.raises(HealthAgentError) as raised:
+        demo_mod.seed(tmp_path / "demo", endpoint_from=tmp_path / "nowhere.toml")
+
+    assert "--endpoint-from takes the path to a config.toml" in str(raised.value)
+
+
+def test_a_vault_root_resolves_to_the_config_inside_it(tmp_path, real_config):
+    """`--endpoint-from ~/health` is what people will type."""
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config.parent)
+
+    assert report.endpoint is not None
+    assert report.endpoint.source == real_config
+
+
+def test_a_non_scalar_under_the_endpoint_table_is_dropped_and_reported(
+    tmp_path, real_config
+):
+    """Silently dropping part of a copied endpoint would make the demo differ
+    from the real one in a way nobody was told about."""
+    real_config.write_text(
+        REAL_CONFIG.replace("ctx        = 8192", 'ctx = 8192\nhosts = ["a", "b"]'),
+        encoding="utf-8",
+    )
+    report = demo_mod.seed(tmp_path / "demo", endpoint_from=real_config)
+
+    assert report.endpoint.dropped == ("models.vlm.hosts",)
+    assert "hosts" not in _seeded_config(report.root)["models"]["vlm"]
+
+
+def test_the_cli_names_the_source_it_copied_from(tmp_path, real_config, capsys):
+    from agent import cli
+
+    code = cli.main(
+        ["demo", str(tmp_path / "demo"), "--endpoint-from", str(real_config)]
+    )
+    out = capsys.readouterr().out
+
+    assert code == cli.EXIT_OK
+    assert f"endpoint  [models.vlm] copied from {real_config}" in out
+    assert "no credential, no sync_profile" in out
+
+
+def test_the_cli_says_so_when_there_is_no_endpoint(tmp_path, capsys):
+    from agent import cli
+
+    cli.main(["demo", str(tmp_path / "demo")])
+    out = capsys.readouterr().out
+
+    assert "endpoint  none — a demo vault reaches no model by default" in out
+
+
+def test_a_table_that_would_not_load_is_refused_at_the_source(tmp_path, real_config):
+    """Validated before it is written. A demo vault seeded with a broken
+    endpoint fails later, where the message is about the demo rather than about
+    the file the table came from."""
+    real_config.write_text(
+        REAL_CONFIG.replace("ctx        = 8192", "ctx        = 99999999"),
+        encoding="utf-8",
+    )
+    root = tmp_path / "demo"
+
+    with pytest.raises(HealthAgentError) as raised:
+        demo_mod.seed(root, endpoint_from=real_config)
+
+    assert "does not load" in str(raised.value)
+    assert str(real_config) in str(raised.value)
+    assert not root.exists()
