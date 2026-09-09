@@ -66,7 +66,7 @@ Rules, in order of importance:
 Answer with JSON matching the schema you have been given. Nothing else."""
 
 USER = """\
-This is page {page} of an artefact in the record{of_pages}.
+This is {page_of} of an artefact in the record.
 
 Read it and report what it states, following the rules exactly. If it says
 nothing about medications, allergies, problems or practitioners, return an empty
@@ -112,8 +112,7 @@ def build(page: PreparedImage, total_pages: int = 1) -> Prompt:
     """
     number = page.page or 1
     user = USER.format(
-        page=number,
-        of_pages=f" of {total_pages}" if total_pages > 1 else "",
+        page_of=f"page {number} of {total_pages}" if total_pages > 1 else f"page {number}"
     )
     messages = (
         {"role": "system", "content": SYSTEM},

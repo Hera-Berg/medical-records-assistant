@@ -139,6 +139,25 @@ def format_number(value: object) -> str | None:
     return None
 
 
+def amounts(text: str) -> set[tuple[str, str]]:
+    """Every ``(amount, unit)`` a span states, normalised for comparison.
+
+    ``"5mg"``, ``"5 mg"`` and ``"5.0 milligrams"`` all yield ``{("5", "mg")}``.
+    Public because the extraction layer compares two independent readings of the
+    same page and must use exactly the normalisation the projection uses — two
+    readers agreeing must never look like a disagreement because one of them
+    said "milligrams".
+
+    For comparison only. The literal is what gets rendered, always.
+    """
+    found: set[tuple[str, str]] = set()
+    for match in _AMOUNT_RE.finditer(normalise_text(text)):
+        amount = format_number(match.group("amount"))
+        if amount is not None:
+            found.add((amount, _UNIT_SYNONYMS[match.group("unit").lower()]))
+    return found
+
+
 def canonical_frequency(text: str) -> tuple[str, Fraction | None] | None:
     """Map frequency wording to its canonical label and rate per day.
 
