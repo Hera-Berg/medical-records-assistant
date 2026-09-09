@@ -175,6 +175,14 @@ rejected content in a document that gets printed. Because the direction of the m
 raise a review item naming the artefact and asking which was meant, **without reproducing the
 content**. Withdrawing then re-confirming is one tap; un-printing a clinician's copy is not.
 
+**Date coercions widen, never sharpen, and are always reported.** An unrecognised `precision` widens
+to a year. An unusable `uncertainty_days` widens one precision step — `day → month`, `month → year`,
+`year → year` — because the field's presence asserts uncertainty beyond the precision unit while its
+value says nothing about how much. Stepping through the schema's own granularities invents nothing;
+falling back to the bare precision band would be sharper than the payload claimed, and dropping the
+date to null discards information the record exists to keep. Every coercion raises an anomaly against
+the claim's subject, so a reader seeing a vague date finds the reason on the same page.
+
 **Rejection suppression is keyed on `(subject, predicate, normalised value, artefact)`**, built from
 the whole log before any claim is admitted — which is what makes it hold when a re-extraction sorts
 earlier than the rejection. Normalised, so `5.0mg daily` can't slip past a rejection of `5mg daily`.
