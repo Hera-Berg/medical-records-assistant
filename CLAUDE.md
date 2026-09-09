@@ -290,6 +290,10 @@ This is the hard part of the project. Get it right before building anything pret
 3. **Contradiction without resolution is a visible state.** If two prescriber-issued sources give
    different doses, the wiki shows both with their sources and marks the entity `conflicted`. Do not
    silently pick one. Do not average.
+   **The same applies to any user act the projection declines to honour.** A confirmation, correction
+   or rejection that the rules do not act on must still appear in the wiki and the review queue,
+   with its source. Gating an action is legitimate; making it disappear is not, and is worse than the
+   outcome the gate was protecting against — the user believes they told the record something.
 4. **Staleness, not deletion.** Compute an expected exhaustion date from the script (30 tablets, one
    daily, no repeats → 30 days). Past that with no confirming evidence, mark the medication
    `stale — last confirmed 8 months ago`. It stays on the list.
@@ -297,9 +301,16 @@ This is the hard part of the project. Get it right before building anything pret
    `status: stopped`, or a `claim.proposed` stop the user explicitly confirmed. The rule's target is
    **inference from silence**, not the model reading a document that says to cease. Two constraints
    on the confirmed-proposal path: the proposal must be `prescriber-issued` or `lab-issued` —
-   `patient-reported` and `inferred` can never produce a stop — and the review UI must render stop
-   proposals as their own distinct action, never as a generic accept in a tap-through queue. A
-   careless tap must not be able to drop a medication.
+   `device-recorded`, `patient-reported` and `inferred` cannot transition status — and the review UI
+   must render stop proposals as their own distinct action, never as a generic accept in a
+   tap-through queue. A careless tap must not be able to drop a medication.
+   **A stop below that tier annotates rather than transitions, and is never discarded.** Status stays
+   `active` or `stale`, and the entity gains `stop_reported` and `stop_reported_tier` in frontmatter,
+   a cited sentence in the body, and an entry in the review queue. A patient reporting they stopped
+   taking something is real information — they are the authority on what they actually take, while
+   the prescriber is the authority on what was prescribed — and a record showing both, with the
+   discrepancy visible, is more useful to a clinician than either alone. This is a discrepancy, not a
+   `conflicted` status; that state is reserved for contradictory sources for the same fact.
    A `stopped` medication keeps its file and its full history. Nothing is ever removed.
 5. **Merges are reversible events, never silent normalisation.** Map to ATC/RxNorm codes where
    possible as a *hint* to the merge proposer, but treat the mapping as fallible and always ask.
