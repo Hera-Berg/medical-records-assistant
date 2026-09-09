@@ -10,6 +10,13 @@ elapsed time admits a high-consequence claim; only a user event does. Putting
 this before ranking means a high-tier claim cannot win its way into the wiki by
 being the most authoritative reading available.
 
+**Nothing a value replaced is discarded.** A reading that lost on rank and a
+reading the user corrected both stay on the slot, and the entity page renders
+them with their citations and what replaced them. The point is not that the
+extraction deserves a voice — it is that the user's own act is unauditable
+without the thing it acted on, and a mistyped correction is undetectable once the
+original is gone.
+
 **Corrections outrank extractions regardless of order.** Replaying by timestamp
 and letting the last write win reintroduces exactly the errors a user has already
 fixed — the spec calls this the single most likely bug in the system. A
@@ -30,6 +37,7 @@ from typing import Any, Iterable, Mapping
 from ..events.envelope import Event, parse_ts_or_none
 from . import claims as claims_mod
 from . import dates, tiers
+from .anomalies import Anomaly
 from .claims import Claim, ClaimProblem
 
 #: How long an untouched medium-consequence claim waits before it applies
@@ -80,7 +88,11 @@ class Slot:
     #: For a contradicted slot: admitted extractions that disagree with the
     #: user's correction. The correction still wins.
     contradicted_by: tuple[Claim, ...] = ()
-    #: Earlier readings this one replaced, most recent first.
+    #: Earlier readings this value replaced, most recent first. Includes both
+    #: readings that lost on rank and readings the gate set aside because the
+    #: user corrected them — "what did I correct, and from what" has to be
+    #: answerable from the folder alone, and a correction whose original has
+    #: vanished is unverifiable.
     superseded: tuple[Claim, ...] = ()
     #: Claims the consequence gate is holding back.
     pending: tuple[Claim, ...] = ()
@@ -106,11 +118,13 @@ class Slot:
         return self.readings
 
     @property
-    def admitted(self) -> tuple[Claim, ...]:
-        """Every claim the gate let in, whether or not ranking kept it.
+    def all_claims(self) -> tuple[Claim, ...]:
+        """Every claim this slot carries, whatever became of it.
 
         ``superseded`` and ``contradicted_by`` hold claims that lost but were
         never discarded, and a user-endorsed claim can be sitting in either.
+        Not all of these were admitted — ``superseded`` also holds readings the
+        gate set aside because the user corrected them.
         """
         seen: dict[str, Claim] = {}
         for claim in (
@@ -124,7 +138,7 @@ class Slot:
 
     def endorsed_claims(self) -> tuple[Claim, ...]:
         """The admitted claims the user personally confirmed or authored."""
-        return tuple(c for c in self.admitted if c.event_id in self.endorsed)
+        return tuple(c for c in self.all_claims if c.event_id in self.endorsed)
 
 
 @dataclass(frozen=True)
@@ -175,7 +189,7 @@ class Reconciliation:
         return tuple(sorted({subject for subject, _ in self.slots}))
 
 
-def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[str]]:
+def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[Anomaly]]:
     """The last user decision recorded against each proposed claim.
 
     Ordering is by ``(ts, id)`` like everything else, so two devices deciding the
@@ -186,7 +200,7 @@ def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[st
     and is entitled to find out that the record could not tell what.
     """
     latest: dict[str, Event] = {}
-    anomalies: list[str] = []
+    anomalies: list[Anomaly] = []
     for event in events:
         if event.type not in ("claim.confirmed", "claim.rejected", "claim.corrected"):
             continue
@@ -197,8 +211,10 @@ def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[st
             # nothing left to mean without one.
             if event.type != "claim.corrected":
                 anomalies.append(
-                    f"{event.id}: {event.type} names no target claim, so your decision "
-                    f"could not be applied to anything"
+                    Anomaly(
+                        f"{event.id}: {event.type} names no target claim, so your "
+                        f"decision could not be applied to anything"
+                    )
                 )
             continue
         current = latest.get(target)
@@ -207,14 +223,16 @@ def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[st
     return latest, anomalies
 
 
-def _alias_map(events: Iterable[Event]) -> tuple[dict[str, str], dict[str, str], list[str]]:
+def _alias_map(
+    events: Iterable[Event],
+) -> tuple[dict[str, str], dict[str, str], list[Anomaly]]:
     """Confirmed entity merges, and the reverts that undo them.
 
     Merges are events, never silent normalisation: the latest decision for a
     pair wins and a revert genuinely puts the entity back.
     """
     decisions: dict[tuple[str, str], tuple[tuple[Any, ...], bool, str]] = {}
-    anomalies: list[str] = []
+    anomalies: list[Anomaly] = []
     for event in events:
         if event.type not in ("entity.merge.confirmed", "entity.merge.reverted"):
             continue
@@ -222,7 +240,7 @@ def _alias_map(events: Iterable[Event]) -> tuple[dict[str, str], dict[str, str],
         into = event.payload.get("into")
         if not isinstance(source, str) or not isinstance(into, str):
             anomalies.append(
-                f"{event.id}: merge event needs 'from' and 'into' subject ids; ignored"
+                Anomaly(f"{event.id}: merge event needs 'from' and 'into' subject ids; ignored")
             )
             continue
         pair = (source, into)
@@ -251,7 +269,11 @@ def _alias_map(events: Iterable[Event]) -> tuple[dict[str, str], dict[str, str],
             target = direct[target]
         if target in seen:
             anomalies.append(
-                f"merge chain starting at {source} loops back on itself; left unmerged"
+                Anomaly(
+                    f"merge chain starting at {source} loops back on itself; left unmerged",
+                    subject_id=source,
+                    cite=f"ev-{decided_by[source]}",
+                )
             )
             continue
         resolved[source] = target
@@ -340,8 +362,14 @@ def _resolve(
     admitted: list[Claim],
     pending: list[Claim],
     review_states: Mapping[str, str],
+    replaced: list[Claim] | None = None,
 ) -> tuple[Slot, list[ReviewItem]]:
-    """Rank the admitted claims for one slot and say how it resolved."""
+    """Rank the admitted claims for one slot and say how it resolved.
+
+    *replaced* holds readings the gate set aside before ranking — a proposal the
+    user corrected never becomes a contender, but it is the thing their
+    correction acted on. It joins ``superseded`` so the page can show it.
+    """
     consequence = (
         admitted[0].consequence
         if admitted
@@ -353,6 +381,15 @@ def _resolve(
     endorsed = frozenset(
         c.event_id for c in admitted if review_states.get(c.event_id) == REVIEW_CONFIRMED
     )
+    replaced = list(replaced or ())
+
+    def earlier(*groups: Iterable[Claim]) -> tuple[Claim, ...]:
+        """Everything a value replaced, most recent first, each named once."""
+        seen: dict[str, Claim] = {}
+        for group in groups:
+            for claim in group:
+                seen.setdefault(claim.event_id, claim)
+        return tuple(sorted(seen.values(), key=lambda c: c.sort_key, reverse=True))
 
     corrections = [c for c in admitted if c.is_correction]
     extractions = [c for c in admitted if not c.is_correction]
@@ -391,7 +428,7 @@ def _resolve(
                 winner=winner,
                 review_state=REVIEW_CONFIRMED,
                 contradicted_by=disagreeing,
-                superseded=tuple(sorted(others, key=lambda c: c.sort_key, reverse=True)),
+                superseded=earlier(others, replaced),
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
                 endorsed=endorsed,
             ),
@@ -406,6 +443,7 @@ def _resolve(
                 consequence=consequence,
                 resolution=SETTLED,
                 winner=None,
+                superseded=earlier(replaced),
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
                 endorsed=endorsed,
             ),
@@ -446,7 +484,7 @@ def _resolve(
                     key=_review_order,
                 ),
                 readings=tuple(readings),
-                superseded=tuple(sorted(superseded, key=lambda c: c.sort_key, reverse=True)),
+                superseded=earlier(superseded, replaced),
                 pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
                 endorsed=endorsed,
             ),
@@ -463,7 +501,7 @@ def _resolve(
             resolution=SETTLED,
             winner=winner,
             review_state=review_states.get(winner.event_id, REVIEW_AUTO),
-            superseded=tuple(sorted(superseded, key=lambda c: c.sort_key, reverse=True)),
+            superseded=earlier(superseded, replaced),
             pending=tuple(sorted(pending, key=lambda c: c.sort_key, reverse=True)),
             endorsed=endorsed,
         ),
@@ -495,6 +533,7 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
     admissions: list[Admission] = []
     admitted_by_slot: dict[tuple[str, str], list[Claim]] = {}
     pending_by_slot: dict[tuple[str, str], list[Claim]] = {}
+    replaced_by_slot: dict[tuple[str, str], list[Claim]] = {}
     review_states: dict[str, str] = {}
     review: list[ReviewItem] = []
 
@@ -522,6 +561,11 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         review_states[parsed.event_id] = admission.review_state
         if admission.state == ADMITTED:
             admitted_by_slot.setdefault(slot_key(parsed), []).append(parsed)
+        elif admission.state == SUPERSEDED:
+            # The user corrected this reading. It is not a contender and never
+            # was, but their correction is unauditable without it: a mistyped
+            # 5mg for 50mg is undetectable once the original is gone.
+            replaced_by_slot.setdefault(slot_key(parsed), []).append(parsed)
         elif admission.state == PENDING:
             pending_by_slot.setdefault(slot_key(parsed), []).append(parsed)
             review.append(
@@ -542,15 +586,31 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             continue
         target_id = event.payload.get("target")
         target = proposals.get(target_id) if isinstance(target_id, str) else None
-        if isinstance(target_id, str) and target_id and target is None:
-            anomalies.append(
-                f"{event.id}: correction targets {target_id}, which is not a proposed "
-                f"claim in this log; read on its own terms"
-            )
+        dangling = isinstance(target_id, str) and bool(target_id) and target is None
         parsed = claims_mod.parse(event, target=target)
         if isinstance(parsed, ClaimProblem):
+            if dangling:
+                anomalies.append(
+                    Anomaly(
+                        f"{event.id}: correction targets {target_id}, which is not a "
+                        f"proposed claim in this log, and does not name a subject and "
+                        f"predicate of its own"
+                    )
+                )
             problems.append(parsed)
             continue
+        if dangling:
+            # Read on its own terms, and attached to the entity it names: this is
+            # the page a reader would go to asking why the value looks the way it
+            # does.
+            anomalies.append(
+                Anomaly(
+                    f"{event.id}: correction targets {target_id}, which is not a proposed "
+                    f"claim in this log; read on its own terms",
+                    subject_id=parsed.subject.id,
+                    cite=parsed.cite,
+                )
+            )
         review_states[parsed.event_id] = REVIEW_CONFIRMED
         admissions.append(
             Admission(parsed, ADMITTED, REVIEW_CONFIRMED, "your correction, which always stands")
@@ -566,17 +626,21 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             continue
         if target_id in unreadable:
             anomalies.append(
-                f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, whose claim "
-                f"could not be read; the decision is recorded but applies to nothing"
+                Anomaly(
+                    f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, whose claim "
+                    f"could not be read; the decision is recorded but applies to nothing"
+                )
             )
         else:
             anomalies.append(
-                f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, which is not "
-                f"a proposed claim in this log; the decision could not be applied"
+                Anomaly(
+                    f"{decision.id}: you {_DECIDED[decision.type]} {target_id}, which is not "
+                    f"a proposed claim in this log; the decision could not be applied"
+                )
             )
 
     slots: dict[tuple[str, str], Slot] = {}
-    for key in sorted(set(admitted_by_slot) | set(pending_by_slot)):
+    for key in sorted(set(admitted_by_slot) | set(pending_by_slot) | set(replaced_by_slot)):
         subject_id, predicate = key
         slot, items = _resolve(
             subject_id,
@@ -584,10 +648,13 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             admitted_by_slot.get(key, []),
             pending_by_slot.get(key, []),
             review_states,
+            replaced_by_slot.get(key, []),
         )
         # A slot with nothing admitted has no place in the wiki at all; its
-        # pending claims are already in the review queue.
-        if slot.has_value or slot.readings:
+        # pending claims are already in the review queue. A replaced reading is
+        # different: it is the record of what a user act acted on, so a slot
+        # carrying one is kept even when nothing currently holds the value.
+        if slot.has_value or slot.readings or slot.superseded:
             slots[key] = slot
         review.extend(items)
 

@@ -22,7 +22,7 @@ import pytest
 from agent import projection
 from agent.projection import reconcile, tiers
 
-from .conftest import claim, confirm, correct, ingested, reject
+from .conftest import claim, confirm, correct, ingested, on_day, reject
 
 DEVICE = "laptop-a1b2"
 AS_OF = "2030-01-01T00:00:00Z"
@@ -177,3 +177,54 @@ def test_low_consequence_applies_immediately():
     result = projection.project([ingested(DEVICE), proposed], "2026-09-30T00:05:00Z")
     entity = result.entities["person:dr-nguyen"]
     assert entity.slots["contact"].review_state == reconcile.REVIEW_AUTO
+
+
+def test_a_tier_disagreement_attaches_to_the_entity_it_concerns():
+    """Settled decision: a subject-less anomaly stays in the report; this one
+    also lands on the page a reader would check.
+
+    "The payload said low and the code says high" is a fact about one
+    medication, and someone asking whether that claim was gated correctly opens
+    that medication's page, not the rebuild log.
+    """
+    proposed = claim(
+        DEVICE, "med:perindopril", "dose", "5mg daily", ts=on_day(2),
+        consequence="low", occurred={"value": "2026-06-04"},
+    )
+    events = [ingested(DEVICE, "a3f91c"), proposed, confirm(DEVICE, proposed.id, ts=on_day(3))]
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    entity = result.entities["med:perindopril"]
+
+    assert [note.subject_id for note in entity.anomalies] == ["med:perindopril"]
+    page = result.files[entity.rel_path].decode("utf-8")
+    assert "## Anomalies" in page
+    assert "has no effect on review gating" in page
+    # Cited like every other sentence on the page.
+    line = next(l for l in page.splitlines() if "review gating" in l)
+    assert "[^a3f91c]" in line
+
+    # And still in the report, which is what phases 5 and 7 count.
+    assert any("has no effect on review gating" in note for note in result.anomalies)
+
+
+def test_a_subjectless_anomaly_stays_out_of_the_wiki():
+    """A decision naming no target is integrity information about the log.
+
+    It has no subject, so it has no page; inventing a wiki file for log plumbing
+    would put it in front of a clinician reading the record.
+    """
+    from agent.events import envelope
+
+    proposed = claim(DEVICE, "med:perindopril", "dose", "5mg daily", ts=on_day(2))
+    blank = envelope.new("claim.confirmed", DEVICE, payload={}, ts=on_day(4))
+    events = [
+        ingested(DEVICE, "a3f91c"),
+        proposed,
+        confirm(DEVICE, proposed.id, ts=on_day(3)),
+        blank,
+    ]
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+
+    assert any(blank.id in note for note in result.anomalies)
+    assert result.entities["med:perindopril"].anomalies == ()
+    assert not any(blank.id in page.decode("utf-8") for page in result.files.values())

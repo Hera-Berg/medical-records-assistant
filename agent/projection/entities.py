@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Mapping
 
+from . import anomalies as anomalies_mod
 from . import dates, reconcile, subjects, tiers
 from .claims import Claim
 from .dates import FuzzyDate
@@ -118,6 +119,10 @@ class Entity:
     #: A stop the user endorsed that could not transition the status. Never
     #: ``None`` merely because the rule declined it — see the module docstring.
     stop_report: StopReport | None = None
+    #: Anomalies that resolve to this subject. Subject-less ones stay in the
+    #: rebuild report; these appear here as well, because this page is where a
+    #: reader asking "is this claim gated correctly" would look.
+    anomalies: tuple[anomalies_mod.Anomaly, ...] = ()
     merged_into: str | None = None
     merged_from: tuple[str, ...] = ()
     #: The merge event that created this stub, so its page can cite the decision
@@ -280,12 +285,16 @@ def build(
     as_of: datetime,
     review: tuple[ReviewItem, ...] = (),
     merged_from: tuple[str, ...] = (),
+    notes: tuple[anomalies_mod.Anomaly, ...] = (),
 ) -> Entity:
     """Assemble one entity from its reconciled slots."""
     supporting: dict[str, Claim] = {}
+    cited: dict[str, Claim] = {}
     for name in sorted(slots):
         for claim in slots[name].supporting:
             supporting[claim.event_id] = claim
+        for claim in slots[name].all_claims:
+            cited[claim.event_id] = claim
     claims = tuple(supporting[key] for key in sorted(supporting))
 
     name_slot = slots.get("name")
@@ -342,7 +351,12 @@ def build(
     if ranked:
         tier = max(ranked, key=tiers.evidence_rank)
 
-    sources = tuple(sorted({claim.cite for claim in claims}))
+    # Every artefact the page cites, not only the ones currently holding a
+    # value: an earlier reading is footnoted in the history, and frontmatter that
+    # omits its artefact sends a reader looking for a source the page does not
+    # list. Derived fields above deliberately stay on the narrower set — a
+    # superseded reading is not evidence that a medication is still current.
+    sources = tuple(sorted({cited[key].cite for key in sorted(cited)}))
 
     if stop_report is not None:
         review = review + (
@@ -375,6 +389,7 @@ def build(
         sources=sources,
         review=review,
         stop_report=stop_report,
+        anomalies=notes,
         merged_from=merged_from,
     )
 
@@ -415,6 +430,7 @@ def build_all(reconciliation: Reconciliation, as_of: datetime) -> dict[str, Enti
             as_of,
             review=tuple(review_by_subject.get(subject_id, ())),
             merged_from=tuple(sorted(merged_from.get(subject_id, ()))),
+            notes=anomalies_mod.for_subject(reconciliation.anomalies, subject_id),
         )
 
     # A merged-away name keeps a stub, so following an old citation or an old

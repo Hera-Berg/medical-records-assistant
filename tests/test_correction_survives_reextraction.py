@@ -148,3 +148,57 @@ def test_a_correction_still_wins_when_the_reextraction_is_more_authoritative():
     slot = projection.project(events, AS_OF).entities["med:perindopril"].slots["dose"]
     assert slot.winner.value.literal == "5mg daily"
     assert slot.winner.evidence_tier == "patient-reported"
+
+
+def test_a_correction_keeps_the_reading_it_corrected():
+    """"What did I correct, and from what" is answerable from the folder alone.
+
+    The gate sets a corrected proposal aside before ranking ever sees it, which
+    is exactly where it used to be lost. Without the original on the page a
+    correction is unverifiable and a mistyped one is undetectable: 5mg where 50mg
+    was meant reads as a clean record.
+    """
+    misread = claim(
+        DEVICE, "med:perindopril", "dose", "5Omg daily", ts=on_day(2),
+        occurred={"value": "2026-06-04"},
+    )
+    events = [
+        ingested(DEVICE, "a3f91c"),
+        misread,
+        correct(DEVICE, value="5mg daily", target=misread.id, ts=on_day(3)),
+    ]
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    entity = result.entities["med:perindopril"]
+    slot = entity.slots["dose"]
+
+    assert slot.winner.value.literal == "5mg daily"
+    assert [c.value.literal for c in slot.superseded] == ["5Omg daily"]
+
+    page = result.files[entity.rel_path].decode("utf-8")
+    assert "## Earlier readings" in page
+    assert "5Omg daily" in page
+    assert "replaced by your correction to 5mg daily" in page
+
+    # Both halves cited, and the artefact behind the original listed in sources.
+    line = next(l for l in page.splitlines() if "5Omg daily" in l)
+    assert line.count("[^") == 2
+    assert "sources: [a3f91c," in page or "sources: [a3f91c]" in page
+
+
+def test_a_replaced_reading_names_what_replaced_it():
+    """A later script within the same tier, not a correction."""
+    events = [ingested(DEVICE, "a3f91c"), ingested(DEVICE, "77b210")]
+    first = claim(
+        DEVICE, "med:perindopril", "dose", "5mg daily", ts=on_day(5),
+        artifact="a3f91c", occurred={"value": "2026-01-04"},
+    )
+    second = claim(
+        DEVICE, "med:perindopril", "dose", "10mg daily", ts=on_day(6),
+        artifact="77b210", occurred={"value": "2026-06-04"},
+    )
+    events += [first, confirm(DEVICE, first.id, ts=on_day(5, hour=10))]
+    events += [second, confirm(DEVICE, second.id, ts=on_day(6, hour=10))]
+
+    result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
+    page = result.files["wiki/medications/perindopril.md"].decode("utf-8")
+    assert "5mg daily (prescriber-issued, 4 January 2026), replaced by 10mg daily" in page

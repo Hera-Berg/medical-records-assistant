@@ -26,6 +26,7 @@ from typing import Any
 
 from ..events.envelope import Event, parse_ts_or_none
 from . import dispense as dispense_mod
+from .anomalies import Anomaly
 from . import subjects, tiers, values
 from .dates import FuzzyDate, parse_occurred_at
 from .subjects import Subject
@@ -243,7 +244,7 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
     )
 
 
-def declared_tier_anomaly(claim: Claim) -> str | None:
+def declared_tier_anomaly(claim: Claim) -> Anomaly | None:
     """A payload that disagrees with the code's consequence lookup.
 
     Reported, never obeyed. The lookup in :mod:`.tiers` is what gates review;
@@ -254,8 +255,13 @@ def declared_tier_anomaly(claim: Claim) -> str | None:
         return None
     if claim.declared_consequence == claim.consequence:
         return None
-    return (
+    # Attached to the subject: this is a statement about one entity's claim, and
+    # the page for that entity is where someone asking "is this gated correctly"
+    # will look.
+    return Anomaly(
         f"{claim.event_id}: payload says consequence {claim.declared_consequence!r} but "
         f"{claim.subject.kind}:{claim.predicate} is {claim.consequence!r}; the payload "
-        f"value has no effect on review gating"
+        f"value has no effect on review gating",
+        subject_id=claim.subject.id,
+        cite=claim.cite,
     )

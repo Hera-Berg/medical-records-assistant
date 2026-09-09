@@ -211,18 +211,57 @@ def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
         )
 
 
+def _replacement_phrase(slot: Slot, citer: Citer) -> tuple[str, list[Citation]]:
+    """"replaced by your correction to 5mg daily", and the footnote for it.
+
+    Naming the replacement is what makes the history auditable rather than
+    merely present: "what did I correct, and from what" needs both halves on the
+    same line, each pointing at its own source.
+    """
+    winner = slot.winner
+    if winner is None:
+        return "superseded, and no value currently stands in its place", []
+    citation = citer.cite(winner.cite, _correction_description(winner))
+    if winner.is_correction:
+        return f"replaced by your correction to {winner.value.literal}", [citation]
+    phrase, _ = _claim_phrase(winner, citer)
+    return f"replaced by {phrase}", [citation]
+
+
+def _anomalies_section(document: Document, entity: Entity, citer: Citer) -> None:
+    """Anomalies that resolve to this entity.
+
+    Stated flatly and cited, like everything else here. An anomaly is a fact
+    about the log — a payload that disagreed with the code, a correction whose
+    target is missing — and it says what the record did about it, never what the
+    reader should conclude.
+    """
+    if not entity.anomalies:
+        return
+    document.heading("Anomalies")
+    for note in entity.anomalies:
+        citations = [citer.cite(note.cite, "Recorded claim")] if note.cite else []
+        document.bullet(Sentence(str(note), citations))
+
+
 def _history_section(document: Document, entity: Entity, citer: Citer) -> None:
-    rows: list[tuple[str, Citation]] = []
+    rows: list[tuple[str, list[Citation]]] = []
     for predicate in sorted(entity.slots):
         slot = entity.slots[predicate]
+        replacement, replacement_citations = _replacement_phrase(slot, citer)
         for claim in slot.superseded:
             phrase, citation = _claim_phrase(claim, citer)
-            rows.append((f"**{_label(predicate)}** — {phrase}", citation))
+            rows.append(
+                (
+                    f"**{_label(predicate)}** — {phrase}, {replacement}",
+                    [citation] + replacement_citations,
+                )
+            )
     if not rows:
         return
     document.heading("Earlier readings")
-    for text, citation in rows:
-        document.bullet(Sentence(text, [citation]))
+    for text, citations in rows:
+        document.bullet(Sentence(text, citations))
 
 
 def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
@@ -313,6 +352,7 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     _conflicts_section(document, entity, citer)
     _review_section(document, entity, citer)
     _history_section(document, entity, citer)
+    _anomalies_section(document, entity, citer)
 
     return document.render()
 
