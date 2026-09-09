@@ -152,6 +152,21 @@ citation and what replaced it. "What did I correct, and from what" must be answe
 folder alone — a correction whose original has vanished is unverifiable, and a mistyped correction
 becomes undetectable.
 
+**Rejected content never renders.** A correction is an assertion — the superseded value stays
+visible so the assertion can be checked. A rejection is a retraction, and printing the content
+re-asserts what the user said is not true of them. This matters because the wiki gets handed to a
+clinician: someone who rejects a mis-OCR'd "alcohol dependence" must not find it on their problems
+page under any heading. No `## Rejected` section, not in entity pages, not in exports.
+
+**But a rejection must be durable in reconciliation.** Re-extraction must not resurrect a rejected
+claim — the same `(subject, predicate, normalised value, artefact)` proposed again stays suppressed
+until the user says otherwise. This is the same failure class as a correction being overridden by a
+later model read, and needs its own test. An artefact whose claims were all rejected is *reviewed*,
+not unprocessed, and must not re-enter the review queue.
+
+The owner can still audit their own rejections — phase 7 shows review history — but that is a view
+of the log, not content in the record.
+
 **Anomalies live in the rebuild report, not the wiki**, when they have no subject — a malformed
 payload or a shard naming violation is integrity information about the log, not record content.
 An anomaly that *does* resolve to a subject (a payload disagreeing with the computed consequence
