@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Container, Iterable, Mapping, Sequence
 
 from ..errors import ProjectionError
 from .citations import Citation
@@ -39,7 +39,13 @@ _SENTENCE_END = ".?!"
 
 
 class Sentence:
-    """A sentence and the evidence it rests on. Refuses to exist without one."""
+    """A sentence and the evidence it rests on. Refuses to exist without one.
+
+    Carrying its citations is not the same as printing them. Where a sentence
+    ends up is what decides how its markers are written: a bullet prints its
+    own, and a paragraph prints the markers once for the whole paragraph when
+    every sentence in it rests on the same source. See :func:`_paragraph_line`.
+    """
 
     __slots__ = ("text", "citations")
 
@@ -55,15 +61,50 @@ class Sentence:
         self.text = cleaned
         self.citations = tuple(citations)
 
-    def render(self) -> str:
-        text = self.text
-        if text[-1] not in _SENTENCE_END:
-            text += "."
+    @property
+    def keys(self) -> tuple[str, ...]:
+        """The footnote keys behind this sentence, deduplicated, in order."""
         seen: list[str] = []
         for citation in self.citations:
             if citation.key not in seen:
                 seen.append(citation.key)
-        return text + "".join(f"[^{key}]" for key in seen)
+        return tuple(seen)
+
+    def body(self) -> str:
+        """The prose, terminated, with no markers."""
+        text = self.text
+        if text[-1] not in _SENTENCE_END:
+            text += "."
+        return text
+
+    def markers(self, exclude: Container[str] = ()) -> str:
+        return "".join(f"[^{key}]" for key in self.keys if key not in exclude)
+
+    def render(self) -> str:
+        return self.body() + self.markers()
+
+
+def _paragraph_line(sentences: Sequence[Sentence]) -> str:
+    """One paragraph, with every footnote marker written exactly once.
+
+    ``CLAUDE.md`` requires that every claim be attributable, not that every full
+    stop carry a marker. Three consecutive sentences off one script used to
+    print the same marker three times, which teaches a reader to ignore all of
+    them and so costs the citations the attention they are there to get.
+
+    So: where the whole paragraph rests on the same sources, it is marked once,
+    at the end. Markers are written per sentence only where the sources
+    genuinely differ within the paragraph, and even then a key already written
+    earlier in the paragraph is not written again.
+    """
+    if len({frozenset(sentence.keys) for sentence in sentences}) == 1:
+        return " ".join(s.body() for s in sentences) + sentences[0].markers()
+    parts: list[str] = []
+    written: set[str] = set()
+    for sentence in sentences:
+        parts.append(sentence.body() + sentence.markers(exclude=written))
+        written.update(sentence.keys)
+    return " ".join(parts)
 
 
 def quote_yaml(value: str) -> str:
@@ -154,6 +195,24 @@ class Document:
             )
         self.front.append((key, value))
 
+    def optional_field(self, key: str, value: Any) -> None:
+        """Add one frontmatter key, or nothing at all where there is no value.
+
+        ``started: null`` asserts nothing that omitting the key does not, and on
+        five medication pages out of six it is a line a reader learns to skip —
+        which is a cost, because the keys around it are load-bearing.
+
+        The event log's rule is the opposite, deliberately: an explicit ``null``
+        there separates "we considered this and do not know" from "nobody ever
+        asked", and that distinction is what stops one timestamp being quietly
+        filled in from another. Frontmatter is derived from the log and has no
+        such distinction to carry — it is a projection of what is known, so what
+        is not known is simply absent.
+        """
+        if value is None:
+            return
+        self.field_(key, value)
+
     def heading(self, text: str, level: int = 2) -> None:
         if self.body and self.body[-1] != "":
             self.body.append("")
@@ -167,7 +226,7 @@ class Document:
             self._remember(sentence)
         if self.body and self.body[-1] != "":
             self.body.append("")
-        self.body.append(" ".join(sentence.render() for sentence in sentences))
+        self.body.append(_paragraph_line(sentences))
 
     def bullet(self, sentence: Sentence, prefix: str = "") -> None:
         self._remember(sentence)
@@ -200,20 +259,32 @@ class Document:
         while lines and lines[-1] == "":
             lines.pop()
         text = "\n".join(lines) + "\n"
-        _assert_every_sentence_cited(text)
+        _assert_citations_are_sound(text)
         return text.encode("utf-8")
 
 
 #: Lines that are not prose and are exempt from the citation rule.
 _EXEMPT = re.compile(r"^(?:---|#|\[\^|\s*$|\||>)")
 
+#: A footnote reference, as opposed to a footnote definition at the line start.
+_MARKER = re.compile(r"\[\^([^\]]+)\](?!:)")
 
-def _assert_every_sentence_cited(text: str) -> None:
+
+def _assert_citations_are_sound(text: str) -> None:
     """Belt and braces over the structural guarantee in :class:`Sentence`.
 
-    :class:`Sentence` already makes an uncited sentence unconstructable. This
-    re-checks the rendered bytes, so a future edit that appends a line to
-    ``body`` directly cannot quietly reintroduce uncited prose.
+    Two properties, both about the rendered bytes rather than the objects that
+    produced them, so that a future edit appending straight to ``body`` cannot
+    quietly break either.
+
+    **Every line of prose is attributed.** :class:`Sentence` already makes an
+    uncited sentence unconstructable; this re-checks the output.
+
+    **No line repeats a marker.** A paragraph that prints the same footnote
+    three times is attributing nothing the first marker did not already
+    attribute, and it costs the reader's attention to every other citation on
+    the page. :func:`_paragraph_line` places markers so this holds; the check is
+    here so it stays holding.
     """
     in_front = False
     for number, line in enumerate(text.split("\n"), start=1):
@@ -222,8 +293,16 @@ def _assert_every_sentence_cited(text: str) -> None:
             continue
         if in_front or _EXEMPT.match(line):
             continue
-        if "[^" not in line:
+        keys = _MARKER.findall(line)
+        if not keys:
             raise ProjectionError(
                 f"line {number} of a wiki page has no citation: {line!r}. Every "
                 f"sentence must point at the artefact or event behind it."
+            )
+        repeated = sorted({key for key in keys if keys.count(key) > 1})
+        if repeated:
+            raise ProjectionError(
+                f"line {number} of a wiki page cites {', '.join(repeated)} more than "
+                f"once: {line!r}. One marker attributes the whole paragraph; repeating "
+                f"it teaches the reader to ignore all of them."
             )

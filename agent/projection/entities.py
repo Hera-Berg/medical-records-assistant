@@ -331,6 +331,18 @@ def build(
 
     status_slot = slots.get("status")
     stopped = status_slot is not None and _is_stop(status_slot)
+    if stopped:
+        # Both of these are projections forward from a script, and neither
+        # survives the medication being stopped. A page carrying
+        # `expected_exhaustion: 2026-10-07` under `status: stopped` reads to a
+        # clinician skimming it as a live supply, and `stale` would additionally
+        # be saying that nothing has confirmed a medication nobody is taking.
+        #
+        # Only the derived projections go. The dispense spans stay on the
+        # entity and the Supply section renders them in the past tense, because
+        # rule 4 keeps a stopped medication's file and its full history.
+        exhaustion = None
+        stale = False
     # Only worth reporting while the medication is still on the list. Once a
     # prescriber-issued stop has transitioned it there is no discrepancy left to
     # show, and the earlier report stays visible in the slot's history.

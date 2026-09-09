@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
+from ..events.envelope import parse_ts_or_none
 from . import dates, entities as entities_mod, reconcile, timeline as timeline_mod
 from .citations import Citation, Citer
 from .entities import Entity
@@ -48,18 +49,82 @@ def _label(predicate: str) -> str:
     return " ".join(w[0].upper() + w[1:] if w else w for w in words[:1] + words[1:])
 
 
+def _document_date(claim):
+    """The date on the artefact itself — ``artifact_ts`` — as a plain date."""
+    parsed = parse_ts_or_none(claim.artifact_ts) if claim.artifact_ts else None
+    return parsed.date() if parsed else None
+
+
+def _when_phrases(claim) -> list[str]:
+    """When a claim is from, with each date saying which timestamp it is.
+
+    The four timestamps never mean the same thing, so an unlabelled date in the
+    body can be read against a footnote quoting a different one and look like a
+    contradiction the page has no way to explain. Two prescriber-issued scripts
+    both described as "5 August 2026" above footnotes reading "photographed 6
+    August" and "photographed 7 August" are ``artifact_ts`` against
+    ``captured_ts`` — both correct, and the page never said so.
+
+    So ``artifact_ts`` is written here in the footnote's own words, "document
+    dated", and ``occurred_at`` keeps the idiom the rest of the page already
+    uses: "on" before an exact day, and nothing before a band, which
+    :meth:`FuzzyDate.render` already opens with "around".
+
+    ``occurred_at`` is dropped only where it is an exact day the document date
+    already states. Never where it carries a band — the band is uncertainty the
+    value itself does not hold, and losing it would be a timeline faking
+    precision.
+    """
+    document = _document_date(claim)
+    phrases: list[str] = []
+    occurred = claim.occurred_at
+    if occurred is not None and not (occurred.is_exact and occurred.value == document):
+        phrases.append(
+            f"on {occurred.render()}" if occurred.is_exact else occurred.render()
+        )
+    if document is not None:
+        phrases.append(f"document dated {dates.render_date(document)}")
+    return phrases
+
+
+def _source_date_phrase(claim) -> str | None:
+    """How a sentence about the source document names that document's date.
+
+    ``artifact_ts`` only. A sentence saying "the source for this is dated ..."
+    is a statement about the paper, and ``occurred_at`` is a statement about the
+    thing the paper describes — substituting one for the other is the mismatch
+    :func:`_when_phrases` exists to stop, and it does not become acceptable
+    because a sentence would otherwise have no date in it. A claim with no
+    document date simply does not get this clause.
+    """
+    document = _document_date(claim)
+    if document is None:
+        return None
+    return f"a document dated {dates.render_date(document)}"
+
+
+def _supply_source_phrase(claim) -> str:
+    """What to call whatever the supply was counted from.
+
+    A correction is not a source. It carries its target's evidence tier so that
+    it can outrank a later re-extraction, but it is something the user typed,
+    and a page calling it "the most recent prescriber-issued source" is
+    attributing the user's own words to a prescriber.
+    """
+    if claim.is_correction:
+        return "Your correction"
+    return f"The most recent {claim.evidence_tier} source for this"
+
+
 def _claim_phrase(claim, citer: Citer, extra: str | None = None) -> tuple[str, Citation]:
-    """"5mg daily (prescriber-issued, 4 June 2026)" and the footnote for it.
+    """"5mg daily (prescriber-issued, document dated 4 June 2026)" and its footnote.
 
     The value is always the literal span the source used. The parenthesis says
     where it came from and when, so the tier is visible on every line without a
     reader having to hold the page's structure in their head.
     """
     citation = citer.cite(claim.cite, _correction_description(claim))
-    qualifiers = [claim.evidence_tier]
-    when = claim.occurred_at
-    if when is not None:
-        qualifiers.append(when.render())
+    qualifiers = [claim.evidence_tier, *_when_phrases(claim)]
     if extra:
         qualifiers.append(extra)
     return f"{claim.value.literal} ({', '.join(qualifiers)})", citation
@@ -105,31 +170,51 @@ def _bare_entity_note(document: Document, entity: Entity, citer: Citer) -> None:
 
 
 def _supply_section(document: Document, entity: Entity, citer: Citer, as_of_date) -> None:
+    """What the last script dispensed, and when that runs out.
+
+    Two things this section must not do. It must not exist merely to report that
+    it has nothing to report: a dose claim's own frequency reaches
+    :class:`Dispense` as a fallback, and a "Supply" heading over the single word
+    "daily" is noise on a page being skimmed — see :attr:`Dispense.has_spans`.
+
+    And it must not advertise a supply for a medication that has been stopped.
+    ``expected_exhaustion`` is already dropped for a stopped entity, so the
+    forward-looking sentences fall away on their own; what is left goes into the
+    past tense, because the script and its quantities are history the record
+    keeps rather than a supply anyone is still counting down.
+    """
     supply = entity.dispense
     claim = entity.dispense_claim
-    if supply is None or claim is None:
+    if supply is None or claim is None or not supply.has_spans:
         return
+    stopped = entity.status == entities_mod.STOPPED
     citation = citer.cite(claim.cite, _correction_description(claim))
     document.heading("Supply")
     sentences = []
 
-    when = claim.occurred_at
-    if when is not None:
-        sentences.append(
-            Sentence(
-                f"The most recent {claim.evidence_tier} source for this is dated "
-                f"{when.render()}",
-                [citation],
-            )
-        )
+    dated = _source_date_phrase(claim)
+    source = _supply_source_phrase(claim)
+    records = "recorded" if stopped else "records"
+    was = "was" if stopped else "is"
+    if dated is not None:
+        sentences.append(Sentence(f"{source} {was} {dated}", [citation]))
+        # "It" refers to the document named in the sentence above. Without that
+        # sentence the subject has to be restated rather than left dangling.
+        source = "It"
 
     spans = supply.describe()
     days = supply.days_supply
     if days is not None and spans:
         sentences.append(
-            Sentence(f"It records {spans}, which is {days} days of supply", [citation])
+            Sentence(
+                f"{source} {records} {spans}, which {was} {days} days of supply",
+                [citation],
+            )
         )
-    elif supply.unreadable:
+    elif supply.unreadable and not stopped:
+        # Suppressed once stopped: the reason there is no exhaustion date is the
+        # stop, which the page states above with its own citation, and offering a
+        # second reason invites a reader to weigh them against each other.
         sentences.append(
             Sentence(
                 f"No expected exhaustion date is recorded here because "
@@ -347,16 +432,17 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         if slot.winner is not None:
             document.field_(predicate, slot.winner.value.literal)
 
-    if entity.subject.kind == "med" or "started" in entity.slots:
-        document.field_("started", entity.started.iso if entity.started else None)
-    document.field_(
+    # Absent keys are omitted, not written as null: see `Document.optional_field`.
+    # `expected_exhaustion` needs no kind guard now — only a medication ever has
+    # one, and a stopped medication no longer has one at all.
+    document.optional_field("started", entity.started.iso if entity.started else None)
+    document.optional_field(
         "last_confirmed", entity.last_confirmed.iso if entity.last_confirmed else None
     )
-    if entity.subject.kind == "med":
-        document.field_(
-            "expected_exhaustion",
-            entity.expected_exhaustion.iso if entity.expected_exhaustion else None,
-        )
+    document.optional_field(
+        "expected_exhaustion",
+        entity.expected_exhaustion.iso if entity.expected_exhaustion else None,
+    )
     if entity.evidence_tier:
         document.field_("evidence_tier", entity.evidence_tier)
 
@@ -427,7 +513,7 @@ def timeline_page(month: str, rows: Sequence[timeline_mod.Row], citer: Citer) ->
         if row.heading != current_heading:
             document.heading(row.heading, level=2)
             current_heading = row.heading
-        citation = citer.cite(row.cite, "Note recorded")
+        citation = citer.cite(row.cite, row.cite_description)
         document.bullet(Sentence(f"**{row.marker}** — {row.text}", [citation]))
     return document.render()
 

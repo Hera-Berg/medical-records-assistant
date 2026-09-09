@@ -121,7 +121,10 @@ def test_an_uncountable_supply_produces_no_exhaustion_date_and_no_staleness(disp
     assert entity.expected_exhaustion is None
     assert entity.stale is False
     assert entity.status == entities_mod.ACTIVE
-    assert b"expected_exhaustion: null" in result.files[entity.rel_path]
+    # Omitted, not written as null. A derived file has nothing to distinguish
+    # between "looked and found none" and "never asked", so the key that would
+    # carry the distinction is only noise — see `Document.optional_field`.
+    assert b"expected_exhaustion" not in result.files[entity.rel_path]
 
 
 def test_only_an_explicit_user_statement_stops_a_medication():

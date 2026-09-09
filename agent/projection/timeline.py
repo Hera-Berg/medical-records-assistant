@@ -63,6 +63,12 @@ class Row:
     cite: str
     event_id: str
     sort_key: tuple[Any, ...]
+    #: How the footnote introduces whatever ``cite`` points at. Carried on the
+    #: row rather than chosen when the page is written, so that one event is
+    #: described the same way wherever it is cited: a `claim.corrected` footnoted
+    #: as "Your correction" on the medication page and as "Note recorded" on the
+    #: timeline is one act of the user's wearing two names.
+    cite_description: str = "Note recorded"
 
     @property
     def month(self) -> str:
@@ -194,6 +200,9 @@ def build(
                 marker=claim.evidence_tier,
                 text=f"{name} — {claim.predicate}: {claim.value.literal}",
                 cite=claim.cite,
+                cite_description=(
+                    "Your correction" if claim.is_correction else "Recorded claim"
+                ),
                 event_id=claim.event_id,
                 sort_key=claim.sort_key,
             )

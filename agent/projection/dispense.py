@@ -77,6 +77,22 @@ class Dispense:
     def is_computable(self) -> bool:
         return self.days_supply is not None
 
+    @property
+    def has_spans(self) -> bool:
+        """Whether a source actually stated a supply, as opposed to only a dose.
+
+        :func:`parse` accepts the dose claim's own frequency as a fallback,
+        because "5mg daily, 30 tablets" is how a script really reads and the
+        dispense block does not always restate the frequency. On its own that
+        fallback is not supply information — it is the dose, which the page has
+        already rendered as the dose — so a Supply section built from it says
+        only that there is nothing to say, which is noise on a page a clinician
+        is skimming.
+        """
+        return any(
+            (self.quantity_literal, self.repeats_literal, self.dose_units_literal)
+        )
+
     def exhaustion(self, start: FuzzyDate | None) -> FuzzyDate | None:
         """When the supply is expected to run out, counted from *start*.
 

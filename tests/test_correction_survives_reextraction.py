@@ -201,4 +201,4 @@ def test_a_replaced_reading_names_what_replaced_it():
 
     result = projection.project(sorted(events, key=lambda e: e.sort_key), AS_OF)
     page = result.files["wiki/medications/perindopril.md"].decode("utf-8")
-    assert "5mg daily (prescriber-issued, 4 January 2026), replaced by 10mg daily" in page
+    assert "5mg daily (prescriber-issued, on 4 January 2026), replaced by 10mg daily" in page
