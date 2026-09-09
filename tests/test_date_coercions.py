@@ -1,9 +1,12 @@
 """Dates the payload states in a form the parser cannot use as written.
 
 Date uncertainty is first-class: "a timeline that fakes precision is worse than
-one that shows fuzz". So an unrecognised precision is widened rather than
-believed — blurrier, never sharper — and that is the right behaviour. What it
-must not be is silent.
+one that shows fuzz". So an unrecognised precision is widened to a year, and an
+unusable ``uncertainty_days`` widens one precision step — the field's presence
+asserts fuzz it does not quantify, so the bare precision band would be sharper
+than the payload claimed while a number of days would be invention. Both fail
+blurrier, using only vocabulary the schema already has. What neither may be is
+silent.
 
 The reason it cannot rely on phase 4 validating this away is the same one that
 makes the consequence tier a lookup rather than a payload field: the log can hold
@@ -63,20 +66,61 @@ def test_an_unrecognised_precision_is_reported_against_its_entity():
     assert "widened to a whole year" in page
 
 
-def test_a_malformed_uncertainty_says_which_way_it_erred():
-    """Dropping the slack makes the date sharper, which is the unsafe direction.
+@pytest.mark.parametrize(
+    "precision, stepped",
+    [("day", "month"), ("month", "year"), ("year", "year")],
+)
+def test_an_unusable_uncertainty_widens_one_precision_step(precision, stepped):
+    """The field's presence asserts fuzz; its value says nothing about how much.
 
-    There is no honest wider value to substitute — inventing a band would be
-    worse than reporting — so the note names the direction rather than hiding it.
+    So the bare precision band would be sharper than the payload claimed, and a
+    number of days would be invention. One step through the schema's own
+    granularities is neither, and it fails blurrier.
     """
+    parsed = dates.parse_occurred_at(
+        {"value": "2026-08-01", "precision": precision, "uncertainty_days": "fourteen"}
+    )
+
+    assert parsed.precision == stepped
+    assert parsed.uncertainty_days == 0
+    assert parsed.value.isoformat() == "2026-08-01", "the date itself is not moved"
+
+
+def test_an_unusable_uncertainty_says_which_way_it_erred():
     result = _with_occurred(
         {"value": "2026-08-01", "precision": "day", "uncertainty_days": "fourteen"}
     )
     notes = [note for note in result.anomalies if "uncertainty_days" in note]
 
     assert len(notes) == 1
-    assert "sharper than the payload claimed" in notes[0]
+    assert "widened one step, from day to month precision" in notes[0]
     assert notes[0].subject_id == "med:sertraline"
+
+
+def test_the_date_is_kept_rather_than_dropped():
+    """Null would discard information the record exists to keep.
+
+    Roughly when something happened is worth more than nothing, as long as the
+    page says how roughly.
+    """
+    result = _with_occurred(
+        {"value": "2026-08-01", "precision": "day", "uncertainty_days": -3}
+    )
+    slot = result.entities["med:sertraline"].slots["dose"]
+
+    assert slot.winner.occurred_at is not None
+    assert slot.winner.occurred_at.render() == "around August 2026"
+
+
+def test_both_fields_unusable_widens_once_each_and_reports_both():
+    """Precision is widened to a year first; the step then has nowhere left to go."""
+    result = _with_occurred(
+        {"value": "2026-08-01", "precision": "fortnight", "uncertainty_days": []}
+    )
+    slot = result.entities["med:sertraline"].slots["dose"]
+
+    assert slot.winner.occurred_at.precision == "year"
+    assert len(result.anomalies) == 2
 
 
 @pytest.mark.parametrize(

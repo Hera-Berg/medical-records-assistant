@@ -36,6 +36,19 @@ MONTH_NAMES: tuple[str, ...] = (
 #: date it should have blurred.
 PRECISIONS: tuple[str, ...] = ("day", "month", "year")
 
+
+def widened(precision: str) -> str:
+    """One step coarser through the schema's own granularities, or stay at year.
+
+    Used where the payload asserts fuzz it does not quantify. Stepping through
+    the vocabulary that is already there invents nothing — unlike picking a
+    number of days — and it fails in the blurrier direction, which is the only
+    direction a date may ever be wrong in here.
+    """
+    if precision not in PRECISIONS:
+        return PRECISIONS[-1]
+    return PRECISIONS[min(PRECISIONS.index(precision) + 1, len(PRECISIONS) - 1)]
+
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 
 
@@ -170,14 +183,19 @@ def parse_occurred_at(payload: object) -> FuzzyDate | None:
     uncertainty = payload.get("uncertainty_days", 0)
     if isinstance(uncertainty, bool) or not isinstance(uncertainty, int) or uncertainty < 0:
         if uncertainty not in (0, None):
-            # Note the direction: dropping the slack makes the date *sharper*
-            # than the payload claimed, which is the opposite of what the
-            # precision rule does. There is no honest wider value to substitute —
-            # inventing a band would be worse — so it is reported instead.
+            # The field being there at all asserts uncertainty beyond the
+            # precision unit; its value says nothing about how much. Falling back
+            # to the bare precision band would therefore be sharper than the
+            # payload claimed, and picking a number of days would be invention.
+            # One step coarser is neither.
+            stepped = widened(precision)
             coercions.append(
-                f"uncertainty_days {uncertainty!r} is not a whole number of days and was "
-                f"dropped, so this date renders sharper than the payload claimed"
+                f"uncertainty_days {uncertainty!r} is not a whole number of days. The "
+                f"field asserts fuzz without saying how much, so the date was widened "
+                f"one step, from {precision} to {stepped} precision, rather than read "
+                f"as {precision}-exact"
             )
+            precision = stepped
         uncertainty = 0
 
     return FuzzyDate(
