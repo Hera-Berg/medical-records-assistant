@@ -315,10 +315,17 @@ established.** Never substitute one timestamp for another to fill a gap — inge
 time the moment someone drags in a photo taken three days ago, and that substitution is invisible
 until it has already corrupted months of timeline.
 
-**Date uncertainty is first-class.** A voice note says "the headaches started around Easter."
-Store `{"value": "2026-04-05", "precision": "month", "uncertainty_days": 14}` and render the band. A
+**Date uncertainty is first-class.** A note says "sometime in June" — store
+`{"value": "2026-06-15", "precision": "month", "uncertainty_days": 15}` and render the band. A
 timeline that fakes precision is worse than one that shows fuzz. Never let the model pick an exact
 date to satisfy a schema — the extraction prompt must offer the uncertainty fields explicitly.
+
+**Unresolvable temporal references are preserved, never dropped and never auto-resolved.** "Around
+Easter", "last Christmas", "the week before the wedding" — the model copies the phrase verbatim and
+emits `occurred_at: null`. It never computes a date. The projection then raises a *dateable* review
+item carrying a candidate computed in code where one exists — the computus is deterministic, the
+year is not — for the user to confirm in one tap. Discarding the phrase loses information the record
+exists to keep; resolving it silently invents the year.
 
 ### Evidence tiers
 
