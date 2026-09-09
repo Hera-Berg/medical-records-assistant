@@ -33,6 +33,43 @@ ENV_VAULT = "HEALTH_VAULT"
 #: engine's business (phase 3), not this phase's.
 VAULT_DIRS = ("raw", "events", "wiki", "exports", "bulk", ".agent", ".agent/logs")
 
+#: Derived paths that are caches of *work*, not of the record, and so are left
+#: out of the byte-identical rebuild comparison.
+#:
+#: The comparison exists to prove invariant 1 — delete everything derived,
+#: replay from ``raw/`` and ``events/``, get the same bytes back. These three do
+#: not weaken it, because none of them holds a fact:
+#:
+#: * ``.agent/index.sqlite`` is a lookup cache over the projection. Every
+#:   question it answers is also answered by walking the projection, and there
+#:   is a test that deletes it between two requests and compares the responses.
+#:   Its bytes are not reproducible anyway: SQLite carries page-level state that
+#:   differs between two runs with identical logical content.
+#: * ``.agent/jobs.jsonl`` is the extraction queue. It records what has been
+#:   *asked for*, not what is true; deleting it loses the queue, not the record,
+#:   and the next run re-queues every artefact the log has no extraction for.
+#: * ``.agent/logs`` is diagnostic output about the running process.
+#:
+#: A path earns its place here by being genuinely disposable, never by being
+#: inconvenient to reproduce — the second would be a hole in the invariant
+#: rather than an exception to the comparison. ``tests`` asserts the difference
+#: by deleting all of them and requiring the wiki bytes to match.
+NON_DETERMINISTIC_DERIVED = (
+    ".agent/index.sqlite",
+    ".agent/jobs.jsonl",
+    ".agent/logs",
+)
+
+
+def is_non_deterministic(rel: str) -> bool:
+    """Whether a vault-relative path is one of the caches excluded above."""
+    posix = str(rel).replace("\\", "/")
+    return any(
+        posix == excluded or posix.startswith(excluded + "/")
+        for excluded in NON_DETERMINISTIC_DERIVED
+    )
+
+
 #: Written at the root of a vault seeded by ``health-agent demo``. The name is
 #: here rather than in :mod:`agent.demo` because the code that most needs to ask
 #: "is this invented data" is code that should not be importing the seeder — the

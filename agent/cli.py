@@ -39,6 +39,11 @@ empty pass with no explanation is indistinguishable from a broken command.
 
 ``set-key`` writes the inference credential to the OS keychain. It never writes
 one to ``config.toml``, which lives in the vault and syncs with it.
+
+``serve`` runs the HTTP layer and the interface on ``127.0.0.1`` and nothing
+else. There is no authentication in front of it and there is not going to be
+any — the port is the boundary — so a non-loopback host is refused rather than
+warned about.
 """
 
 from __future__ import annotations
@@ -499,6 +504,43 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_serve(args: argparse.Namespace, out: TextIO) -> int:
+    """Run the local server and the interface.
+
+    Blocks until interrupted. Everything this serves is also a subcommand here,
+    which is deliberate: a folder that outlives the app has to be usable without
+    one, and a person debugging a broken interface needs a way in that does not
+    go through the interface.
+    """
+    from . import server as server_mod  # noqa: PLC0415 - uvicorn is slow to import
+
+    vault = Vault.open(args.vault)
+    host = server_mod.runtime.check_host(args.host)
+    port = args.port or vault.config.port
+
+    build = server_mod.static.build_info()
+    print(f"vault     {vault.root}", file=out)
+    print(f"serving   http://{host}:{port}", file=out)
+    if not build["present"]:
+        print(
+            "interface NOT BUILT — the API answers, but / has no page. Run "
+            "`npm --prefix frontend ci && npm --prefix frontend run build`",
+            file=out,
+        )
+    elif build["commit"]:
+        print(f"interface built from {build['commit']} at {build['built']}", file=out)
+    if args.no_worker:
+        print(
+            "worker    off — captures queue and stay queued; run "
+            "`health-agent extract` to read them",
+            file=out,
+        )
+    print("\nNothing here is reachable from another machine. Ctrl-C to stop.", file=out)
+
+    server_mod.serve(vault, host=host, port=port, worker=not args.no_worker)
+    return EXIT_OK
+
+
 def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
     """Score the model against the golden corpus. Run before accepting a swap.
 
@@ -527,6 +569,13 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
             file=out,
         )
     return EXIT_OK if report.ok else EXIT_PROBLEMS
+
+
+def server_host_default() -> str:
+    """The only host ``serve`` binds without being argued with."""
+    from .server.runtime import DEFAULT_HOST  # noqa: PLC0415
+
+    return DEFAULT_HOST
 
 
 _VAULT_HELP = (
@@ -728,6 +777,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_vault(set_key)
     set_key.set_defaults(func=cmd_set_key)
+
+    serve = subparsers.add_parser(
+        "serve",
+        help="run the local interface and API on 127.0.0.1",
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="port to bind; defaults to the one in config.toml",
+    )
+    serve.add_argument(
+        "--host",
+        default=server_host_default(),
+        help=(
+            "host to bind. Loopback only, and not negotiable: there is no "
+            "authentication here, so the port is the whole boundary around the "
+            "record. Use your own VPN to reach it from elsewhere"
+        ),
+    )
+    serve.add_argument(
+        "--no-worker",
+        action="store_true",
+        dest="no_worker",
+        help=(
+            "do not read queued artefacts in the background. Captures still "
+            "queue; `health-agent extract` drains them"
+        ),
+    )
+    _add_vault(serve)
+    serve.set_defaults(func=cmd_serve)
 
     evaluate = subparsers.add_parser(
         "eval",

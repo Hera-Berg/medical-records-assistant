@@ -17,6 +17,7 @@ asleep.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -70,7 +71,24 @@ def create_app(
     redaction.install()
     configured = check_endpoint(vault)
 
+    @asynccontextmanager
+    async def lifespan(built: FastAPI):
+        """Start the worker with the server, and stop it with the server.
+
+        The worker owns a thread and a socket to the box; tying both ends to the
+        app's lifetime is what stops a reloaded process leaving one behind,
+        holding a job marked `running` that nothing will ever finish.
+        """
+        if built.state.worker is not None:
+            built.state.worker.start()
+        try:
+            yield
+        finally:
+            if built.state.worker is not None:
+                built.state.worker.stop()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Patient-held health record",
         # Not a public API and never will be. The schema routes stay because
         # they cost nothing and make the surface legible to its one user.
@@ -112,16 +130,6 @@ def create_app(
 
     # Registered last: its catch-all path must lose to every API route above.
     static.mount(app)
-
-    @app.on_event("startup")
-    def _start() -> None:
-        if app.state.worker is not None:
-            app.state.worker.start()
-
-    @app.on_event("shutdown")
-    def _stop() -> None:
-        if app.state.worker is not None:
-            app.state.worker.stop()
 
     return app
 

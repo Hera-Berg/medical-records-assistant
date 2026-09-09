@@ -26,7 +26,8 @@ become their latency.
 
 from __future__ import annotations
 
+from . import runtime, static
 from .app import create_app
 from .runtime import LOOPBACK_HOSTS, serve
 
-__all__ = ["LOOPBACK_HOSTS", "create_app", "serve"]
+__all__ = ["LOOPBACK_HOSTS", "create_app", "runtime", "serve", "static"]

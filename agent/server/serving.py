@@ -63,6 +63,38 @@ INLINE_TYPES = frozenset(
     }
 )
 
+#: Types that must never render inline, whatever else happens to the list above.
+#:
+#: Redundant today — none of these is on the allowlist, and this project's mime
+#: detector sniffs both an SVG and an HTML file as ``text/plain`` anyway, which
+#: a browser shows as source. It is here because the allowlist is the kind of
+#: list that gets widened. Someone adding ``image/svg+xml`` in a year, reasoning
+#: that an SVG is an image, would be adding a scriptable document to the set of
+#: things this server renders on the SPA's own origin. The check below turns
+#: that into an import-time failure instead of a quiet one.
+NEVER_INLINE = frozenset(
+    {
+        "image/svg+xml",
+        "text/html",
+        "application/xhtml+xml",
+        "text/xml",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+        "application/ecmascript",
+        "multipart/related",
+        "message/rfc822",
+    }
+)
+
+_overlap = INLINE_TYPES & NEVER_INLINE
+if _overlap:  # pragma: no cover - a coding error, caught at import
+    raise AssertionError(
+        f"{', '.join(sorted(_overlap))} is both allowed inline and forbidden "
+        f"inline. A scriptable document served inline runs with the app's origin "
+        f"and can read the whole record."
+    )
+
 #: What anything not on the list is served as. A type no browser renders.
 DOWNLOAD_TYPE = "application/octet-stream"
 
@@ -78,7 +110,8 @@ CONTENT_SECURITY_POLICY = (
 
 
 def may_render_inline(mime: str) -> bool:
-    return normalise(mime) in INLINE_TYPES
+    kind = normalise(mime)
+    return kind in INLINE_TYPES and kind not in NEVER_INLINE
 
 
 def normalise(mime: str) -> str:

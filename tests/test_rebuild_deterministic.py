@@ -40,6 +40,12 @@ DEVICES = ("elwood-laptop", "elwood-phone", "clinic-tablet")
 
 DERIVED_DIRS = ("wiki", ".agent")
 
+#: The caches of work in progress are skipped — see
+#: ``agent.vault.NON_DETERMINISTIC_DERIVED``, which carries the reason each one
+#: earns the exclusion. They are not merely awkward to reproduce: none of them
+#: holds a fact, and ``test_http_index_is_disposable`` deletes all of them and
+#: requires these same bytes to come back unchanged.
+
 
 def _mixed_stream() -> list:
     """A stream with one of everything the projection has to handle."""
@@ -149,8 +155,12 @@ def _snapshot(root: Path) -> dict[str, bytes]:
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
-            if path.is_file():
-                found[path.relative_to(root).as_posix()] = path.read_bytes()
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            if vault_mod.is_non_deterministic(rel):
+                continue
+            found[rel] = path.read_bytes()
     return found
 
 
@@ -241,6 +251,29 @@ def test_generated_files_use_lf_endings_and_end_with_one_newline(populated, iden
         assert b"\r" not in data, f"{rel} contains a carriage return"
         assert data.endswith(b"\n"), f"{rel} does not end with a newline"
         assert not data.endswith(b"\n\n"), f"{rel} ends with a blank line"
+
+
+def test_the_caches_do_not_reach_the_comparison(populated, identity):
+    """A cache appearing in the vault must not change what is compared.
+
+    The exclusion is only sound if it is actually applied, and the failure mode
+    if it is not — a rebuild that stops being byte-identical the moment someone
+    captures a file — would look like a broken invariant rather than a broken
+    test.
+    """
+    vault = Vault.open(populated, identity=identity)
+    projection.rebuild(vault, as_of=AS_OF)
+    before = _snapshot(populated)
+
+    # The shapes a running server leaves behind.
+    (populated / ".agent" / "jobs.jsonl").write_text(
+        '{"id": "job-1", "artifact": "a3f91c", "state": "queued"}\n', encoding="utf-8"
+    )
+    (populated / ".agent" / "index.sqlite").write_bytes(b"SQLite format 3\x00")
+    (populated / ".agent" / "logs" / "agent.log").write_text("noise\n", encoding="utf-8")
+
+    projection.rebuild(Vault.open(populated, identity=identity), as_of=AS_OF)
+    assert _snapshot(populated) == before
 
 
 def test_rebuild_needs_nothing_but_raw_and_events(populated, identity):

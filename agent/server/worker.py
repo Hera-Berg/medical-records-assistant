@@ -72,7 +72,10 @@ class Worker:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._probed = False
-        self._parked = False
+        #: Set when asking again would achieve nothing until a person acts — a
+        #: rejected key, a public endpoint, a model the box does not have. The
+        #: thread keeps running so the state stays reportable; it stops asking.
+        self._stalled = False
         self.last_error: str | None = None
 
     # -- lifecycle ---------------------------------------------------------
@@ -107,7 +110,7 @@ class Worker:
         with self.state.lock:
             queue = self.state.queue()
             resumed = queue.resume()
-        self._parked = False
+        self._stalled = False
         self._probed = False
         self.nudge()
         return len(resumed)
@@ -130,22 +133,18 @@ class Worker:
         Called by the loop, and called directly by tests — which is the point of
         it being a method that returns rather than a loop body.
         """
-        if self._parked:
-            # Parked queues need a person, not a retry. Keep reporting, stop
-            # asking. `resume()` is what clears this.
+        if self._stalled:
+            # Needs a person, not a retry. Keep reporting, stop asking.
+            # `resume()` is what clears this.
             return PROBE_SECONDS
 
         try:
-            client_factory = session.open_client
-            with client_factory(self.state.vault) as client:
+            with session.open_client(self.state.vault) as client:
                 if not self._probed:
                     self._run_probe(client)
                     self._probed = True
                     if self.state.endpoint.is_terminal:
-                        self._parked = self.state.endpoint.state == (
-                            endpoint_state.UNAUTHORISED
-                        )
-                        return PROBE_SECONDS
+                        return self._stall()
                 return self._drain(client)
         except EndpointNotConfigured:
             # Not a fault. A vault with no [models.vlm] table is simply not one
@@ -155,7 +154,33 @@ class Worker:
         except (InferenceError, HealthAgentError) as exc:
             self.state.record_endpoint_error(exc)
             self.last_error = redaction.scrub(str(exc))
+            # A 401 raised while the client is being built is the same terminal
+            # condition as a 401 raised by a job, and reaching this branch is
+            # the ordinary way it happens: the credential is resolved per call,
+            # so a rotated key fails before any request is sent. Deciding from
+            # the resulting *state* rather than from where the exception was
+            # caught is what stops one of those two paths retrying for ever.
+            if self.state.endpoint.is_terminal:
+                return self._stall()
             return UNREACHABLE_SECONDS
+
+    def _stall(self) -> float:
+        """Stop asking, and park the queue if the reason is the key.
+
+        The queue is only marked ``blocked-auth`` for an actual auth failure:
+        a model mismatch or a public endpoint also needs a person, but calling
+        those jobs "blocked on authentication" would send whoever reads the
+        queue to fix the wrong thing.
+        """
+        self._stalled = True
+        if self.state.endpoint.state == endpoint_state.UNAUTHORISED:
+            with self.state.lock:
+                queue = self.state.queue()
+                if not queue.is_parked:
+                    queue.park_for_auth(
+                        "authentication was rejected by the inference box"
+                    )
+        return PROBE_SECONDS
 
     def _run_probe(self, client) -> None:
         """Learn all three states before the first real job runs.
@@ -183,7 +208,6 @@ class Worker:
             self.state.invalidate()
 
         if report.is_parked:
-            self._parked = True
             self.state.set_endpoint(
                 endpoint_state.EndpointState(
                     state=endpoint_state.UNAUTHORISED,
@@ -192,7 +216,7 @@ class Worker:
                     checked_ts=self.state.snapshot().built_ts,
                 )
             )
-            return PROBE_SECONDS
+            return self._stall()
 
         unreachable = any(
             job.state == jobs_mod.UNREACHABLE for job in queue.runnable()
@@ -202,6 +226,6 @@ class Worker:
     def status(self) -> dict[str, Any]:
         return {
             "running": self.running,
-            "parked": self._parked,
+            "stalled": self._stalled,
             "probed": self._probed,
         }
