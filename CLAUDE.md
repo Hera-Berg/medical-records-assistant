@@ -167,6 +167,14 @@ not unprocessed, and must not re-enter the review queue.
 The owner can still audit their own rejections — phase 7 shows review history — but that is a view
 of the log, not content in the record.
 
+**Two contradictory user decisions on the same reading: the later one governs, and the ambiguity is
+raised.** If a reading was confirmed and later rejected, the content is withdrawn — a rejection is an
+explicit user act and it is the more recent one, and everywhere else in the system the latest
+decision wins among acts of equal authority. Keeping the earlier confirmation standing would leave
+rejected content in a document that gets printed. Because the direction of the mistake is unknowable,
+raise a review item naming the artefact and asking which was meant, **without reproducing the
+content**. Withdrawing then re-confirming is one tap; un-printing a clinician's copy is not.
+
 **Anomalies live in the rebuild report, not the wiki**, when they have no subject — a malformed
 payload or a shard naming violation is integrity information about the log, not record content.
 An anomaly that *does* resolve to a subject (a payload disagreeing with the computed consequence
