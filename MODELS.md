@@ -7,7 +7,7 @@ writes to `wiki/`.
 
 | Role | Runs on | Default | Purpose |
 |---|---|---|---|
-| Vision-language | **Remote** — MLX box over Tailscale | `Qwen3.5-9B` 4-bit MLX | Read artefacts, propose claims, draft summaries |
+| Vision-language | **Remote** — MLX box over Tailscale | `Qwen3.8-Flash-Next` (oQ4e MLX) | Read artefacts, propose claims, draft summaries |
 | Speech | **Local** — the laptop | `faster-whisper` `small` int8 | Voice notes → transcript |
 
 **The split is deliberate.** ASR stays local because it is small (~500 MB), because voice notes are
@@ -20,19 +20,27 @@ the tailnet, you're on a plane. Everything below follows from that.
 
 ## Vision-language model
 
-Qwen3.5 Small is 0.8B / 2B / 4B / 9B, all natively multimodal — the vision encoder is integrated, not
-bolted on, so the model reads a photographed script directly rather than consuming OCR output.
-Apache 2.0.
+`Qwen3.8-Flash-Next` is a natively multimodal MoE with a vision encoder — 125B total parameters with
+6B activated per token, plus a 51B n-gram embedding table and a 4B MTP head, 262K native context.
+It reads a photographed script directly rather than consuming OCR output. Licence is the Qwen
+Community License 1.0, not Apache-2.0: free to use and deploy commercially, but with naming clauses
+above 100M MAU or $20M monthly revenue and a separate licence for Model-as-a-Service. Irrelevant for
+a personal record; relevant if this ever ships.
 
-With inference on a dedicated box, take the 9B. Use `mlx-community/Qwen3.5-9B-4bit` or the 8-bit
-variant if the box has the memory; on Apple Silicon with unified memory, 8-bit at 9B is very
-comfortable on 32 GB and worth taking over 4-bit for a task where a misread digit is the failure
-mode. **MLX quantisation is named `4bit` / `8bit`, not `Q4_K_M`** — GGUF quant names do not apply and
-config that uses them is a sign someone copied from the llama.cpp path.
+Two server settings are not optional for this project:
 
-Keep `Qwen3.5-4B` configured as the local fallback for the offline path (below), but do not go below
-4B. The 2B and 0.8B variants will load on anything and produce fluent wrong doses, which is the one
-output this project cannot tolerate.
+- **Thinking off, or a reasoning parser set.** These models think by default and emit
+  `<think>…</think>` before the answer. With no reasoning parser, that lands in `content` and every
+  schema-validated extraction fails. Extraction does not benefit from the trace anyway.
+- **Guided grammar on.** This is the schema-constrained decoding the claim path depends on.
+
+**SSD n-gram offload keeps the model in memory but slows prefill after context changes**, and vision
+prefill is exactly this project's workload. If extraction is slow, test with it off before
+optimising anything else.
+
+Keep `Qwen3.5-4B` (Apache-2.0, GGUF) configured as the local offline fallback. Do not go below 4B
+there: the 2B and 0.8B variants will load on anything and produce fluent wrong doses, which is the
+one output this project cannot tolerate.
 
 **Verify vision actually works at startup.** The client speaks plain OpenAI
 `/v1/chat/completions` with `image_url` content parts. Support for those parts is less uniform across
@@ -60,7 +68,14 @@ entire privacy premise of the project evaporates with no visible change in behav
   `100.64.0.0/10` (Tailscale CGNAT), RFC1918, or loopback. Anything else is a startup failure with a
   clear message — not a warning, not a toggle buried in settings.
 - **Resolve and check on every call, not just at boot.** A hostname that resolved privately at
-  startup can resolve elsewhere later.
+  startup can resolve elsewhere later. MagicDNS names (`host.tailnet.ts.net`) are fine — they resolve
+  to `100.x` — and HTTPS via Tailscale Serve carries a real certificate, so TLS verification stays
+  on. Never disable it.
+- **The address guard cannot detect Tailscale Funnel.** A Funnel-exposed endpoint still resolves to
+  `100.x` from inside the tailnet while being reachable from the public internet. Nothing in this
+  codebase can see that, so it is an operational rule rather than a check: the inference endpoint is
+  served with `tailscale serve`, never `tailscale funnel`. Say so in setup docs and verify with
+  `tailscale serve status` when things look wrong.
 - **Refuse plaintext credentials to a public host** under any override. If someone genuinely wants a
   commercial API they can fork the project; the guard is not a UX obstacle to be smoothed away.
 - **Authenticate anyway**, and put a Tailscale ACL in front of the box. Every device on your tailnet
@@ -247,6 +262,12 @@ post-process free text into JSON with a regex.
 dose becomes wrong silently. Log the raw output, emit no claim, surface the artefact as "could not
 read — review manually".
 
+**Sampling for extraction is not the model card's recommended sampling.** Those settings are tuned
+for prose and agentic work. Extraction wants near-zero temperature for reproducibility, and the
+non-thinking recommendation of `presence_penalty=1.5` is actively harmful here — JSON keys repeat by
+design, and penalising repeated tokens fights the grammar. Pin low temperature, no presence penalty,
+and record the sampling parameters in the `extraction.completed` event alongside the prompt hash.
+
 **The model never does arithmetic or date math.** It extracts literal strings — `"30 tablets"`,
 `"twice daily"`, `"since around Easter"`, `"1 repeat"` — and Python parses them deterministically.
 Every quantity in the wiki must be traceable to a literal span the model copied, not a number it
@@ -321,12 +342,14 @@ user corrections outrank it.
 
 ```toml
 [models.vlm]
-base_url   = "http://100.x.y.z:8080/v1"   # tailnet address; must be private
-model      = "mlx-community/Qwen3.5-9B-4bit"
+base_url   = "https://macbook-pro.tailb017fc.ts.net/v1"   # MagicDNS; resolves to 100.x
+model      = "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"         # copy verbatim from /v1/models
 ctx        = 16384
 max_pixels = 1638400                      # 1280x1280
 connect_timeout_s = 3
 read_timeout_s    = 180
+temperature       = 0.0
+presence_penalty  = 0.0
 
 [models.vlm.auth]                         # reference only — never the key itself
 api_key_env = "HEALTH_VLM_TOKEN"
