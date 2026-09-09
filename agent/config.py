@@ -35,6 +35,26 @@ CONFIG_TEMPLATE = """\
 sync_profile = "local"   # local | dropbox | gdrive | nextcloud | other
 port = 7777
 locale = "en"
+
+[models.vlm]
+base_url   = "https://macbook-pro.tailnet.ts.net/v1"   # must resolve to 100.x / RFC1918
+model      = "Qwen3.8-Flash-Next-oQ4e-mtp"             # copy verbatim from /v1/models
+ctx        = 16384
+max_pixels = 1638400                      # 1280x1280
+connect_timeout_s = 3
+read_timeout_s    = 180
+temperature       = 0.0
+presence_penalty  = 0.0
+thinking          = false
+
+[models.vlm.auth]                         # a reference only — never the key itself
+api_key_env = "HEALTH_VLM_TOKEN"
+header      = "Authorization"
+scheme      = "Bearer"
+
+[models.asr]
+name         = "faster-whisper-small"
+compute_type = "int8"
 """
 
 # Filename fragments that unambiguously mean "a sync client forked this file".
@@ -97,7 +117,10 @@ class SyncProfile(Enum):
         )
 
 
-#: Top-level tables owned by later phases. Present but not validated here.
+#: Top-level tables validated elsewhere. ``[models]`` belongs to the inference
+#: layer, which parses it in ``agent.llm.settings``: this module owns the vault
+#: and the secret scan, and knows nothing about any server's API. The scan below
+#: still runs over it, which is what stops a key being written there.
 _FUTURE_TABLES = frozenset({"models"})
 
 _SECRET_NAME = re.compile(r"key|token|secret|password", re.IGNORECASE)

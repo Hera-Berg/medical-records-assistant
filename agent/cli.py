@@ -21,11 +21,23 @@ neither ``raw/`` nor ``events/``, and it removes only files a previous rebuild
 wrote — see ``agent.projection.writer``. ``--as-of`` pins the moment staleness
 and the seven-day review window are measured from, which is what makes two
 rebuilds of an unchanged log produce identical bytes.
+
+``probe`` says which of three states the inference box is in — unreachable,
+unauthorised, working — before a ninety-second job discovers it the slow way. It
+reports ``auth: ok | failed | missing`` and never the key.
+
+``extract`` queues unread artefacts and drains the queue. ``--resume`` un-parks a
+queue that stopped because the key was rejected. ``--dry-run`` builds the prompt
+and prints its hash without calling anything.
+
+``set-key`` writes the inference credential to the OS keychain. It never writes
+one to ``config.toml``, which lives in the vault and syncs with it.
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 from typing import Any, TextIO
@@ -34,6 +46,8 @@ from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
 from . import vault as vault_mod
+from .extract import jobs as jobs_mod, probe as probe_mod, runner as runner_mod, session
+from .llm import credentials as credentials_mod
 from .errors import HealthAgentError
 from .vault import Vault
 
@@ -258,6 +272,146 @@ def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_PROBLEMS if report.rebuild.problems else EXIT_OK
 
 
+def cmd_probe(args: argparse.Namespace, out: TextIO) -> int:
+    """Say which of the three states the box is in, before a job finds out."""
+    vault = Vault.open(args.vault)
+    with session.open_client(vault) as client:
+        report = probe_mod.run(client, skip_vision=args.skip_vision)
+
+    if args.json:
+        json.dump(report.to_dict(), out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_OK if report.ok else EXIT_PROBLEMS
+
+    print(f"endpoint  {report.state}", file=out)
+    print(f"auth      {report.auth}", file=out)
+    for check in report.checks:
+        print(f"          {check.describe()}", file=out)
+    for note in report.notes:
+        print(f"note      {note}", file=out)
+    return EXIT_OK if report.ok else EXIT_PROBLEMS
+
+
+def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
+    """Queue unread artefacts and drain the queue."""
+    vault = Vault.open(args.vault)
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+
+    if args.resume:
+        resumed = queue.resume()
+        print(f"resumed   {len(resumed)} parked job(s)", file=out)
+        if not resumed:
+            print("          nothing was parked", file=out)
+
+    for note in queue.malformed:
+        print(f"note      {note}; the line is kept as it is, never rewritten", file=out)
+
+    added = runner_mod.enqueue_unread(vault, queue)
+    if added:
+        print(f"queued    {len(added)} artefact(s) not yet read", file=out)
+
+    if args.dry_run:
+        # Nothing is sent and nothing is appended. Useful for confirming what a
+        # prompt change will re-extract before it re-extracts it.
+        ready = queue.ready()
+        print(f"dry run   {len(ready)} job(s) would run", file=out)
+        for job in ready:
+            print(f"          {job.describe()}", file=out)
+        return EXIT_OK
+
+    with session.open_client(vault) as client:
+        report = runner_mod.drain(
+            vault, runner_mod.Extractor(vault, client, locale=vault.config.locale),
+            queue, limit=args.limit,
+        )
+
+    if args.json:
+        json.dump(
+            {
+                "stats": report.stats(),
+                "outcomes": [
+                    {
+                        "artifact": o.artifact,
+                        "state": o.state,
+                        "claims": o.claims,
+                        "reason": o.reason,
+                    }
+                    for o in report.outcomes
+                ],
+                "parked": [job.artifact for job in report.parked],
+                "parked_reason": report.parked_reason,
+                "queue": queue.counts(),
+            },
+            out,
+            indent=2,
+            sort_keys=True,
+        )
+        print("", file=out)
+        return EXIT_PROBLEMS if report.is_parked else EXIT_OK
+
+    for outcome in report.outcomes:
+        print(outcome.describe(), file=out)
+        for note in outcome.notes:
+            print(f"          {note}", file=out)
+
+    stats = report.stats()
+    print(
+        f"appended  {stats['events_appended']} events, {stats['claims']} claims proposed",
+        file=out,
+    )
+    if report.is_parked:
+        # Deliberately not phrased as a failure to process. A rotated key and a
+        # sleeping Mac are different problems and only one of them needs a person.
+        print(f"PARKED    {report.parked_reason}", file=out)
+        return EXIT_PROBLEMS
+    depth = queue.depth()
+    if depth:
+        print(f"queued    {depth} still waiting — run again when the box is up", file=out)
+    if stats["claims"]:
+        print("\nNothing has reached the wiki. Run `health-agent rebuild`, then "
+              "review the proposals.", file=out)
+    return EXIT_OK
+
+
+def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
+    """Write the inference credential to the OS keychain.
+
+    Never to ``config.toml``: that file lives at the vault root and syncs to
+    Dropbox, Drive or Nextcloud, so a key written there has been handed to a
+    third party by definition.
+    """
+    try:
+        import keyring
+    except ImportError:
+        print(
+            "error: the `keyring` package is not installed, so there is no keychain "
+            "to write to. Install it with `pip install 'health-agent[keychain]'`, or "
+            "put the key in the environment variable named by "
+            "[models.vlm.auth] api_key_env, or in a 0600 file at "
+            f"{credentials_mod.credentials_path()}.",
+            file=out,
+        )
+        return EXIT_PROBLEMS
+
+    value = args.key or getpass.getpass("key for the inference box (not echoed): ")
+    if not value.strip():
+        # The same rule the resolver applies: an empty credential is a
+        # misconfiguration to report, never a blank header to send.
+        print("error: an empty key is not a credential. Nothing was written.", file=out)
+        return EXIT_PROBLEMS
+
+    keyring.set_password(
+        credentials_mod.KEYRING_SERVICE, credentials_mod.KEYRING_ACCOUNT, value.strip()
+    )
+    print(
+        f"stored    in the OS keychain under "
+        f"{credentials_mod.KEYRING_SERVICE}/{credentials_mod.KEYRING_ACCOUNT}",
+        file=out,
+    )
+    print("          run `health-agent probe` to check the box accepts it", file=out)
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="health-agent",
@@ -352,6 +506,66 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo.add_argument("--json", action="store_true", help="machine-readable output")
     demo.set_defaults(func=cmd_demo)
+
+    probe = subparsers.add_parser(
+        "probe",
+        help=(
+            "check the inference box: is it reachable, does it accept the key, and "
+            "does it actually read images"
+        ),
+    )
+    probe.add_argument(
+        "--skip-vision",
+        action="store_true",
+        help=(
+            "skip the image check. Only for a box you have already verified: a "
+            "server that silently discards images answers text perfectly and "
+            "ignores every prescription photo"
+        ),
+    )
+    probe.add_argument("--json", action="store_true", help="machine-readable output")
+    probe.set_defaults(func=cmd_probe)
+
+    extract = subparsers.add_parser(
+        "extract",
+        help="read queued artefacts with the model and propose claims from them",
+    )
+    extract.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="stop after this many artefacts",
+    )
+    extract.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "un-park a queue that stopped because the key was rejected; run it "
+            "after setting a new key"
+        ),
+    )
+    extract.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="say what would run without contacting the box or appending anything",
+    )
+    extract.add_argument("--json", action="store_true", help="machine-readable output")
+    extract.set_defaults(func=cmd_extract)
+
+    set_key = subparsers.add_parser(
+        "set-key",
+        help="store the inference credential in the OS keychain (never in the vault)",
+    )
+    set_key.add_argument(
+        "--key",
+        default=None,
+        help=(
+            "the key. Omit it to be prompted without echo, which keeps it out of "
+            "your shell history"
+        ),
+    )
+    set_key.set_defaults(func=cmd_set_key)
     return parser
 
 
