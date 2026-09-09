@@ -12,6 +12,7 @@ patched to hand it over, which is also what phase 5 will do.
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 
@@ -454,3 +455,367 @@ def test_the_template_config_parses_as_model_settings():
     assert settings.vlm.model
     assert settings.vlm.auth.api_key_env == "HEALTH_VLM_TOKEN"
     assert config_mod.scan_for_secrets(data) == [], "and carries no secret"
+
+
+# --- naming one artefact ---------------------------------------------------
+#
+# `--limit` says how many artefacts run and never which. Re-running one specific
+# image is what checking a bad read actually consists of, so it needs its own
+# flag.
+
+
+def _two_artifacts(vault):
+    """Two ingested images, returned as their short hashes in a stable order."""
+    first = ingest_mod.ingest_bytes(
+        vault, _image("PERINDOPRIL 5mg"), ingest_mod.CaptureContext(source="camera")
+    )
+    second = ingest_mod.ingest_bytes(
+        vault, _image("METFORMIN 500mg"), ingest_mod.CaptureContext(source="camera")
+    )
+    return first.event.payload["short"], second.event.payload["short"]
+
+
+def test_artifact_runs_only_the_one_named(monkeypatch, configured):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_answer())
+
+    first, _second = _two_artifacts(configured)
+    _patch_client(monkeypatch, handler)
+
+    code, output = _run(["extract", "--artifact", first], configured)
+
+    assert code == 0
+    assert f"selected  {first}" in output
+    assert len(seen) == 1, "the other artefact was not sent"
+    extractions = [
+        e for e in configured.read().events if e.type == "extraction.completed"
+    ]
+    assert [e.payload["artifact"] for e in extractions] == [first]
+
+
+def test_artifact_accepts_an_unambiguous_prefix(monkeypatch, configured):
+    first, _ = _two_artifacts(configured)
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+
+    code, output = _run(["extract", "--artifact", first[:4]], configured)
+
+    assert code == 0
+    assert f"selected  {first}" in output
+
+
+def test_an_unknown_hash_is_a_message_not_an_empty_pass(monkeypatch, configured):
+    _two_artifacts(configured)
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+
+    code, output = _run(["extract", "--artifact", "zzzz99"], configured)
+
+    assert code == 1
+    assert "no artefact in this vault has the hash 'zzzz99'" in output
+    assert "raw/ filename" in output, "says where to find a real one"
+
+
+def test_an_ambiguous_prefix_names_the_candidates_rather_than_guessing(
+    monkeypatch, configured
+):
+    """Re-running the wrong photograph and being told it read fine is worse
+    than being asked to type two more characters.
+
+    The images are fixed bytes, so their hashes are fixed too: enough of them
+    and two share a first character every time this runs.
+    """
+    shorts = [
+        ingest_mod.ingest_bytes(
+            configured, _image(f"DRUG {n}"), ingest_mod.CaptureContext(source="camera")
+        ).event.payload["short"]
+        for n in range(12)
+    ]
+    collisions = {}
+    for short in shorts:
+        collisions.setdefault(short[0], []).append(short)
+    shared, both = next(
+        (prefix, found) for prefix, found in collisions.items() if len(found) > 1
+    )
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+
+    code, output = _run(["extract", "--artifact", shared], configured)
+
+    assert code == 1
+    assert f"matches {len(both)} artefacts" in output
+    for short in both:
+        assert short in output
+
+
+def test_naming_an_artefact_re_opens_a_job_that_had_given_up(monkeypatch, configured):
+    """The commonest reason to type a hash is that its job stopped being retried."""
+    first, _ = _two_artifacts(configured)
+    queue = jobs_mod.Queue.open(configured.root / ".agent")
+    queue.update(queue.add(first), jobs_mod.NEEDS_ATTENTION, "gave up earlier")
+
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    code, output = _run(["extract", "--artifact", first], configured)
+
+    assert code == 0
+    assert "1 claim proposed" in output
+
+
+def test_naming_an_artefact_still_cannot_propose_its_claims_twice(
+    monkeypatch, configured
+):
+    """Forceful about the queue, never about the log. Re-opening a job is a
+    local decision; re-proposing claims would duplicate the record."""
+    first, _ = _two_artifacts(configured)
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    _run(["extract", "--artifact", first], configured)
+
+    code, output = _run(["extract", "--artifact", first], configured)
+
+    assert code == 0
+    assert "already read by" in output
+    assert "Change the model or the prompt to re-derive it" in output
+    proposed = [e for e in configured.read().events if e.type == "claim.proposed"]
+    assert len(proposed) == 1
+
+
+# --- a run that does nothing says why --------------------------------------
+#
+# "appended 0 events, 0 claims proposed" with no lines above it is
+# indistinguishable from a broken command.
+
+
+def test_an_empty_vault_says_there_is_nothing_to_read(monkeypatch, configured):
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    code, output = _run(["extract"], configured)
+
+    assert code == 0
+    assert "nothing   there is nothing to read" in output
+    assert "health-agent ingest" in output
+
+
+def test_a_fully_read_vault_says_so_rather_than_going_quiet(monkeypatch, configured):
+    ingest_mod.ingest_bytes(
+        configured, _image(), ingest_mod.CaptureContext(source="camera")
+    )
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    _run(["extract"], configured)
+
+    code, output = _run(["extract"], configured)
+
+    assert code == 0
+    assert "nothing   nothing to read: all 1 artefact(s)" in output
+    assert "would propose the same claims a second time" in output
+
+
+def test_an_idle_run_says_how_much_of_the_vault_was_already_read(
+    monkeypatch, configured
+):
+    """The question underneath "why was this quiet" is "was my vault read"."""
+    ingest_mod.ingest_bytes(
+        configured, _image(), ingest_mod.CaptureContext(source="camera")
+    )
+    # A recording: the vision model correctly declines it, so it stays unread
+    # and terminal while the image is read.
+    ingest_mod.ingest_bytes(
+        configured,
+        b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
+        b"\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00",
+        ingest_mod.CaptureContext(source="recorder"),
+    )
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    _run(["extract"], configured)
+
+    _, output = _run(["extract"], configured)
+
+    assert "1 of 2 artefact(s) have already been extracted" in output
+    assert "not being retried (1 unreadable)" in output
+    assert "--artifact <hash>` re-runs one" in output
+
+
+def test_a_dry_run_that_would_run_nothing_says_why_too(monkeypatch, configured):
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    code, output = _run(["extract", "--dry-run"], configured)
+
+    assert code == 0
+    assert "dry run   0 job(s) would run" in output
+    assert "nothing would run: there is nothing to read" in output
+
+
+def test_the_idle_reason_reaches_the_json_too(monkeypatch, configured):
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    _, output = _run(["extract", "--json"], configured)
+
+    assert "nothing to read" in json.loads(output)["idle_reason"]
+
+
+# --- "0 claims proposed" said four different things ------------------------
+#
+# A page that states nothing clinical, an answer the validator refused, a server
+# emitting thinking narration, and a photograph the model genuinely could not
+# read are four outcomes needing four different actions. Only the third and
+# fourth are anyone's fault, and they are not the same person's.
+
+
+def _readable(claims):
+    return json.dumps(
+        {
+            "artifact_kind": "prescription",
+            "readable": True,
+            "unreadable_reason": None,
+            "document_date": None,
+            "claims": claims,
+        }
+    )
+
+
+def _extract_one(monkeypatch, vault, content):
+    ingest_mod.ingest_bytes(vault, _image(), ingest_mod.CaptureContext(source="camera"))
+    _patch_client(
+        monkeypatch, lambda r: httpx.Response(200, json=_answer(content=content))
+    )
+    return _run(["extract"], vault)
+
+
+def test_a_page_with_nothing_clinical_on_it_says_that(monkeypatch, configured):
+    code, output = _extract_one(monkeypatch, configured, _readable([]))
+
+    assert code == 0
+    assert "nothing clinical found" in output
+    assert "states nothing this record tracks" in output
+
+
+def test_thinking_narration_is_reported_as_a_rejected_output(monkeypatch, configured):
+    """The failure this distinction exists for. A reasoning trace in `content`
+    is a server setting to change, and calling it an unreadable photograph sends
+    the user to retake a photograph that was fine."""
+    code, output = _extract_one(
+        monkeypatch, configured, "<think>Let me look at the dose…</think> 5mg."
+    )
+
+    assert code == 0
+    assert "output rejected:" in output
+    assert "not JSON" in output
+    assert "could not read it" not in output
+
+
+def test_a_claim_the_validator_refused_is_reported_as_rejected(monkeypatch, configured):
+    code, output = _extract_one(
+        monkeypatch, configured, _readable([_claim(subject_name="   ")])
+    )
+
+    assert code == 0
+    assert "output rejected: claim 0:" in output
+    assert "does not resolve to a usable entity id" in output
+
+
+def test_a_page_the_model_could_not_read_is_reported_as_that(monkeypatch, configured):
+    code, output = _extract_one(
+        monkeypatch,
+        configured,
+        json.dumps(
+            {
+                "artifact_kind": "other",
+                "readable": False,
+                "unreadable_reason": "the page is too blurred to make out any text",
+                "document_date": None,
+                "claims": [],
+            }
+        ),
+    )
+
+    assert code == 0
+    assert "the model could not read it — review manually" in output
+    assert "too blurred" in output
+    assert "output rejected" not in output
+
+
+def test_the_reading_is_carried_in_the_json_as_well_as_the_prose(
+    monkeypatch, configured
+):
+    """Phase 5 reports queue state over HTTP and will need the same distinction."""
+    _extract_one(monkeypatch, configured, _readable([]))
+    read = [e for e in configured.read().events if e.type == "extraction.completed"]
+    short = read[0].payload["artifact"]
+
+    _, output = _run(["extract", "--json", "--artifact", short], configured)
+    report = json.loads(output)
+
+    assert report["outcomes"][0]["reading"] == "already-read"
+    assert report["stats"]["by_reading"] == {"already-read": 1}
+
+
+def test_a_read_line_never_runs_its_label_into_the_hash(monkeypatch, configured):
+    """`unreadable3be48e` — the states are longer than the column they sit in."""
+    ingest_mod.ingest_bytes(
+        configured,
+        b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
+        b"\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00",
+        ingest_mod.CaptureContext(source="recorder"),
+    )
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+    _, output = _run(["extract"], configured)
+
+    unreadable = [line for line in output.splitlines() if line.startswith("unreadable")]
+    assert unreadable
+    assert unreadable[0].startswith("unreadable ")
+
+
+# --- --vault, in either position -------------------------------------------
+
+
+def test_vault_is_accepted_after_the_subcommand(configured):
+    """`health-agent extract --vault X` is the order people type, and it used to
+    fail with argparse's bare "unrecognized arguments"."""
+    out = io.StringIO()
+    code = cli.main(["extract", "--vault", str(configured.root), "--dry-run"], out=out)
+
+    assert code == 0
+    assert "dry run" in out.getvalue()
+
+
+def test_vault_before_the_subcommand_is_not_overwritten_by_the_default(configured):
+    """`SUPPRESS` on the subparser is what makes accepting both safe: a plain
+    default there would write None over the earlier position's value."""
+    out = io.StringIO()
+    code = cli.main(["--vault", str(configured.root), "extract", "--dry-run"], out=out)
+
+    assert code == 0
+    assert "dry run" in out.getvalue()
+
+
+def test_the_later_position_wins_when_both_are_given(tmp_path, configured):
+    parsed = cli.build_parser().parse_args(
+        ["--vault", "first", "extract", "--vault", "second"]
+    )
+    assert parsed.vault == "second"
+
+
+def test_every_subcommand_takes_vault_in_both_positions():
+    """One missing subparser is a command that fails the way `extract` did."""
+    parser = cli.build_parser()
+    subparsers = next(
+        action
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    for name, sub in subparsers.choices.items():
+        options = {option for action in sub._actions for option in action.option_strings}
+        assert "--vault" in options, f"{name} does not accept --vault after itself"
+
+
+def test_json_output_is_only_json(monkeypatch, configured):
+    """A "queued 3" line above the object makes the whole output unparseable,
+    which is the one thing --json exists to prevent. What those lines said is in
+    the object instead."""
+    ingest_mod.ingest_bytes(
+        configured, _image(), ingest_mod.CaptureContext(source="camera")
+    )
+    _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
+
+    _, output = _run(["extract", "--json"], configured)
+    report = json.loads(output)
+
+    assert output.lstrip().startswith("{")
+    assert len(report["queued"]) == 1
+    assert report["stats"]["claims"] == 1

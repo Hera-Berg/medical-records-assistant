@@ -26,9 +26,14 @@ rebuilds of an unchanged log produce identical bytes.
 unauthorised, working — before a ninety-second job discovers it the slow way. It
 reports ``auth: ok | failed | missing`` and never the key.
 
-``extract`` queues unread artefacts and drains the queue. ``--resume`` un-parks a
-queue that stopped because the key was rejected. ``--dry-run`` builds the prompt
-and prints its hash without calling anything.
+``extract`` queues unread artefacts and drains the queue. ``--artifact <hash>``
+runs one named artefact instead, which is what checking a bad read consists of;
+``--limit`` says how many run and never which. ``--resume`` un-parks a queue that
+stopped because the key was rejected. ``--dry-run`` builds the prompt and prints
+its hash without calling anything. **A run that does nothing says why** — an
+empty pass with no explanation is indistinguishable from a broken command.
+
+``--vault`` is accepted before or after the subcommand, in either position.
 
 ``set-key`` writes the inference credential to the OS keychain. It never writes
 one to ``config.toml``, which lives in the vault and syncs with it.
@@ -40,6 +45,7 @@ import argparse
 import getpass
 import json
 import sys
+from datetime import datetime, timezone
 from typing import Any, TextIO
 
 from . import demo as demo_mod
@@ -59,6 +65,10 @@ from .vault import Vault
 
 EXIT_OK = 0
 EXIT_PROBLEMS = 1
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _render(report: dict[str, Any], out: TextIO) -> None:
@@ -299,36 +309,77 @@ def cmd_probe(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
-    """Queue unread artefacts and drain the queue."""
+    """Queue unread artefacts and drain the queue.
+
+    ``--artifact`` names what to run. Re-running one specific image is what
+    checking a bad read actually consists of, and ``--limit`` cannot express it:
+    it says how many, never which.
+    """
     vault = Vault.open(args.vault)
     queue = jobs_mod.Queue.open(vault.root / ".agent")
+    # Under --json nothing prose-shaped may reach the stream: a "queued 3" line
+    # above the object makes the whole output unparseable. What those lines say
+    # goes into the object instead.
+    def say(text: str) -> None:
+        if not args.json:
+            print(text, file=out)
 
+    resumed: tuple = ()
     if args.resume:
         resumed = queue.resume()
-        print(f"resumed   {len(resumed)} parked job(s)", file=out)
+        say(f"resumed   {len(resumed)} parked job(s)")
         if not resumed:
-            print("          nothing was parked", file=out)
+            say("          nothing was parked")
 
     for note in queue.malformed:
-        print(f"note      {note}; the line is kept as it is, never rewritten", file=out)
+        say(f"note      {note}; the line is kept as it is, never rewritten")
 
-    added = runner_mod.enqueue_unread(vault, queue)
-    if added:
-        print(f"queued    {len(added)} artefact(s) not yet read", file=out)
+    only: list[str] | None = None
+    if args.artifact:
+        # Resolved before anything else runs, so a typed hash that names nothing
+        # is a message rather than a silent empty pass.
+        only = [runner_mod.resolve_artifact(vault, token) for token in args.artifact]
+
+    queued: list[str] = []
+
+    def fill_queue() -> None:
+        if only is not None:
+            runner_mod.enqueue_artifacts(vault, queue, only)
+            queued.extend(only)
+            say(f"selected  {', '.join(only)}")
+            return
+        added = runner_mod.enqueue_unread(vault, queue)
+        queued.extend(job.artifact for job in added)
+        if added:
+            say(f"queued    {len(added)} artefact(s) not yet read")
 
     if args.dry_run:
+        fill_queue()
         # Nothing is sent and nothing is appended. Useful for confirming what a
         # prompt change will re-extract before it re-extracts it.
-        ready = queue.ready()
+        ready = [
+            job for job in queue.ready() if only is None or job.artifact in set(only)
+        ]
         print(f"dry run   {len(ready)} job(s) would run", file=out)
         for job in ready:
             print(f"          {job.describe()}", file=out)
+        if not ready:
+            print(
+                f"          nothing would run: "
+                f"{runner_mod.explain_idle(vault, queue, _now(), only=only)}",
+                file=out,
+            )
         return EXIT_OK
 
+    # The endpoint is resolved before the queue is filled. A vault with no
+    # endpoint — a demo vault is deliberately one — should say so, not print
+    # nine queued lines first and then say it, having written jobs for a run
+    # that could never have happened.
     with session.open_client(vault) as client:
+        fill_queue()
         report = runner_mod.drain(
             vault, runner_mod.Extractor(vault, client, locale=vault.config.locale),
-            queue, limit=args.limit,
+            queue, limit=args.limit, only=only,
         )
 
     if args.json:
@@ -339,6 +390,7 @@ def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
                     {
                         "artifact": o.artifact,
                         "state": o.state,
+                        "reading": o.reading,
                         "claims": o.claims,
                         "reason": o.reason,
                     }
@@ -346,6 +398,10 @@ def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
                 ],
                 "parked": [job.artifact for job in report.parked],
                 "parked_reason": report.parked_reason,
+                "idle_reason": report.idle_reason,
+                "queued": sorted(queued),
+                "resumed": [job.artifact for job in resumed],
+                "malformed": list(queue.malformed),
                 "queue": queue.counts(),
             },
             out,
@@ -365,6 +421,11 @@ def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
         f"appended  {stats['events_appended']} events, {stats['claims']} claims proposed",
         file=out,
     )
+    if report.idle_reason:
+        # A run that did nothing says why, every time. "appended 0 events, 0
+        # claims proposed" with no lines above it is indistinguishable from a
+        # broken command.
+        print(f"nothing   {report.idle_reason}", file=out)
     if report.is_parked:
         # Deliberately not phrased as a failure to process. A rotated key and a
         # sleeping Mac are different problems and only one of them needs a person.
@@ -448,19 +509,33 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK if report.ok else EXIT_PROBLEMS
 
 
+_VAULT_HELP = (
+    "vault root; otherwise HEALTH_VAULT, otherwise the pointer file at "
+    "~/.config/health-agent/vault. Accepted before or after the subcommand"
+)
+
+
+def _add_vault(parser: argparse.ArgumentParser) -> None:
+    """Let ``--vault`` be typed after the subcommand as well as before it.
+
+    ``health-agent extract --vault X`` is the order people actually type, and it
+    used to fail with argparse's bare "unrecognized arguments" — which does not
+    say that the flag exists, only that it is not welcome there.
+
+    ``SUPPRESS`` as the default is what makes this safe: without it the
+    subparser would write its own ``None`` over a value the top-level parser had
+    already taken from the earlier position, and ``--vault X extract`` would
+    silently fall back to ``HEALTH_VAULT``.
+    """
+    parser.add_argument("--vault", default=argparse.SUPPRESS, help=_VAULT_HELP)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="health-agent",
         description="Patient-held health record agent.",
     )
-    parser.add_argument(
-        "--vault",
-        default=None,
-        help=(
-            "vault root; otherwise HEALTH_VAULT, otherwise the pointer file at "
-            "~/.config/health-agent/vault"
-        ),
-    )
+    parser.add_argument("--vault", default=None, help=_VAULT_HELP)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     check = subparsers.add_parser(
@@ -484,6 +559,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     check.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(check)
     check.set_defaults(func=cmd_check)
 
     ingest = subparsers.add_parser(
@@ -503,6 +579,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="a short note about this capture, stored with it",
     )
     ingest.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(ingest)
     ingest.set_defaults(func=cmd_ingest)
 
     rebuild = subparsers.add_parser(
@@ -520,6 +597,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     rebuild.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(rebuild)
     rebuild.set_defaults(func=cmd_rebuild)
 
     demo = subparsers.add_parser(
@@ -541,6 +619,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     demo.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(demo)
     demo.set_defaults(func=cmd_demo)
 
     probe = subparsers.add_parser(
@@ -560,11 +639,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     probe.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(probe)
     probe.set_defaults(func=cmd_probe)
 
     extract = subparsers.add_parser(
         "extract",
         help="read queued artefacts with the model and propose claims from them",
+    )
+    extract.add_argument(
+        "--artifact",
+        action="append",
+        metavar="HASH",
+        default=None,
+        help=(
+            "read this artefact and nothing else, by the short hash in its raw/ "
+            "filename or its wiki footnote; repeatable. Without it every artefact "
+            "the log has no extraction for is queued. --limit says how many run, "
+            "never which"
+        ),
     )
     extract.add_argument(
         "--limit",
@@ -587,6 +679,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="say what would run without contacting the box or appending anything",
     )
     extract.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(extract)
     extract.set_defaults(func=cmd_extract)
 
     set_key = subparsers.add_parser(
@@ -601,6 +694,7 @@ def build_parser() -> argparse.ArgumentParser:
             "your shell history"
         ),
     )
+    _add_vault(set_key)
     set_key.set_defaults(func=cmd_set_key)
 
     evaluate = subparsers.add_parser(
@@ -611,6 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     evaluate.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(evaluate)
     evaluate.set_defaults(func=cmd_eval)
     return parser
 

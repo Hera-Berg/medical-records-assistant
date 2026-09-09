@@ -83,6 +83,14 @@ class Extraction:
     artifact_kind: str = "other"
     readable: bool = True
     unreadable_reason: str | None = None
+    #: Whether *this code* refused the answer, as against the model reporting
+    #: that it could not read the page. Both leave ``readable`` false and no
+    #: claims, and they are entirely different problems: one is a photograph of
+    #: a thumb, the other is a server emitting thinking narration into
+    #: ``content`` or a schema the grammar is not constraining. A run that
+    #: reports them with the same word sends the user looking in the wrong
+    #: place, which is what "0 claims proposed" used to do for both.
+    refused: bool = False
     document_date: dict[str, Any] | None = None
     claims: tuple[ReadClaim, ...] = ()
     rejections: tuple[Rejection, ...] = ()
@@ -269,6 +277,7 @@ def read(payload: Any, mime: str = "", locale: str = "en") -> Extraction:
     if structural:
         return Extraction(
             readable=False,
+            refused=True,
             unreadable_reason=(
                 "the model's answer did not match the extraction schema, so no claim "
                 "is made from it"
@@ -321,6 +330,11 @@ def merge(extractions: Sequence[Extraction]) -> Extraction:
         return Extraction(
             artifact_kind=extractions[0].artifact_kind,
             readable=False,
+            # Any page whose answer was refused makes the artefact a refusal:
+            # "one page could not be read" and "one page's answer was not
+            # usable" want different things done about them, and the second is
+            # the one that needs looking at.
+            refused=any(item.refused for item in extractions),
             unreadable_reason=extractions[0].unreadable_reason,
             rejections=tuple(r for item in extractions for r in item.rejections),
             notes=tuple(note for item in extractions for note in item.notes),
