@@ -55,6 +55,17 @@ class Projection:
         return views.current_medications(self.entities)
 
     @property
+    def artifacts(self) -> Mapping[str, reconcile.ArtifactReview]:
+        """How far each artefact's claims have been decided.
+
+        Phase 7 reads this to keep an artefact whose claims were all rejected out
+        of the inbox: it was reviewed, not left unprocessed.
+        """
+        if self.reconciliation is None:
+            return {}
+        return self.reconciliation.artifacts
+
+    @property
     def review_by_tier(self) -> dict[str, tuple[ReviewItem, ...]]:
         grouped: dict[str, list[ReviewItem]] = {}
         for item in self.review:
@@ -71,6 +82,12 @@ class Projection:
                 1 for entity in self.entities.values() for _ in entity.conflicts
             ),
             "unreadable_claims": len(self.problems),
+            "artifacts_reviewed": sum(
+                1 for review in self.artifacts.values() if review.is_reviewed
+            ),
+            "artifacts_awaiting_review": sum(
+                1 for review in self.artifacts.values() if not review.is_reviewed
+            ),
         }
 
 

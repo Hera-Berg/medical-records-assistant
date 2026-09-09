@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
@@ -60,6 +61,48 @@ CONTRADICTED = "contradicted"
 REVIEW_CONFIRMED = "confirmed"
 REVIEW_UNREVIEWED = "unreviewed"
 REVIEW_AUTO = "auto"
+
+
+#: What a rejection suppresses: this exact reading of this exact artefact.
+#:
+#: The artefact is part of the key on purpose. Re-reading the same photograph
+#: with a better model and getting the same words back is the case the user
+#: already decided; a *different* artefact saying the same thing is new evidence
+#: and is theirs to decide again.
+SuppressionKey = tuple[str, str, str, str]
+
+
+def suppression_key(claim: Claim) -> SuppressionKey:
+    """``(subject, predicate, normalised value, artefact)`` for a rejected reading.
+
+    Normalised, not literal — "Render the literal, compare the normalised". A
+    re-extraction that writes ``5.0mg`` where the rejected reading said ``5mg``
+    is the same claim and stays suppressed.
+    """
+    return (claim.subject.id, claim.predicate, claim.value.key, claim.cite)
+
+
+@dataclass(frozen=True)
+class ArtifactReview:
+    """How much of one artefact's extraction the user has decided.
+
+    Phase 7 needs this to tell "nothing has read this yet" from "this was read
+    and the user rejected all of it". The second must not come back to the inbox:
+    an artefact whose claims were all rejected is reviewed, not unprocessed.
+    """
+
+    short: str
+    claims: int = 0
+    decided: int = 0
+    rejected: int = 0
+
+    @property
+    def is_reviewed(self) -> bool:
+        return self.claims > 0 and self.decided == self.claims
+
+    @property
+    def all_rejected(self) -> bool:
+        return self.claims > 0 and self.rejected == self.claims
 
 
 @dataclass(frozen=True)
@@ -172,6 +215,8 @@ class Reconciliation:
     problems: tuple[ClaimProblem, ...] = ()
     anomalies: tuple[str, ...] = ()
     aliases: Mapping[str, str] = field(default_factory=dict)
+    #: Artefact short hash -> how far its claims have been decided.
+    artifacts: Mapping[str, ArtifactReview] = field(default_factory=dict)
     #: Subject id -> the id of the merge event that aliased it, so a stub page
     #: can cite the decision that created it.
     alias_events: Mapping[str, str] = field(default_factory=dict)
@@ -280,8 +325,17 @@ def _alias_map(
     return resolved, decided_by, anomalies
 
 
-def _admit(claim: Claim, decision: Event | None, as_of: datetime) -> Admission:
-    """The consequence gate. The only place a claim becomes eligible to count."""
+def _admit(
+    claim: Claim,
+    decision: Event | None,
+    as_of: datetime,
+    suppressed: Mapping[SuppressionKey, Event] = MappingProxyType({}),
+) -> Admission:
+    """The consequence gate. The only place a claim becomes eligible to count.
+
+    A decision on *this* claim is read first, so confirming a re-proposal is how
+    the user says otherwise about an earlier rejection of the same reading.
+    """
     if decision is not None:
         if decision.type == "claim.rejected":
             return Admission(claim, REJECTED, REVIEW_CONFIRMED, "rejected by you", decision.id)
@@ -290,6 +344,20 @@ def _admit(claim: Claim, decision: Event | None, as_of: datetime) -> Admission:
                 claim, SUPERSEDED, REVIEW_CONFIRMED, "replaced by your correction", decision.id
             )
         return Admission(claim, ADMITTED, REVIEW_CONFIRMED, "confirmed by you", decision.id)
+
+    # A rejection is durable. Re-extraction must not resurrect what the user
+    # retracted, and a rejected low-consequence reading would otherwise apply
+    # itself the moment a better model proposed it again. Independent of order:
+    # the suppression is built from the whole log before anything is admitted.
+    rejection = suppressed.get(suppression_key(claim))
+    if rejection is not None:
+        return Admission(
+            claim,
+            REJECTED,
+            REVIEW_CONFIRMED,
+            "you rejected this reading of this artefact; a later extraction proposed it again",
+            rejection.id,
+        )
 
     if claim.consequence == tiers.HIGH:
         # No exception, no confidence threshold, no elapsed time. A confident
@@ -541,8 +609,12 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         return (aliases.get(claim.subject.id, claim.subject.id), claim.predicate)
 
     unreadable: set[str] = set()
+    order: list[Claim] = []
 
-    # Proposals first: a correction may need the claim it is amending.
+    # Parse every proposal before admitting any of them. A rejection has to
+    # suppress a matching re-extraction wherever it lands in the log — the
+    # re-proposal can arrive from another device's shard and sort *earlier* than
+    # the rejection — so the suppression set is built from the whole stream first.
     for event in events:
         if event.type != "claim.proposed":
             continue
@@ -552,11 +624,35 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
             unreadable.add(event.id)
             continue
         proposals[event.id] = parsed
+        order.append(parsed)
         anomaly = claims_mod.declared_tier_anomaly(parsed)
         if anomaly:
             anomalies.append(anomaly)
 
-        admission = _admit(parsed, decisions.get(event.id), as_of)
+    # The user's latest word on each reading, not merely the fact that one
+    # rejection exists: "suppressed until the user says otherwise" means a later
+    # confirmation of the same reading lifts it. A correction is not a word on
+    # this reading at all — it replaces it, and rule 1's contradiction path
+    # already handles a re-extraction that disagrees with a correction.
+    last_word: dict[SuppressionKey, Event] = {}
+    for target_id, decision in decisions.items():
+        if decision.type not in ("claim.rejected", "claim.confirmed"):
+            continue
+        decided = proposals.get(target_id)
+        if decided is None:
+            continue
+        key = suppression_key(decided)
+        current = last_word.get(key)
+        if current is None or decision.sort_key > current.sort_key:
+            last_word[key] = decision
+    suppressed = {
+        key: decision
+        for key, decision in last_word.items()
+        if decision.type == "claim.rejected"
+    }
+
+    for parsed in order:
+        admission = _admit(parsed, decisions.get(parsed.event_id), as_of, suppressed)
         admissions.append(admission)
         review_states[parsed.event_id] = admission.review_state
         if admission.state == ADMITTED:
@@ -639,6 +735,25 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
                 )
             )
 
+    # Per-artefact review state, so phase 7 can tell "nothing has read this yet"
+    # from "read, and the user rejected all of it". The second is reviewed and
+    # must not come back to the inbox.
+    counts: dict[str, list[int]] = {}
+    for admission in admissions:
+        short = admission.claim.artifact
+        if not short:
+            continue
+        tally = counts.setdefault(short, [0, 0, 0])
+        tally[0] += 1
+        if admission.review_state == REVIEW_CONFIRMED:
+            tally[1] += 1
+        if admission.state == REJECTED:
+            tally[2] += 1
+    artifacts = {
+        short: ArtifactReview(short, claims=c[0], decided=c[1], rejected=c[2])
+        for short, c in sorted(counts.items())
+    }
+
     slots: dict[tuple[str, str], Slot] = {}
     for key in sorted(set(admitted_by_slot) | set(pending_by_slot) | set(replaced_by_slot)):
         subject_id, predicate = key
@@ -665,5 +780,6 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         anomalies=tuple(anomalies),
         aliases=aliases,
         alias_events=alias_events,
+        artifacts=artifacts,
         admissions=tuple(admissions),
     )
