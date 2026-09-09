@@ -74,6 +74,13 @@ def _when_phrases(claim) -> list[str]:
     already states. Never where it carries a band — the band is uncertainty the
     value itself does not hold, and losing it would be a timeline faking
     precision.
+
+    Where there is no ``occurred_at`` but the source dated the thing in words,
+    the **words go in the slot the date would have occupied**. Without that, an
+    onset claim off a letter renders as "(patient-reported, document dated 1
+    June 2026)" and a reader skimming it takes 1 June for the onset — on a page
+    whose next section says the onset has no date at all. The phrase is both
+    more honest and more informative than the gap it fills.
     """
     document = _document_date(claim)
     phrases: list[str] = []
@@ -82,6 +89,8 @@ def _when_phrases(claim) -> list[str]:
         phrases.append(
             f"on {occurred.render()}" if occurred.is_exact else occurred.render()
         )
+    elif occurred is None and claim.occurred_span:
+        phrases.append(f"dated only as \u201c{claim.occurred_span}\u201d")
     if document is not None:
         phrases.append(f"document dated {dates.render_date(document)}")
     return phrases
@@ -299,12 +308,39 @@ def _conflicts_section(document: Document, entity: Entity, citer: Citer) -> None
             document.bullet(Sentence(phrase, [citation]))
 
 
+def _dateable_paragraphs(document: Document, entity: Entity, citer: Citer) -> None:
+    """Claims whose source said *when* in words rather than with a date.
+
+    The phrase is printed. That is the point of the rule: "around Easter" is
+    real evidence, and a record that dropped it because it could not be parsed
+    would lose something it exists to keep. What is not printed is a resolved
+    date — the computus is deterministic but the year is a guess, and the
+    candidate lives in the review queue where a person confirms it, not here
+    where it would read as established.
+    """
+    for item in entity.review:
+        if item.kind != reconcile.DATEABLE:
+            continue
+        for claim in item.claims:
+            citation = citer.cite(claim.cite, _correction_description(claim))
+            document.paragraph(
+                Sentence(
+                    f"The {_label(claim.predicate).lower()} is dated only as "
+                    f"\u201c{claim.occurred_span}\u201d, which is not a date this "
+                    f"record can place on a timeline; it is waiting for you to say "
+                    f"when",
+                    [citation],
+                )
+            )
+
+
 def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
     contradictions = entity.contradictions
     pending = [
         item for item in entity.review if item.kind == "awaiting-confirmation"
     ]
-    if not contradictions and not pending:
+    dateable = [item for item in entity.review if item.kind == reconcile.DATEABLE]
+    if not contradictions and not pending and not dateable:
         return
     document.heading("Needs review")
 
@@ -339,6 +375,8 @@ def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
                 citations,
             )
         )
+
+    _dateable_paragraphs(document, entity, citer)
 
 
 def _replacement_phrase(slot: Slot, citer: Citer) -> tuple[str, list[Citation]]:

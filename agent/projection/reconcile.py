@@ -37,7 +37,7 @@ from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
 from . import claims as claims_mod
-from . import dates, tiers
+from . import dates, temporal, tiers
 from .anomalies import Anomaly
 from .claims import Claim, ClaimProblem
 
@@ -55,6 +55,12 @@ SUPERSEDED = "superseded"
 #: Review kind for a reading the user confirmed and later rejected. Carries no
 #: claims, deliberately: the content is what was withdrawn.
 WITHDRAWN = "withdrawn-by-rejection"
+
+#: A claim whose source described *when* in words rather than with a date.
+#: Its own kind because nothing is wrong and nothing is waiting to be applied:
+#: the record holds the phrase, and only the person who said it can turn it into
+#: a date. See `.temporal` and CLAUDE.md, "Unresolvable temporal references".
+DATEABLE = "dateable"
 
 # How a slot resolved.
 SETTLED = "settled"
@@ -216,6 +222,48 @@ class ReviewItem:
             tuple(c.event_id for c in self.claims),
             self.cite or "",
         )
+
+
+def _dateable_item(claim: Claim) -> ReviewItem | None:
+    """A claim whose source said *when* in words, with a candidate where one exists.
+
+    Raised only for claims the projection admitted, so the phrase never surfaces
+    for a reading the user rejected — a rejection is a retraction, and printing
+    the content re-asserts what the user said is not true of them. A claim still
+    waiting on a tap gets its date question when it is confirmed: asking twice
+    about one undecided reading is the inbox debt that kills these systems.
+
+    Consequence is always medium, whatever the claim's own tier. Answering
+    changes no value and applies nothing — the claim's own gating already
+    happened — so it belongs in the weekly batch rather than ahead of an
+    unreviewed allergy.
+    """
+    if claim.occurred_at is not None or not claim.occurred_span:
+        return None
+    reference, source = claims_mod.dating_reference(claim)
+    suggestions = temporal.candidates(
+        claim.occurred_span, dates.parse_iso_date(reference)
+    )
+    summary = (
+        f"{claim.subject.id} {claim.predicate}: the source dates this only as "
+        f"\u201c{claim.occurred_span}\u201d, so no date has been recorded for it"
+    )
+    if suggestions:
+        offered = " or ".join(candidate.describe() for candidate in suggestions)
+        summary += (
+            f". Computed from {temporal.describe_reference(source)}, that could be "
+            f"{offered} — confirm one, or enter the date yourself"
+        )
+    else:
+        summary += ". Enter the date if you know it"
+    return ReviewItem(
+        kind=DATEABLE,
+        consequence=tiers.MEDIUM,
+        subject_id=claim.subject.id,
+        predicate=claim.predicate,
+        summary=summary,
+        claims=(claim,),
+    )
 
 
 @dataclass(frozen=True)
@@ -686,6 +734,9 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         review_states[parsed.event_id] = admission.review_state
         if admission.state == ADMITTED:
             admitted_by_slot.setdefault(slot_key(parsed), []).append(parsed)
+            dateable = _dateable_item(parsed)
+            if dateable is not None:
+                review.append(dateable)
         elif admission.state == SUPERSEDED:
             # The user corrected this reading. It is not a contender and never
             # was, but their correction is unauditable without it: a mistyped

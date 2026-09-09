@@ -56,6 +56,11 @@ class Claim:
     evidence_tier: str
     consequence: str
     occurred_at: FuzzyDate | None = None
+    #: The words a source used about when this happened, where they were not
+    #: a calendar date — "around Easter", "the week before the wedding". Kept
+    #: verbatim: discarding it would lose information the record exists to
+    #: hold, and resolving it would invent the year. See `.temporal`.
+    occurred_span: str | None = None
     artifact_ts: str | None = None
     captured_ts: str | None = None
     ingested_ts: str | None = None
@@ -209,6 +214,9 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
             f"unknown date is written as null rather than approximated"
         )
 
+    raw_span = payload.get("occurred_span")
+    occurred_span = raw_span.strip() if isinstance(raw_span, str) and raw_span.strip() else None
+
     declared = payload.get("consequence")
     consequence = tiers.consequence_for(subject.kind, predicate)
 
@@ -231,6 +239,7 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
         evidence_tier=evidence_tier,
         consequence=consequence,
         occurred_at=occurred_at,
+        occurred_span=occurred_span,
         artifact_ts=stamps["artifact_ts"],
         captured_ts=stamps["captured_ts"],
         ingested_ts=stamps["ingested_ts"],
@@ -242,6 +251,26 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
         target=target_id,
         sort_key=event.sort_key,
     )
+
+
+def dating_reference(claim: Claim) -> tuple[str | None, str | None]:
+    """The best date to measure an unresolved phrase from, and which one it is.
+
+    Ordered by how close each timestamp sits to the moment the phrase was
+    uttered: the date on the document, then when it was captured, then when the
+    bytes arrived. Ingest time is last and is genuinely weak — a photograph
+    dragged in three days late shifts it — which is exactly why the answer says
+    which timestamp it used rather than handing back a bare date.
+
+    This is not a substitution. Nothing derived from it is ever written into a
+    timestamp field; it only decides which year a suggestion is computed for,
+    and the suggestion is confirmed by a person before it becomes anything.
+    """
+    for name in ("artifact_ts", "captured_ts", "ingested_ts"):
+        value = getattr(claim, name)
+        if isinstance(value, str) and value:
+            return value[:10], name
+    return None, None
 
 
 def date_coercion_anomalies(claim: Claim) -> list[Anomaly]:
