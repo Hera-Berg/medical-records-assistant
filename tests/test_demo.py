@@ -189,3 +189,160 @@ def test_the_cli_seeds_and_points_at_the_marker(tmp_path, capsys):
     assert code == cli.EXIT_OK
     assert "This is invented data" in out
     assert str(root / "wiki") in out
+
+
+# --- the artefacts are real files ------------------------------------------
+#
+# They used to be format headers followed by padding. Citations resolved, which
+# was all they were for, and the consequence was that nothing downstream of
+# ingest could be exercised against a demo vault at all: nine artefacts, every
+# one of them unreadable.
+
+
+def test_every_artefact_is_a_file_its_own_reader_can_open(seeded):
+    """The whole point of rendering real documents rather than headers.
+
+    Asserted through `prepare_artifact`, the same call extraction makes, rather
+    than by opening the files here — a file Pillow can open and the pipeline
+    rejects is not a fixed demo.
+    """
+    from agent.extract import images
+    from agent.projection import citations
+
+    vault = _vault(seeded)
+    artifacts = citations.index_artifacts(list(vault.read().events))
+    assert len(artifacts) == len(demo_mod.stream.ARTIFACTS)
+
+    unreadable = {}
+    for short, artifact in artifacts.items():
+        path = vault.raw.resolve_recorded(artifact.rel)
+        document = images.prepare_artifact(path, artifact.mime, long_edge=1280)
+        if not document.is_readable:
+            unreadable[short] = (artifact.mime, document.unreadable)
+            continue
+        assert document.pages, f"{short} produced no pages"
+
+    # Exactly one: the recording, which the speech model reads and the vision
+    # model correctly declines. Anything else here is a broken document.
+    assert [mime for mime, _ in unreadable.values()] == ["audio/wav"]
+
+
+def test_the_pdfs_carry_a_text_layer_for_the_deterministic_reader(seeded):
+    """Dual-path extraction needs something to cross-check against.
+
+    Pathology reports from patient portals almost always have a text layer, and
+    the demo's do, so the `cross-verified` path is reachable without tesseract
+    being installed.
+    """
+    pytest.importorskip("pdfplumber")
+    from agent.extract import text
+    from agent.projection import citations
+
+    vault = _vault(seeded)
+    pdfs = [
+        artifact
+        for artifact in citations.index_artifacts(list(vault.read().events)).values()
+        if artifact.mime == "application/pdf"
+    ]
+    assert pdfs, "the scenario cites PDFs"
+    for artifact in pdfs:
+        read = text.read(vault.raw.resolve_recorded(artifact.rel), artifact.mime)
+        assert read.method == text.METHOD_TEXT_LAYER
+        assert "ROSEWOOD" in read.text
+
+
+def test_the_documents_say_what_the_seeded_claims_say_they_say(seeded):
+    """A demo whose documents and event stream drift apart is worse than one
+    with no documents: it teaches the reader a wrong answer and looks right."""
+    pytest.importorskip("pdfplumber")
+    from agent.extract import text
+    from agent.projection import citations
+
+    vault = _vault(seeded)
+    artifacts = citations.index_artifacts(list(vault.read().events))
+    entity = seeded.rebuild.projection.entities["med:sertraline"]
+    source = next(
+        artifacts[short] for short in entity.sources if artifacts[short].mime == "application/pdf"
+    )
+    read = text.read(vault.raw.resolve_recorded(source.rel), source.mime)
+
+    assert "Sertraline 50 mg" in read.text
+    assert "30 tablets, 1 repeat" in read.text
+
+
+def test_the_voice_note_is_audio_something_can_decode(seeded):
+    """Not speech — nothing here synthesises a voice — but a real container.
+
+    A tone rather than silence, so "the audio never decoded" and "the audio
+    decoded and was empty" cannot look the same to whoever runs phase 6 against
+    this vault.
+    """
+    import wave
+
+    from agent.projection import citations
+
+    vault = _vault(seeded)
+    recording = next(
+        artifact
+        for artifact in citations.index_artifacts(list(vault.read().events)).values()
+        if artifact.mime.startswith("audio/")
+    )
+    with wave.open(str(vault.raw.resolve_recorded(recording.rel)), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == demo_mod.documents.WAV_SAMPLE_RATE
+        assert handle.getnframes() > 0
+        frames = handle.readframes(handle.getnframes())
+    assert frames.strip(b"\x00"), "silence would be indistinguishable from a failed decode"
+
+
+def test_the_marker_says_the_audio_is_not_speech(seeded):
+    """An honest gap can be worked around; a silent one reads as a bug."""
+    marker = (seeded.root / demo_mod.MARKER_FILENAME).read_text(encoding="utf-8")
+    assert "tone rather than speech" in marker
+
+
+# --- a demo vault carries no inference endpoint ----------------------------
+
+
+def test_the_demo_config_names_no_endpoint(seeded):
+    """It used to carry the template's placeholder MagicDNS host, so `extract`
+    against a demo vault failed with a DNS error indistinguishable from the
+    user's own box being asleep — a wrong answer to "is my endpoint working",
+    produced by a folder of invented data."""
+    import tomllib
+
+    data = tomllib.loads((seeded.root / "config.toml").read_text(encoding="utf-8"))
+
+    assert "vlm" not in data.get("models", {})
+    assert "tailnet.ts.net" not in (seeded.root / "config.toml").read_text(encoding="utf-8")
+    # Speech is local, so it needs no endpoint and stays configured.
+    assert data["models"]["asr"]["name"] == "faster-whisper-small"
+
+
+def test_extract_against_a_demo_vault_says_demo_vaults_have_no_endpoint(seeded, capsys):
+    from agent import cli
+
+    code = cli.main(["extract", "--vault", str(seeded.root)])
+    out = capsys.readouterr().out
+
+    assert code == cli.EXIT_PROBLEMS
+    assert "no inference endpoint configured" in out
+    assert "demo vaults don't carry one" in out
+    assert "Point --vault at your real vault" in out
+
+
+def test_a_refused_demo_vault_gets_no_queue_written(seeded):
+    """The endpoint is checked before the queue is filled. Writing nine job
+    lines into a vault and then refusing to run them is work recorded for a run
+    that could never have happened."""
+    from agent import cli
+
+    cli.main(["extract", "--vault", str(seeded.root)])
+    assert not (seeded.root / ".agent" / "jobs.jsonl").exists()
+
+
+def _vault(seeded):
+    from agent.vault import Vault
+
+    return Vault.open(seeded.root)

@@ -44,15 +44,15 @@ class Artifact:
 
 
 ARTIFACTS: tuple[Artifact, ...] = (
-    Artifact("perindopril-script", "jpeg", 20, "Photo of a repeat script"),
-    Artifact("metformin-script", "jpeg", 240, "Photo of an older script"),
+    Artifact("perindopril-script", "photo", 20, "Photo of a repeat script"),
+    Artifact("metformin-script", "photo", 240, "Photo of an older script"),
     Artifact("discharge-summary", "pdf", 40, "Discharge summary, two pages"),
-    Artifact("cardiology-letter", "jpeg", 62, "Scan of a specialist letter"),
-    Artifact("atorvastatin-script-a", "jpeg", 34, "Photo of a script"),
-    Artifact("atorvastatin-script-b", "jpeg", 33, "Photo of a second script"),
-    Artifact("levothyroxine-script", "jpeg", 55, "Blurry photo, taken at an angle"),
+    Artifact("cardiology-letter", "scan", 62, "Scan of a specialist letter"),
+    Artifact("atorvastatin-script-a", "photo", 34, "Photo of a script"),
+    Artifact("atorvastatin-script-b", "photo", 33, "Photo of a second script"),
+    Artifact("levothyroxine-script", "photo", 55, "Blurry photo, taken at an angle"),
     Artifact("pathology", "pdf", 26, "Pathology report from the patient portal"),
-    Artifact("voice-note", "webm", 9, "Voice note recorded in a waiting room"),
+    Artifact("voice-note", "audio", 9, "Voice note recorded in a waiting room"),
 )
 
 
@@ -60,7 +60,7 @@ def _fuzzy(iso: str, precision: str = "day", uncertainty: int = 0) -> dict[str, 
     return {"value": iso, "precision": precision, "uncertainty_days": uncertainty}
 
 
-class _Clock:
+class Clock:
     """Days before the anchor, as canonical timestamps and plain dates."""
 
     def __init__(self, anchor: datetime):
@@ -89,7 +89,7 @@ def build(
     from the real ingest, so every citation in the wiki resolves to a file that
     is actually on disk.
     """
-    clock = _Clock(anchor)
+    clock = Clock(anchor)
     events: list[Event] = []
 
     def propose(

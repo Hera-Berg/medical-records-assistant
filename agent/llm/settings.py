@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from ..errors import ConfigError
+from ..errors import ConfigError, EndpointNotConfigured
 from .endpoint import Endpoint, parse as parse_endpoint
 
 DEFAULT_CTX = 16384
@@ -156,9 +156,10 @@ def parse(raw: Mapping[str, Any]) -> ModelSettings:
     models = _table(raw, "models", "config.toml")
     vlm = _table(models, "vlm", "models")
     if not vlm:
-        raise ConfigError(
-            "config.toml has no [models.vlm] table. Extraction needs an "
-            "OpenAI-compatible endpoint on a machine you control; see MODELS.md."
+        raise EndpointNotConfigured(
+            "this vault has no inference endpoint configured — config.toml has no "
+            "[models.vlm] table. Extraction needs an OpenAI-compatible endpoint on a "
+            "machine you control; see MODELS.md."
         )
 
     model = _string(vlm, "model", "models.vlm")

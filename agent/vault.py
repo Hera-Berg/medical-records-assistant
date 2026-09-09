@@ -33,6 +33,12 @@ ENV_VAULT = "HEALTH_VAULT"
 #: engine's business (phase 3), not this phase's.
 VAULT_DIRS = ("raw", "events", "wiki", "exports", "bulk", ".agent", ".agent/logs")
 
+#: Written at the root of a vault seeded by ``health-agent demo``. The name is
+#: here rather than in :mod:`agent.demo` because the code that most needs to ask
+#: "is this invented data" is code that should not be importing the seeder — the
+#: inference layer, explaining why a vault has no endpoint, is the first case.
+DEMO_MARKER_FILENAME = "DEMO-DATA.md"
+
 
 def pointer_path() -> Path:
     return device_mod.config_home() / "vault"
@@ -142,6 +148,15 @@ class Vault:
     @property
     def profile(self) -> SyncProfile:
         return self.config.sync_profile
+
+    @property
+    def is_demo(self) -> bool:
+        """Whether this vault was seeded by ``health-agent demo``.
+
+        Read from the marker file rather than remembered, because the question
+        is asked of a vault someone opened, not of one this process created.
+        """
+        return (self.root / DEMO_MARKER_FILENAME).is_file()
 
     @property
     def events_dir(self) -> Path:

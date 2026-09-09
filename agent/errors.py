@@ -18,6 +18,16 @@ class ConfigError(HealthAgentError):
     """config.toml is missing, unparseable, or invalid."""
 
 
+class EndpointNotConfigured(ConfigError):
+    """config.toml names no inference endpoint at all.
+
+    Distinct from a *bad* endpoint. Nothing is wrong here — a vault with no
+    ``[models.vlm]`` table is simply not one extraction can run against, and a
+    demo vault is deliberately one of those. Its own class so the caller can add
+    what it knows about the vault before the message reaches a person.
+    """
+
+
 class SecretInConfigError(ConfigError):
     """A credential was found in config.toml.
 
