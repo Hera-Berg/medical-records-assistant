@@ -39,6 +39,10 @@ EVENT_TYPES: dict[str, str] = {
     "entity.merge.confirmed": ACTOR_USER,
     "entity.merge.reverted": ACTOR_USER,
     "note.recorded": ACTOR_USER,
+    # The model registry. A remote model has no content hash to pin, so its
+    # identity is the string the server reported, recorded the first time it
+    # is seen. See MODELS.md, "Model identity".
+    "model.identity.observed": ACTOR_AGENT,
 }
 
 ENVELOPE_KEYS = ("id", "type", "ts", "device", "actor", "provenance", "payload")

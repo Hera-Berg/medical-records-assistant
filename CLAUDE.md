@@ -280,9 +280,17 @@ rewrite a line. Never delete a line. Corrections are new events.
 | `entity.merge.proposed` | agent | "Panadol" and "paracetamol" may be the same thing. |
 | `entity.merge.confirmed` / `.reverted` | user | |
 | `note.recorded` | user | Voice or text note, with transcript. |
+| `model.identity.observed` | agent | The identity string an inference server reported, on first sight. |
 
 **Store `extraction.completed` separately from `claim.proposed`.** When the model is swapped for a
 better one you need to re-derive everything and diff it, and you cannot do that from parsed claims.
+
+**`model.identity.observed` is the model registry.** A remote model cannot be pinned by `sha256` the
+way a local GGUF can, so it is pinned by the identity string the server reports and verified on
+every call. One event per identity string, appended the first time that string is seen; "last seen"
+is derivable from the most recent `extraction.completed` carrying it. A string that disagrees with
+`config.toml` stops the run and is surfaced — it is never auto-updated into the config, because a
+config file describing a server's past state is worse than no record.
 
 ### Claim payload
 

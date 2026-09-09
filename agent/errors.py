@@ -71,3 +71,68 @@ class ProjectionError(HealthAgentError):
 
 class WikiWriteError(ProjectionError):
     """Writing the derived files would have destroyed something it did not write."""
+
+
+class InferenceError(HealthAgentError):
+    """The inference endpoint could not be used.
+
+    The subclasses matter more than the base: collapsing "the box is asleep"
+    into "processing failed" is how a rotated key looks like a sleeping Mac and
+    goes uninvestigated for a week.
+    """
+
+
+class EndpointNotPrivate(InferenceError):
+    """The configured endpoint resolves outside private address space.
+
+    A startup failure, never a warning and never a toggle. Pasting a commercial
+    API base URL into ``config.toml`` would end the project's privacy premise
+    with no visible change in behaviour, so the guard refuses rather than asks.
+    """
+
+
+class CredentialError(InferenceError):
+    """No usable credential for the inference endpoint.
+
+    Includes a credential that resolved to an empty string: that is a
+    misconfiguration to report, never a blank header to send.
+    """
+
+
+class EndpointUnreachable(InferenceError):
+    """The box did not answer. Transient — retry with backoff, drain later."""
+
+
+class AuthRejected(InferenceError):
+    """The box answered 401 or 403. **Terminal.**
+
+    Not retried. Retrying a rotated key fifty times achieves nothing and may
+    trip lockout on the far end. The queue parks and says specifically that the
+    key was rejected, because this is the state that needs a person.
+    """
+
+
+class RateLimited(InferenceError):
+    """The box answered 429. Back off, retry, and log it.
+
+    A self-hosted box rate-limiting its owner usually means something else is
+    hammering it, so this is worth a line in the log even when the retry works.
+    """
+
+
+class ModelIdentityMismatch(InferenceError):
+    """The server reported a different model than ``config.toml`` pins.
+
+    Stops the run. "Which model produced this claim" has to be answerable a year
+    later, and a config file describing a server's past state is worse than no
+    record — so the config is never auto-updated to match.
+    """
+
+
+class ExtractionError(HealthAgentError):
+    """Model output could not be turned into claims.
+
+    Raised only where nothing has been recorded. Once an ``extraction.completed``
+    event holds the raw output, a bad reading stops raising and starts being
+    reported: the artefact surfaces as "could not read — review manually".
+    """

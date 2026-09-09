@@ -76,6 +76,55 @@ def parse(value: object) -> Subject | None:
     return Subject(kind=kind, slug=slug)
 
 
+#: Characters a name may contribute to a slug, once folded to ASCII.
+_SLUGGABLE = re.compile(r"[^a-z0-9]+")
+
+#: Accented Latin folded to ASCII by an explicit table. Never `unicodedata`
+#: normalisation plus a strip: that silently deletes scripts it cannot fold, so
+#: a name in Greek or Cyrillic would become an empty slug rather than a refusal.
+_FOLD = str.maketrans(
+    {
+        "á": "a", "à": "a", "â": "a", "ä": "a", "ã": "a", "å": "a", "ā": "a",
+        "é": "e", "è": "e", "ê": "e", "ë": "e", "ē": "e",
+        "í": "i", "ì": "i", "î": "i", "ï": "i", "ī": "i",
+        "ó": "o", "ò": "o", "ô": "o", "ö": "o", "õ": "o", "ø": "o", "ō": "o",
+        "ú": "u", "ù": "u", "û": "u", "ü": "u", "ū": "u",
+        "ç": "c", "ñ": "n", "ß": "ss", "æ": "ae", "œ": "oe",
+        "'": "", "\u2019": "",
+    }
+)
+
+
+def slugify(name: object) -> str | None:
+    """A slug from a name a source wrote, or ``None`` if there is nothing usable.
+
+    Used where a claim names its subject in words — "Perindopril", "Dr Nguyen" —
+    and an id has to be derived. Deterministic and ASCII-explicit, because the
+    slug becomes a filename and two machines rebuilding the same log must land on
+    the same one.
+
+    Returns ``None`` rather than a fallback. A name this cannot render is a claim
+    that gets rejected and reported, not one filed under a slug nobody can
+    connect back to the word on the page.
+    """
+    if not isinstance(name, str):
+        return None
+    folded = _SLUGGABLE.sub("-", name.strip().lower().translate(_FOLD)).strip("-")
+    if not folded:
+        return None
+    # The id length limit lives in `_SLUG_RE`; truncating to fit would map two
+    # different long names onto one entity, so an over-long name is refused.
+    return folded if _SLUG_RE.match(folded) else None
+
+
+def make_id(kind: object, name: object) -> str | None:
+    """``("med", "Perindopril")`` -> ``"med:perindopril"``, or ``None``."""
+    if not isinstance(kind, str) or kind not in KIND_DIRS:
+        return None
+    slug = slugify(name)
+    return f"{kind}:{slug}" if slug else None
+
+
 def describe_rejection(value: object) -> str:
     """Why :func:`parse` said no, in words a person can act on."""
     if not isinstance(value, str):

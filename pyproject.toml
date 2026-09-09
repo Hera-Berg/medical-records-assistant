@@ -5,12 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "health-agent"
 version = "0.1.0"
-description = "Patient-held health record agent — phases 1-3: vault, event log, ingest, projection"
+description = "Patient-held health record agent — vault, event log, ingest, projection, extraction"
 requires-python = ">=3.11"
-dependencies = []
+# httpx, for the one thing stdlib cannot do here: a short connect timeout with a
+# long read timeout. Vision prefill on a large page can exceed a minute while a
+# sleeping box must fail in seconds, and they are different problems.
+# Pillow preprocesses images before they reach the model — see MODELS.md,
+# "Image token budget", which is the most likely cause of an out-of-memory crash.
+dependencies = ["httpx>=0.27", "pillow>=10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# The deterministic half of dual-path extraction, and PDF page rendering at 150
+# DPI (pdfplumber brings pypdfium2, which does both). Optional: without them the
+# deterministic path reports itself unavailable and claims are `uncorroborated`
+# rather than `cross-verified`. Never fatal — the VLM is the reader.
+documents = ["pdfplumber>=0.11"]
+ocr = ["pytesseract>=0.3"]
+# The default credential store. Without it the env var and the credentials file
+# still work; see MODELS.md, "Credentials".
+keychain = ["keyring>=24"]
 
 [project.scripts]
 health-agent = "agent.cli:main"
