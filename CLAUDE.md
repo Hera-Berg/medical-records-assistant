@@ -175,6 +175,16 @@ rejected content in a document that gets printed. Because the direction of the m
 raise a review item naming the artefact and asking which was meant, **without reproducing the
 content**. Withdrawing then re-confirming is one tap; un-printing a clinician's copy is not.
 
+**Rejection suppression is keyed on `(subject, predicate, normalised value, artefact)`**, built from
+the whole log before any claim is admitted — which is what makes it hold when a re-extraction sorts
+earlier than the rejection. Normalised, so `5.0mg daily` can't slip past a rejection of `5mg daily`.
+The artefact stays in the key: re-reading the same photograph is the case the user decided; a
+different document saying the same thing is new evidence and theirs to decide again.
+
+**Reconciliation tracks per-artefact review state** — claims, decided, rejected, `is_reviewed`,
+`all_rejected`. An artefact whose claims were all rejected is reviewed, not unprocessed, and must
+never re-enter the review queue.
+
 **Anomalies live in the rebuild report, not the wiki**, when they have no subject — a malformed
 payload or a shard naming violation is integrity information about the log, not record content.
 An anomaly that *does* resolve to a subject (a payload disagreeing with the computed consequence
