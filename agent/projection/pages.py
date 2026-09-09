@@ -178,25 +178,52 @@ def _bare_entity_note(document: Document, entity: Entity, citer: Citer) -> None:
     )
 
 
+def _stop_when_phrase(report) -> str:
+    """" on 4 June 2026" or " around August 2026 (±10 days)", or nothing.
+
+    "on" only before an exact day. :meth:`FuzzyDate.render` already opens a band
+    with "around", and "on around August 2026" reads as a typo.
+    """
+    if report.when is None:
+        return ""
+    return (
+        f" on {report.when.render()}"
+        if report.when.is_exact
+        else f" {report.when.render()}"
+    )
+
+
 def _supply_section(document: Document, entity: Entity, citer: Citer, as_of_date) -> None:
     """What the last script dispensed, and when that runs out.
 
-    Two things this section must not do. It must not exist merely to report that
-    it has nothing to report: a dose claim's own frequency reaches
+    Three things this section must not do. It must not exist merely to report
+    that it has nothing to report: a dose claim's own frequency reaches
     :class:`Dispense` as a fallback, and a "Supply" heading over the single word
     "daily" is noise on a page being skimmed — see :attr:`Dispense.has_spans`.
 
-    And it must not advertise a supply for a medication that has been stopped.
+    It must not advertise a supply for a medication that has been stopped.
     ``expected_exhaustion`` is already dropped for a stopped entity, so the
     forward-looking sentences fall away on their own; what is left goes into the
     past tense, because the script and its quantities are history the record
     keeps rather than a supply anyone is still counting down.
+
+    And where a stop was *reported* but not acted on, it must say so here rather
+    than only below. Both sections were correct in isolation and the page was
+    not: "the supply runs out 28 September 2026" sat above "you confirmed a
+    patient-reported source saying this was stopped around August 2026" with
+    nothing joining them, so a clinician skimming saw a live prescription and a
+    stop notice that did not know about each other. The reconciliation rule is
+    unchanged — the entry stays on the current list, because only a
+    prescriber-issued or lab-issued source takes it off — but the arithmetic is
+    stated for what it is: a count of what was prescribed, not a claim about what
+    is being taken.
     """
     supply = entity.dispense
     claim = entity.dispense_claim
     if supply is None or claim is None or not supply.has_spans:
         return
     stopped = entity.status == entities_mod.STOPPED
+    report = entity.stop_report
     citation = citer.cite(claim.cite, _correction_description(claim))
     document.heading("Supply")
     sentences = []
@@ -233,10 +260,14 @@ def _supply_section(document: Document, entity: Entity, citer: Citer, as_of_date
         )
 
     if entity.expected_exhaustion is not None:
+        # The qualifier is not hedging. A reported stop means the count below is
+        # of tablets dispensed, and whether they were swallowed is exactly what
+        # the patient has told the record they were not.
+        qualifier = "" if report is None else ", if it is still being taken"
         sentences.append(
             Sentence(
                 f"On that reading the supply runs out "
-                f"{entity.expected_exhaustion.render()}",
+                f"{entity.expected_exhaustion.render()}{qualifier}",
                 [citation],
             )
         )
@@ -247,6 +278,17 @@ def _supply_section(document: Document, entity: Entity, citer: Citer, as_of_date
                 f"Nothing since has confirmed it, so this entry is marked stale — last "
                 f"confirmed {elapsed}",
                 [citation],
+            )
+        )
+    if report is not None:
+        # Cited to the stop, not to the script: this sentence is the patient's
+        # statement, and attributing it to the prescribing document would be the
+        # same substitution `_supply_source_phrase` refuses for corrections.
+        sentences.append(
+            Sentence(
+                f"This counts what was prescribed, and you have since confirmed a "
+                f"{report.tier} stop — see “Reported stopped” below",
+                [citer.cite(report.claim.cite, _correction_description(report.claim))],
             )
         )
     document.paragraph(*sentences)
@@ -265,15 +307,7 @@ def _reported_stop_section(document: Document, entity: Entity, citer: Citer) -> 
         return
     document.heading("Reported stopped")
     citation = citer.cite(report.claim.cite, _correction_description(report.claim))
-    # "on" only for an exact day. `render()` already says "around August 2026
-    # (±10 days)" for a band, and "on around August 2026" reads as a typo.
-    when = ""
-    if report.when is not None:
-        when = (
-            f" on {report.when.render()}"
-            if report.when.is_exact
-            else f" {report.when.render()}"
-        )
+    when = _stop_when_phrase(report)
     document.paragraph(
         Sentence(
             f"You confirmed a {report.tier} source saying this was stopped{when}",

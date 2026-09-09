@@ -306,3 +306,79 @@ def test_the_timeline_and_the_page_describe_one_event_the_same_way():
 
     assert "Your correction" in timeline
     assert "Note recorded" not in timeline
+
+
+# --- a supply that does not know about a reported stop ----------------------
+
+
+def _reported_stop():
+    """A prescriber-issued script, and a patient-reported stop the user confirmed.
+
+    The tier rule declines to transition the status — only a prescriber-issued
+    or lab-issued source takes a medication off the current list — so the entity
+    stays `active` and carries a stop report beside it.
+    """
+    # A second artefact — a voice note, not the script — so the citation on the
+    # stop is a different footnote from the citation on the supply arithmetic.
+    events = _script() + [ingested(DEVICE, "77b210")]
+    stop = claim(
+        DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20),
+        occurred={"value": "2026-06-15", "precision": "month", "uncertainty_days": 10},
+        tier="patient-reported", artifact="77b210",
+    )
+    events += [stop, confirm(DEVICE, stop.id, ts=on_day(21))]
+    return _project(events)
+
+
+def test_supply_acknowledges_a_reported_stop_it_cannot_act_on():
+    """Both sections were right and the page was not.
+
+    "the supply runs out 4 July 2026" sat above "you confirmed a
+    patient-reported source saying this was stopped around June 2026" with
+    nothing joining them, so a clinician skimming saw a live prescription and a
+    stop notice that did not know about each other. Supply is arithmetic on what
+    was dispensed; whether those tablets are being swallowed is exactly what the
+    patient has told the record they are not.
+    """
+    result = _reported_stop()
+    entity = result.entities["med:perindopril"]
+    # `stale` here rather than `active` only because this script's supply ran
+    # out before AS_OF. Both are statuses that keep the entry on the current
+    # list, which is the point: the tier rule declined to take it off.
+    assert entity.status == entities_mod.STALE
+    assert entity.stop_report is not None
+
+    supply = _page(result).split("## Supply")[1].split("## ")[0]
+
+    assert "runs out 4 July 2026, if it is still being taken" in supply
+    assert "you have since confirmed a patient-reported stop" in supply
+    assert "Reported stopped" in supply, "and points at the section that has the detail"
+
+
+def test_the_supply_caveat_appears_only_where_a_stop_was_reported():
+    """The qualifier has to mean something. On a page with no reported stop it
+    would be a hedge on an unhedged fact, and hedging everything is how a real
+    caveat stops being read."""
+    supply = _page(_project(_script())).split("## Supply")[1]
+
+    assert "runs out 4 July 2026." in supply
+    assert "if it is still being taken" not in supply
+    assert "Reported stopped" not in supply
+
+
+def test_the_supply_caveat_is_cited_to_the_stop_not_to_the_script():
+    """A sentence about what the patient said must not carry the script's
+    footnote. That is the same substitution `_supply_source_phrase` refuses when
+    it declines to call a correction a prescriber-issued source."""
+    page = _page(_reported_stop())
+    supply = page.split("## Supply")[1].split("## ")[0]
+    paragraph = [
+        line for line in supply.splitlines() if "confirmed a patient-reported stop" in line
+    ]
+    assert paragraph, "the sentence is on the page"
+    # Markers are written once per paragraph per source, so both appear on the
+    # line — but the stop's must be among them, and it is a different artefact
+    # from the script the arithmetic came off.
+    markers = _MARKER.findall(paragraph[0])
+    assert "77b210" in markers
+    assert "a3f91c" in markers
