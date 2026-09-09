@@ -244,6 +244,29 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
     )
 
 
+def date_coercion_anomalies(claim: Claim) -> list[Anomaly]:
+    """Fields of ``occurred_at`` the parser could not use as written.
+
+    The same argument as :func:`declared_tier_anomaly`, and the same shape: the
+    projection does not trust the payload, and where it declines to use what the
+    payload said it reports that rather than quietly proceeding. Phase 4 rejects
+    malformed dates at extraction, but the guarantee has to hold against a stream
+    the current extractor did not produce — another device's shard, a hand edit, a
+    re-extraction under a future model.
+    """
+    occurred = claim.occurred_at
+    if occurred is None or not occurred.coercions:
+        return []
+    return [
+        Anomaly(
+            f"{claim.event_id}: occurred_at {note}",
+            subject_id=claim.subject.id,
+            cite=claim.cite,
+        )
+        for note in occurred.coercions
+    ]
+
+
 def declared_tier_anomaly(claim: Claim) -> Anomaly | None:
     """A payload that disagrees with the code's consequence lookup.
 

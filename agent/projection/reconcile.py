@@ -656,6 +656,7 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
         anomaly = claims_mod.declared_tier_anomaly(parsed)
         if anomaly:
             anomalies.append(anomaly)
+        anomalies.extend(claims_mod.date_coercion_anomalies(parsed))
 
     # The user's latest word on each reading, not merely the fact that one
     # rejection exists: "suppressed until the user says otherwise" means a later
@@ -751,6 +752,7 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
                     cite=parsed.cite,
                 )
             )
+        anomalies.extend(claims_mod.date_coercion_anomalies(parsed))
         review_states[parsed.event_id] = REVIEW_CONFIRMED
         admissions.append(
             Admission(parsed, ADMITTED, REVIEW_CONFIRMED, "your correction, which always stands")

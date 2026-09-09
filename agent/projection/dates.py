@@ -19,6 +19,7 @@ below rather than from ``strftime`` ``%B``, which is translated under a differen
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -45,6 +46,14 @@ class FuzzyDate:
     value: date
     precision: str = "day"
     uncertainty_days: int = 0
+    #: What the payload said that this date did not use. Carried so the claim
+    #: that owns the date can report it: the log can hold claims the current
+    #: extractor never produced — another device's shard, a hand edit, a future
+    #: model version — so a coercion here has to be visible without relying on
+    #: validation upstream having caught it. Excluded from comparison, because
+    #: two dates that mean the same instant are the same date whatever their
+    #: payloads looked like.
+    coercions: tuple[str, ...] = dataclasses.field(default=(), compare=False)
 
     @property
     def band(self) -> tuple[date, date]:
@@ -93,6 +102,9 @@ class FuzzyDate:
         Used for expected exhaustion, which is exactly as uncertain as the
         script date it is counted from.
         """
+        # Deliberately not carrying ``coercions``: they belong to the payload
+        # that stated the source date, and an expected-exhaustion date derived
+        # from it would report the same problem a second time.
         return FuzzyDate(
             value=self.value + timedelta(days=days),
             precision=self.precision,
@@ -129,6 +141,11 @@ def parse_occurred_at(payload: object) -> FuzzyDate | None:
     An explicit ``null``, an absent field, or an unparseable value all yield
     ``None`` — an unknown date stays unknown rather than acquiring a plausible
     one from somewhere nearby.
+
+    A field this does not recognise is coerced rather than fatal, and every
+    coercion is recorded on the result so the claim can report it. Phase 4 will
+    reject these at extraction, which does not make the report redundant: the log
+    can contain claims phase 4 never saw.
     """
     if payload is None:
         return None
@@ -140,13 +157,35 @@ def parse_occurred_at(payload: object) -> FuzzyDate | None:
     parsed = parse_iso_date(payload.get("value"))
     if parsed is None:
         return None
+    coercions: list[str] = []
+
     precision = payload.get("precision", "day")
     if not isinstance(precision, str) or precision not in PRECISIONS:
+        coercions.append(
+            f"precision {precision!r} is not one of {', '.join(PRECISIONS)}, so the date "
+            f"was widened to a whole year rather than read as written"
+        )
         precision = "year"  # unrecognised means blurrier, never sharper
+
     uncertainty = payload.get("uncertainty_days", 0)
     if isinstance(uncertainty, bool) or not isinstance(uncertainty, int) or uncertainty < 0:
+        if uncertainty not in (0, None):
+            # Note the direction: dropping the slack makes the date *sharper*
+            # than the payload claimed, which is the opposite of what the
+            # precision rule does. There is no honest wider value to substitute —
+            # inventing a band would be worse — so it is reported instead.
+            coercions.append(
+                f"uncertainty_days {uncertainty!r} is not a whole number of days and was "
+                f"dropped, so this date renders sharper than the payload claimed"
+            )
         uncertainty = 0
-    return FuzzyDate(value=parsed, precision=precision, uncertainty_days=uncertainty)
+
+    return FuzzyDate(
+        value=parsed,
+        precision=precision,
+        uncertainty_days=uncertainty,
+        coercions=tuple(coercions),
+    )
 
 
 def can_order(left: FuzzyDate | None, right: FuzzyDate | None) -> bool:
