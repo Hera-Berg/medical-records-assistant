@@ -183,6 +183,37 @@ falling back to the bare precision band would be sharper than the payload claime
 date to null discards information the record exists to keep. Every coercion raises an anomaly against
 the claim's subject, so a reader seeing a vague date finds the reason on the same page.
 
+**Salt variants alias in the projection, not at extraction and not in `subjects.py`.** Pharmacy
+labels carry salt names — `levothyroxine sodium`, `metformin hydrochloride`, `perindopril arginine` —
+and creating a separate entity for each duplicates the medication list *and* silently breaks
+staleness, aging one copy while the other stays active. Aliasing belongs in the projection's alias
+layer beside confirmed merges, so an improved table is picked up by a rebuild with no re-extraction
+and no model call. `subjects.py` is path safety; a drug vocabulary does not belong in it.
+
+**The table is explicit `(full name → base name)` pairs, never a suffix-stripping regex.** Salt
+choice can change the number: perindopril arginine 5mg is the equivalent of perindopril erbumine 4mg.
+Blanket stripping turns that into a false dose conflict, or ranks one silently over the other. The
+salt is recorded on the claim, so two salts giving different numbers surface as `conflicted` — a
+false alarm cleared in one tap beats showing 4mg to someone taking 5mg. Aliasing is disclosed on the
+entity page the way date coercions are: the label read X, filed under Y.
+
+**An aliased entity gets no stub page.** A confirmed merge keeps one because it records a user
+decision that must stay visible and reversible. A table alias is normalisation, not a decision — a
+rebuild from scratch would never have created the page — and the entity note plus the artefact
+citation already disclose the label's own wording.
+
+**`claim.proposed` carries the source's own subject wording** alongside the normalised subject id.
+Everywhere else the codebase renders the literal and compares the normalised; subjects were the one
+place that rule wasn't applied, so normalising the slug would have destroyed the only copy of what
+the label actually said. Additive payload field; older events fall back to current behaviour.
+
+**One review item per fact, not per source.** Two documents asserting the same normalised value for
+the same slot are one review, confirmed in one tap, emitting one `claim.confirmed` per claim — the
+wiki already cites multiple sources for one fact, and a queue that asks twice about one fact is what
+makes inboxes uncompletable. Same slot with *different* values stays separate: that is a conflict,
+not a duplicate. Extraction is unchanged — idempotency is keyed per artefact, so a second document
+stating the same fact must still produce a second proposal.
+
 **Rejection suppression is keyed on `(subject, predicate, normalised value, artefact)`**, built from
 the whole log before any claim is admitted — which is what makes it hold when a re-extraction sorts
 earlier than the rejection. Normalised, so `5.0mg daily` can't slip past a rejection of `5mg daily`.
@@ -280,17 +311,9 @@ rewrite a line. Never delete a line. Corrections are new events.
 | `entity.merge.proposed` | agent | "Panadol" and "paracetamol" may be the same thing. |
 | `entity.merge.confirmed` / `.reverted` | user | |
 | `note.recorded` | user | Voice or text note, with transcript. |
-| `model.identity.observed` | agent | The identity string an inference server reported, on first sight. |
 
 **Store `extraction.completed` separately from `claim.proposed`.** When the model is swapped for a
 better one you need to re-derive everything and diff it, and you cannot do that from parsed claims.
-
-**`model.identity.observed` is the model registry.** A remote model cannot be pinned by `sha256` the
-way a local GGUF can, so it is pinned by the identity string the server reports and verified on
-every call. One event per identity string, appended the first time that string is seen; "last seen"
-is derivable from the most recent `extraction.completed` carrying it. A string that disagrees with
-`config.toml` stops the run and is surfaced — it is never auto-updated into the config, because a
-config file describing a server's past state is worse than no record.
 
 ### Claim payload
 
