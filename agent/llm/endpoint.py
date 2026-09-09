@@ -60,14 +60,7 @@ Resolver = Callable[[str, int | None], Sequence[str]]
 
 def system_resolver(host: str, port: int | None = None) -> list[str]:
     """Every address *host* resolves to right now, as strings."""
-    try:
-        answers = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise EndpointNotPrivate(
-            f"the inference endpoint host {host!r} does not resolve: {exc}. The address "
-            f"guard cannot pass a host it cannot resolve, so this is a refusal rather "
-            f"than a request that goes out unchecked."
-        ) from None
+    answers = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     return [str(info[4][0]) for info in answers]
 
 
@@ -109,7 +102,22 @@ class Endpoint:
         Called before **every** request rather than cached, because that is the
         whole difference between a guard and a boot-time assertion.
         """
-        addresses = tuple(resolver(self.host, self.port))
+        try:
+            addresses = tuple(resolver(self.host, self.port))
+        except EndpointNotPrivate:
+            raise
+        except OSError as exc:
+            # Fails closed, and it is the resolver failing that makes this
+            # necessary rather than tidy: a host we cannot resolve is a host we
+            # cannot verify. Letting a `gaierror` escape would send an opaque
+            # socket error up through the client, where it would be classified
+            # as neither unreachable nor unauthorised and would read as a bug.
+            raise EndpointNotPrivate(
+                f"the inference endpoint host {self.host!r} does not resolve: {exc}. "
+                f"The address guard cannot pass a host it cannot resolve, so this is "
+                f"a refusal rather than a request that goes out unchecked. If the box "
+                f"is simply asleep, this clears when it is back on the tailnet."
+            ) from None
         if not addresses:
             raise EndpointNotPrivate(
                 f"the inference endpoint host {self.host!r} resolved to no addresses"
