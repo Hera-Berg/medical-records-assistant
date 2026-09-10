@@ -268,3 +268,48 @@ export interface CaptureResponse {
   results: CaptureResult[];
   note: string;
 }
+
+/**
+ * The folder, as the browser screen sees it.
+ *
+ * `kind` is what a path *is* — the log, an original, a sidecar, something
+ * derived, something of yours, the setup file — and it is what decides whether
+ * the delete button exists. `refusal` carries the sentence to show when it does
+ * not, so the screen never has to invent a reason for the server's answer.
+ */
+export type FileKind = "log" | "raw" | "sidecar" | "derived" | "yours" | "config";
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  kind: FileKind;
+  what: string;
+  bytes: number | null;
+  modified: string | null;
+  children: number | null;
+  text: boolean;
+  /** The short hash, when this file is an artefact the record cites. */
+  artifact: string | null;
+  claims: number | null;
+  deletable: boolean;
+  refusal: string | null;
+}
+
+export interface FileListing {
+  path: string;
+  root: string;
+  folder: string | null;
+  crumbs: { label: string; path: string }[];
+  /** Set when the path is a file rather than a folder. */
+  entry: FileEntry | null;
+  entries: FileEntry[];
+}
+
+export interface FileContent {
+  path: string;
+  text: string;
+  truncated: boolean;
+  bytes: number;
+  shown: number;
+}

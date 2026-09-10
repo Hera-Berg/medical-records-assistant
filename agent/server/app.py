@@ -30,7 +30,7 @@ from ..extract import session
 from ..llm import redaction
 from . import endpoint_state, static
 from .index import Index
-from .routes import artifact, capture, health, rebuild, record
+from .routes import artifact, capture, files, health, rebuild, record
 from .serving import API_HEADERS
 from .state import RecordState, under_pytest
 from .worker import Worker
@@ -112,7 +112,7 @@ def create_app(
 
     _install_handlers(app)
 
-    for module in (health, capture, record, artifact, rebuild):
+    for module in (health, capture, record, artifact, rebuild, files):
         app.include_router(module.router)
 
     @app.get("/api/build", include_in_schema=False)

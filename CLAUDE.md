@@ -468,7 +468,19 @@ POST /api/review/{event_id}     confirm | reject | correct
 POST /api/summary               generate consultation summary
 GET  /print/{summary_id}        print-optimised A4 HTML
 POST /api/rebuild               wipe wiki/ + index, replay events
+GET  /api/files?path=           one folder in the vault, or one file's description
+GET  /api/files/content?path=   a text file, for reading in place
+DELETE /api/files?path=         remove one file or one empty folder
 ```
+
+`/api/files` is the folder browser behind the **Files** screen — the folder is the
+record, so the app shows it. Deletion is tiered by what the path *is*, and the tiers
+are enforced server-side: `wiki/` and `.agent/` freely (a rebuild writes them again),
+`raw/` deliberately and only after being told how many claims were read off the
+artefact, `events/` **never at any tier of confirmation**, and `config.toml` never.
+A UI that can unlink a shard is a UI that can destroy the record; removing the vault
+is the file manager's job. Every path is checked by shape and again after symlink
+resolution.
 
 `/api/capture` must return before any inference runs. The user is in a waiting room; never block the
 UI on a 9B model.

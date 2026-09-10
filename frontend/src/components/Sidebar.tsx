@@ -94,9 +94,10 @@ export function Sidebar({
         </span>
       </div>
 
-      <nav className="flex gap-0.5 overflow-x-auto px-2 pb-3 md:block md:gap-1 md:overflow-visible md:pb-0">
+      <nav className="flex flex-wrap gap-0.5 px-2 pb-3 md:block md:gap-1 md:pb-0">
         <Item to="/" label="Timeline" path={path} navigate={navigate} exact icon={<Clock />} />
         <Item to="/record" label="Your record" path={path} navigate={navigate} icon={<Book />} />
+        <Item to="/files" label="Files" path={path} navigate={navigate} icon={<Folder />} />
         <Item
           to="/add"
           label="Add something"
@@ -109,9 +110,15 @@ export function Sidebar({
 
       <div className="mt-auto hidden border-t border-white/12 px-4 py-4 md:block">
         <p className="text-[color:var(--color-sidebar-muted)]">Your folder</p>
-        <p className="font-semibold break-words" title={health?.vault.root ?? undefined}>
-          {folder ?? "…"}
-        </p>
+        {/* A link, because the sentence "your record is a folder" should be
+            something you can act on rather than only read. */}
+        <Link
+          to="/files"
+          navigate={navigate}
+          className="block font-semibold break-words text-[color:var(--color-sidebar-ink)]"
+        >
+          <span title={health?.vault.root ?? undefined}>{folder ?? "…"}</span>
+        </Link>
         <p className="text-[color:var(--color-sidebar-muted)]">
           {health ? (SYNC_WORDS[health.vault.sync_profile] ?? "Synced by your own client") : ""}
         </p>
@@ -201,6 +208,17 @@ function Plus() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v8M8 12h8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Folder() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path
+        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

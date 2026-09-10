@@ -28,6 +28,7 @@ import { Artifact } from "./components/Artifact";
 import { Attention } from "./components/Attention";
 import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./components/Capture";
 import { Entity } from "./components/Entity";
+import { Files } from "./components/Files";
 import { Record } from "./components/Record";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
@@ -107,6 +108,16 @@ export function App() {
     screen = <Record navigate={navigate} version={version} />;
   } else if (first === "artifact" && tail) {
     screen = <Artifact short={tail} version={version} setHeader={setHeader} />;
+  } else if (first === "files") {
+    screen = (
+      <Files
+        path={tail ? tail.split("/").map(decodeURIComponent).join("/") : ""}
+        navigate={navigate}
+        version={version}
+        onChanged={refresh}
+        setHeader={setHeader}
+      />
+    );
   } else if (first === "add") {
     screen = <CapturePanel capture={capture} onCaptured={refresh} />;
   } else {
@@ -211,6 +222,9 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "artifact") {
     return { title: "One of your documents", subtitle: "Reading…" };
+  }
+  if (first === "files") {
+    return { title: "Your folder", subtitle: "Reading…" };
   }
   if (first === "add") {
     return {

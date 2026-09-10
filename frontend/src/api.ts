@@ -15,6 +15,8 @@ import type {
   ArtifactMeta,
   CaptureResponse,
   EntityDetail,
+  FileContent,
+  FileListing,
   Health,
   Timeline,
   WikiIndex,
@@ -109,6 +111,25 @@ export const api = {
       body: form,
     });
   },
+
+  files: (path: string) =>
+    request<FileListing>(`/api/files?path=${encodeURIComponent(path)}`),
+
+  fileContent: (path: string) =>
+    request<FileContent>(`/api/files/content?path=${encodeURIComponent(path)}`),
+
+  /**
+   * Remove one file or one empty folder.
+   *
+   * The server decides what may go — the log never, an original deliberately,
+   * anything derived freely. The screen asks first and shows the server's own
+   * sentence when the answer is no.
+   */
+  deleteFile: (path: string) =>
+    request<{ deleted: string; kind: string; was_dir: boolean; rebuildable: boolean }>(
+      `/api/files?path=${encodeURIComponent(path)}`,
+      { method: "DELETE" },
+    ),
 
   rebuild: () => request<Record<string, unknown>>("/api/rebuild", { method: "POST" }),
 };
