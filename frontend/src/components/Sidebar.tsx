@@ -106,6 +106,13 @@ export function Sidebar({
           icon={<Plus />}
           note={uploading > 0 ? `${uploading} sending` : undefined}
         />
+        <Item
+          to="/settings"
+          label="Settings"
+          path={path}
+          navigate={navigate}
+          icon={<Gear />}
+        />
       </nav>
 
       <div className="mt-auto hidden border-t border-white/12 px-4 py-4 md:block">
@@ -119,9 +126,15 @@ export function Sidebar({
         >
           <span title={health?.vault.root ?? undefined}>{folder ?? "…"}</span>
         </Link>
-        <p className="text-[color:var(--color-sidebar-muted)]">
+        {/* A link, because "where is my record kept" and "tell it where my
+            record is kept" are the same question asked twice. */}
+        <Link
+          to="/settings"
+          navigate={navigate}
+          className="text-[color:var(--color-sidebar-muted)] no-underline hover:underline"
+        >
           {health ? (SYNC_WORDS[health.vault.sync_profile] ?? "Synced by your own client") : ""}
-        </p>
+        </Link>
 
         {endpoint ? (
           <p className="mt-3 flex items-baseline gap-2">
@@ -218,6 +231,18 @@ function Folder() {
       <path
         d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Gear() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="3.2" />
+      <path
+        d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"
+        strokeLinecap="round"
       />
     </svg>
   );

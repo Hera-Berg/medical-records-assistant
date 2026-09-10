@@ -18,6 +18,7 @@ import type {
   FileContent,
   FileListing,
   Health,
+  Settings,
   Timeline,
   WikiIndex,
 } from "./types";
@@ -89,16 +90,24 @@ export const api = {
   /**
    * Send files.
    *
-   * `captured_ts` is deliberately not sent and there is no field for it. A
-   * browser knows `File.lastModified`, which is a filesystem mtime rewritten by
-   * every download, copy and sync client — not when a photograph was taken.
-   * The server writes an explicit null, and the live camera and microphone
-   * paths that genuinely know the moment arrive in phase 6.
+   * `capturedTs` is sent **only** by the recorder, and there is no path that
+   * sends it for anything else. A browser knows `File.lastModified`, which is a
+   * filesystem mtime rewritten by every download, copy and sync client — not
+   * when a photograph was taken — so for a dropped or picked file the server
+   * writes an explicit null. A recording made by this page is the one case
+   * where the moment is genuinely known, because this page watched it happen;
+   * the server still checks it rather than trusting it.
    */
-  capture: (files: File[], source: "upload" | "paste" | "drop", note?: string) => {
+  capture: (
+    files: File[],
+    source: "upload" | "paste" | "drop" | "recorder",
+    capturedTs?: string | null,
+    note?: string,
+  ) => {
     const form = new FormData();
     for (const file of files) form.append("files", file, file.name);
     form.append("source", source);
+    if (capturedTs) form.append("captured_ts", capturedTs);
     if (note) form.append("note", note);
     return request<CaptureResponse>("/api/capture", { method: "POST", body: form });
   },
@@ -132,6 +141,22 @@ export const api = {
     ),
 
   rebuild: () => request<Record<string, unknown>>("/api/rebuild", { method: "POST" }),
+
+  settings: () => request<Settings>("/api/settings"),
+
+  /**
+   * Record where the folder already lives.
+   *
+   * Moves nothing and contacts no service. The server refuses with a sentence
+   * worth reading when a sync client has forked `config.toml`, which is the one
+   * moment writing to it could lose the whole file.
+   */
+  setSyncProfile: (profile: string) =>
+    request<Settings>("/api/settings/sync-profile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profile }),
+    }),
 };
 
 export const artifactUrl = (short: string) => `/api/artifact/${encodeURIComponent(short)}`;

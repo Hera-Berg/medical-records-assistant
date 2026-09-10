@@ -90,13 +90,19 @@ export function Artifact({
         <Preview meta={meta} />
       )}
 
+      {meta.is_recording ? <Spoken meta={meta} /> : null}
+
       <Heading>What the record knows about this file</Heading>
       <dl className="grid grid-cols-[14rem_1fr] gap-x-4 gap-y-1">
         <Row label="Added to the record" value={longStamp(meta.ingested_ts)} />
         <Row
           label="Taken or recorded"
           value={longStamp(meta.captured_ts)}
-          absent="not known — a file picked from disk does not say when it was made"
+          absent={
+            meta.is_recording
+              ? "not known — nothing recorded when this was made"
+              : "not known — a file picked from disk does not say when it was made"
+          }
         />
         <Row
           label="Document dated"
@@ -117,6 +123,107 @@ export function Artifact({
       </p>
     </article>
   );
+}
+
+/**
+ * What a recording said, and when in it each word was said.
+ *
+ * The player is directly above this, so a segment's timestamp is something a
+ * reader can act on: click the time, the audio jumps there. That is the whole
+ * point of storing word-level timestamps — a claim from a voice note cites four
+ * seconds, not "a voice note in September", and this is the screen where those
+ * four seconds can actually be heard.
+ *
+ * Discarded segments are reported as a count and never as text. They are the
+ * model's inventions over silence; the log keeps them so a run of them can be
+ * noticed, and printing them here would put invented sentences on the same page
+ * as true ones.
+ */
+function Spoken({ meta }: { meta: ArtifactMeta }) {
+  const transcript = meta.transcript;
+
+  if (!transcript) {
+    const failed =
+      meta.job &&
+      (meta.job.state === "unreadable" || meta.job.state === "needs-attention");
+    return (
+      <>
+        <Heading>What was said</Heading>
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          {failed
+            ? `This has not been written down: ${meta.job?.reason ?? "the speech model did not run"}. The recording itself is safe and is not affected.`
+            : "This has not been written down yet. It is done on this computer and needs no internet connection."}
+        </p>
+      </>
+    );
+  }
+
+  const jump = (seconds: number) => {
+    const player = document.querySelector("audio, video") as HTMLMediaElement | null;
+    if (!player) return;
+    player.currentTime = seconds;
+    player.play().catch(() => undefined);
+  };
+
+  return (
+    <>
+      <Heading>What was said</Heading>
+      {transcript.text ? (
+        <div className="mt-1">
+          {transcript.segments.map((segment, index) => (
+            <p key={index} className="mt-1 flex gap-3">
+              <button
+                type="button"
+                onClick={() => jump(segment.start)}
+                className="shrink-0 font-mono text-[color:var(--color-link)] underline"
+                title="Play the recording from here"
+              >
+                {stamp(segment.start)}
+              </button>
+              <span>{segment.text}</span>
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-1">
+          There was no speech in this recording. Nothing has been written down from it,
+          and the recording is kept.
+        </p>
+      )}
+      <p className="mt-2 text-[color:var(--color-muted)]">
+        Written down on this computer{modelName(transcript.model)}. The recording was
+        not sent anywhere.
+        {transcript.dropped > 0
+          ? ` ${transcript.dropped} part${transcript.dropped === 1 ? "" : "s"} of the recording ${transcript.dropped === 1 ? "was" : "were"} left out because ${transcript.dropped === 1 ? "it was" : "they were"} not speech.`
+          : ""}
+        {transcript.supersedes
+          ? " This replaced an earlier attempt at writing it down; the first one is still in your event log."
+          : ""}
+      </p>
+      <p className="mt-1 text-[color:var(--color-muted)]">
+        The recording is what your record keeps. These words are worked out from it and
+        can be worked out again.
+      </p>
+    </>
+  );
+}
+
+/**
+ * The model, named the way a sentence can hold it.
+ *
+ * The identity string is ``small`` — accurate, and "written down by small" reads
+ * as a sentence with a word missing. The identifier belongs in the record's
+ * filing system; here it needs the noun it is the name of.
+ */
+function modelName(model: string | null): string {
+  if (!model) return "";
+  return ` by the speech model (Whisper ${model})`;
+}
+
+/** ``m:ss`` into a recording. Not a date — a position. */
+function stamp(seconds: number): string {
+  const whole = Math.floor(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
 function Preview({ meta }: { meta: ArtifactMeta }) {

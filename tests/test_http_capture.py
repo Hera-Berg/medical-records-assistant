@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from agent.extract import jobs as jobs_mod
 from agent.ingest import naming
 
@@ -250,3 +252,81 @@ def test_a_partial_batch_says_how_many_of_each(client):
 
     assert body["note"].startswith("1 file stored and queued")
     assert "1 could not be stored" in body["note"]
+
+
+# --- the recorder, and the one path allowed to know when bytes were made ------
+
+
+def _wav() -> bytes:
+    from .test_speech import _wav_bytes
+
+    return _wav_bytes()
+
+
+def test_a_recording_may_say_when_it_was_made(client, vault):
+    """The first path in the application permitted to set ``captured_ts``.
+
+    A recording made by the microphone in the page happened at a moment the page
+    watched happen. Everywhere else the field stays an explicit null, because a
+    browser knows a file's mtime and not when a photograph was taken.
+    """
+    response = client.post(
+        "/api/capture",
+        files={"files": ("voice-note.webm", _wav(), "audio/webm")},
+        data={"source": "recorder", "captured_ts": "2026-09-02T09:11:00Z"},
+    )
+
+    assert response.status_code == 202
+    short = response.json()["results"][0]["short"]
+    meta = client.get(f"/api/artifact/{short}/meta").json()
+    assert meta["captured_ts"] == "2026-09-02T09:11:00Z"
+    assert meta["source"] == "recorder"
+    # Still null: reading the document is what establishes this one.
+    assert meta["artifact_ts"] is None
+
+
+def test_a_dropped_file_may_not_claim_a_capture_time(client):
+    """The substitution the four-timestamp rule exists to prevent."""
+    response = client.post(
+        "/api/capture",
+        files={"files": ("photo.jpg", JPEG, "image/jpeg")},
+        data={"source": "drop", "captured_ts": "2026-09-02T09:11:00Z"},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "cannot know one" in detail
+    assert "explicit null" in detail
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("2026-09-02", "canonical UTC"),
+        ("2026-09-02T09:11:00+02:00", "canonical UTC"),
+        ("2099-01-01T00:00:00Z", "in the future"),
+    ],
+)
+def test_a_capture_time_is_checked_rather_than_trusted(client, value, expected):
+    """A browser clock can be wrong, and a wrong one is invisible once stored."""
+    response = client.post(
+        "/api/capture",
+        files={"files": ("voice-note.webm", _wav(), "audio/webm")},
+        data={"source": "recorder", "captured_ts": value},
+    )
+
+    assert response.status_code == 400
+    assert expected in response.json()["detail"]
+
+
+def test_a_recording_with_no_capture_time_is_still_accepted(client):
+    """The CLI and an imported recording both take this path. Null, not refused."""
+    response = client.post(
+        "/api/capture",
+        files={"files": ("voice-note.webm", _wav(), "audio/webm")},
+        data={"source": "recorder"},
+    )
+
+    assert response.status_code == 202
+    short = response.json()["results"][0]["short"]
+    assert client.get(f"/api/artifact/{short}/meta").json()["captured_ts"] is None

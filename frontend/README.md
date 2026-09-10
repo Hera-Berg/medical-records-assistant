@@ -59,6 +59,39 @@ stale medication, an empty timeline, a merge stub, an artefact whose bytes are
 missing. Every defect found in phase 5's interface was found this way and none
 of them was visible from a passing test suite.
 
+## Photographing the recorder
+
+Reading text is not enough for the recorder, because most of its states are ones
+a developer with a working microphone never reaches: permission refused, no
+input device, a page opened at a LAN address where `getUserMedia` silently does
+nothing. `tools/shots.py` drives a real Chromium against a real server and
+photographs each one.
+
+```
+health-agent serve --vault /path/to/vault &
+python frontend/tools/shots.py --out /tmp/shots
+```
+
+Needs `pip install playwright` and `python -m playwright install chromium` —
+neither is a dependency of the application.
+
+Nothing in it is mocked. The "recording" shot is a browser recording a
+synthesised voice note through Chromium's fake audio device, and the transcript
+in the shot after it is what `faster-whisper` made of the file that browser
+uploaded. A screenshot of a mocked state is a picture of the mock.
+
+The one state that needs arranging is **waiting to be typed up**. It is real,
+but on a laptop it lasts about a second, so:
+
+```
+health-agent serve --vault /path/to/vault --port 7788 --no-worker &
+python frontend/tools/shots.py --origin http://127.0.0.1:7788 --waiting-only
+```
+
+A server that is not draining holds exactly that state, which is what a deep
+queue looks like. Without `--waiting-only` the script watches for the state and
+says it passed too quickly rather than posing it.
+
 ## Constraints
 
 These are not style preferences. Each has a reason, and they are enforced by

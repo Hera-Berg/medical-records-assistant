@@ -135,6 +135,15 @@ def artifact_meta(
     # has a transcript, and it says nothing.
     extra["transcript"] = serialise.transcript_summary(snapshot.events, short)
     extra["is_recording"] = mime_mod.is_speech(located.artifact.mime)
+    # Where this artefact has got to in the queue. Reported so a screen can say
+    # "being typed up" and "could not be typed up — ffmpeg is not installed" as
+    # different things, rather than showing an empty transcript for both.
+    job = state.queue().for_artifact(short)
+    extra["job"] = (
+        {"state": job.state, "reason": job.reason, "attempts": job.attempts}
+        if job is not None
+        else None
+    )
     return serialise.artifact_summary(located.artifact, extra)
 
 

@@ -1,8 +1,11 @@
 /**
  * The shell: the rail, the page heading, what needs a person, and the screen.
  *
- * Four screens in phase 5 — timeline, record, one entity, one artefact — plus
+ * Timeline, record, one entity, one artefact, the folder and settings — plus
  * capture, which is not a screen so much as something the whole window does.
+ * The recorder lives inside capture rather than beside it: speaking into the
+ * record is the same action as dropping a file in, arriving through a different
+ * input, and a tab of its own would imply a conversation.
  *
  * There is no review inbox here and no consultation summary. Those are phases 7
  * and 8, and a half-built review flow would be a way for a high-consequence
@@ -30,6 +33,7 @@ import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./compo
 import { Entity } from "./components/Entity";
 import { Files } from "./components/Files";
 import { Record } from "./components/Record";
+import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 
@@ -120,6 +124,8 @@ export function App() {
     );
   } else if (first === "add") {
     screen = <CapturePanel capture={capture} onCaptured={refresh} />;
+  } else if (first === "settings") {
+    screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
   } else {
     screen = (
       <p>
@@ -226,11 +232,17 @@ function defaultHeader(segments: string[]): PageHeader {
   if (first === "files") {
     return { title: "Your folder", subtitle: "Reading…" };
   }
+  if (first === "settings") {
+    return {
+      title: "Settings",
+      subtitle: "Where your record is kept, and what this app watches out for.",
+    };
+  }
   if (first === "add") {
     return {
       title: "Add something",
       subtitle:
-        "A photo of a script, a letter, a result, or a note in your own words. Nothing asks what kind of thing it is — that is worked out afterwards.",
+        "A photo of a script, a letter, a result, a note in your own words, or something said out loud. Nothing asks what kind of thing it is — that is worked out afterwards.",
     };
   }
   return { title: "Not found", subtitle: "" };

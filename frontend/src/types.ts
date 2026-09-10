@@ -231,6 +231,51 @@ export interface Timeline {
   as_of: string;
 }
 
+/** One word and its seconds. What lets a citation point at four seconds of audio. */
+export interface TranscriptWord {
+  start: number;
+  end: number;
+  word: string;
+  probability: number;
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+  words: TranscriptWord[];
+}
+
+/**
+ * What the speech model made of a recording.
+ *
+ * `dropped` is a count and a set of reasons, never text. Discarded segments are
+ * the model's hallucinations over silence — they are kept in the event log as
+ * provenance, and putting them on a screen beside a real transcript would print
+ * invented sentences next to true ones.
+ */
+export interface Transcript {
+  event: string;
+  ts: string;
+  model: string | null;
+  model_rev: string | null;
+  text: string;
+  language: string | null;
+  duration_s: number | null;
+  segments: TranscriptSegment[];
+  dropped: number;
+  dropped_reasons: Record<string, number>;
+  hotwords: string[];
+  supersedes: string | null;
+}
+
+/** Where an artefact has got to in the queue. Null once nothing is tracking it. */
+export interface JobState {
+  state: string;
+  reason: string | null;
+  attempts: number;
+}
+
 export interface ArtifactMeta {
   short: string;
   digest: string;
@@ -247,6 +292,37 @@ export interface ArtifactMeta {
   renders_inline: boolean;
   sidecar?: Record<string, unknown>;
   citation: Citation;
+  /** Null until the speech model has run. Present and empty means it ran and
+   *  found no speech, which is a different thing and is said differently. */
+  transcript: Transcript | null;
+  is_recording: boolean;
+  job: JobState | null;
+}
+
+/** One storage-profile option, with what choosing it would actually change. */
+export interface SyncOption {
+  value: string;
+  label: string;
+  effects: string[];
+  warning: string | null;
+  current: boolean;
+}
+
+export interface Settings {
+  explanation: string;
+  sync_profile: {
+    current: string;
+    options: SyncOption[];
+    warning: string | null;
+  };
+  config: {
+    path: string;
+    writable: boolean;
+    conflict_forks: string[];
+  };
+  vault: { root: string; demo: boolean };
+  changed?: string;
+  conflicts?: string[];
 }
 
 export interface CaptureResult {

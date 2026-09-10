@@ -1,47 +1,78 @@
 /**
  * One action, classified later.
  *
- * Drop anywhere on the window, paste anywhere, or pick a file. There is no
- * question about what kind of document it is — that is the model's job, and
- * asking the user at capture time is asking them to do it in a corridor.
+ * Drop anywhere on the window, paste anywhere, pick a file, type a note, or say
+ * it out loud. There is no question about what kind of document it is — that is
+ * the model's job, and asking the user at capture time is asking them to do it
+ * in a corridor.
  *
  * The upload is visible and non-blocking. It never gates the interface, and it
  * never waits for the inference box: the bytes are safe as soon as the server
  * answers, whether or not anything is awake to read them.
  *
- * A failed upload is retried from an in-memory queue and stays on screen until
- * it succeeds or the user dismisses it. The IndexedDB queue that survives a
- * page reload belongs with the recorder in phase 6, where a lost recording
- * cannot be re-dropped from a folder.
+ * **Everything goes through the IndexedDB outbox**, not just recordings. A
+ * recording is the reason the outbox exists — it is the one capture that exists
+ * nowhere else, so a reload mid-upload can lose it outright — but running
+ * dropped files through the same queue means one path to reason about and one
+ * place where "sent" is decided.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import type { CaptureResult } from "../types";
+import * as outbox from "../outbox";
+import type { Outgoing } from "../outbox";
+import type { ArtifactMeta, CaptureResult } from "../types";
+import { Recorder } from "./Recorder";
 
-interface Pending {
-  id: number;
-  files: File[];
-  source: "upload" | "paste" | "drop";
-  attempts: number;
-  error: string | null;
-}
+/** How often a recording waiting to be typed up is asked about. */
+const TRANSCRIPT_POLL_MS = 2000;
 
-let nextId = 1;
+/** How long that goes on before the screen stops asking and says so. */
+const TRANSCRIPT_GIVE_UP_MS = 5 * 60 * 1000;
+
+export type Source = Outgoing["source"];
 
 export function useCapture(onCaptured: () => void) {
-  const [pending, setPending] = useState<Pending[]>([]);
+  const [pending, setPending] = useState<Outgoing[]>([]);
   const [recent, setRecent] = useState<CaptureResult[]>([]);
   const [note, setNote] = useState<string | null>(null);
+  const [durable, setDurable] = useState(true);
   const inFlight = useRef(false);
+  const [tick, setTick] = useState(0);
 
-  const enqueue = useCallback((files: File[], source: Pending["source"]) => {
-    if (files.length === 0) return;
-    setPending((queue) => [
-      ...queue,
-      { id: nextId++, files, source, attempts: 0, error: null },
-    ]);
+  const reload = useCallback(async () => {
+    setPending(await outbox.all());
+    setDurable(outbox.isDurable());
   }, []);
+
+  const enqueue = useCallback(
+    async (files: File[], source: Source, capturedTs: string | null = null) => {
+      if (files.length === 0) return;
+      for (const file of files) {
+        await outbox.add(file, file.name || "capture", source, capturedTs);
+      }
+      await reload();
+      setTick((n) => n + 1);
+    },
+    [reload],
+  );
+
+  const enqueueBlob = useCallback(
+    async (blob: Blob, filename: string, capturedTs: string) => {
+      await outbox.add(blob, filename, "recorder", capturedTs);
+      await reload();
+      setTick((n) => n + 1);
+    },
+    [reload],
+  );
+
+  // Drain on load, whenever something is added, and when the network returns.
+  useEffect(() => {
+    reload();
+    const onOnline = () => setTick((n) => n + 1);
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [reload]);
 
   useEffect(() => {
     if (inFlight.current) return;
@@ -51,63 +82,70 @@ export function useCapture(onCaptured: () => void) {
     inFlight.current = true;
     let cancelled = false;
 
+    const file = new File([next.blob], next.filename, {
+      type: next.blob.type || "application/octet-stream",
+    });
+
     api
-      .capture(next.files, next.source)
-      .then((response) => {
+      .capture([file], next.source, next.capturedTs)
+      .then(async (response) => {
         if (cancelled) return;
-        setPending((queue) => queue.filter((item) => item.id !== next.id));
+        await outbox.remove(next.id);
         setRecent((seen) => [...response.results, ...seen].slice(0, 8));
         setNote(response.note);
+        await reload();
         onCaptured();
+        setTick((n) => n + 1);
       })
-      .catch((exc: Error) => {
+      .catch(async (exc: Error) => {
         if (cancelled) return;
         const terminal = exc instanceof ApiError && exc.status >= 400 && exc.status < 500;
-        setPending((queue) =>
-          queue.map((item) =>
-            item.id === next.id
-              ? {
-                  ...item,
-                  attempts: item.attempts + 1,
-                  // A 4xx will not become a 2xx by being sent again. Anything
-                  // else is the server being unavailable, which is temporary
-                  // and worth retrying.
-                  error: terminal || item.attempts >= 4 ? exc.message : null,
-                }
-              : item,
-          ),
-        );
+        await outbox.update({
+          ...next,
+          attempts: next.attempts + 1,
+          // A 4xx will not become a 2xx by being sent again. Anything else is
+          // the server being unavailable, which is temporary and worth
+          // retrying — and the bytes are on disk in this browser meanwhile.
+          error: terminal || next.attempts >= 4 ? exc.message : null,
+        });
+        await reload();
+        if (!terminal && next.attempts < 4) {
+          window.setTimeout(() => setTick((n) => n + 1), 1500);
+        }
       })
       .finally(() => {
         inFlight.current = false;
-        if (!cancelled) setPending((queue) => [...queue]);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [pending, onCaptured]);
+  }, [pending, tick, onCaptured, reload]);
 
   const dismiss = useCallback(
-    (id: number) => setPending((queue) => queue.filter((item) => item.id !== id)),
-    [],
+    async (id: number) => {
+      await outbox.remove(id);
+      await reload();
+    },
+    [reload],
   );
 
   const retry = useCallback(
-    (id: number) =>
-      setPending((queue) =>
-        queue.map((item) =>
-          item.id === id ? { ...item, error: null, attempts: 0 } : item,
-        ),
-      ),
-    [],
+    async (item: Outgoing) => {
+      await outbox.update({ ...item, error: null, attempts: 0 });
+      await reload();
+      setTick((n) => n + 1);
+    },
+    [reload],
   );
 
   return {
     enqueue,
+    enqueueBlob,
     pending,
     recent,
     note,
+    durable,
     dismiss,
     retry,
     uploading: pending.filter((item) => item.error === null).length,
@@ -121,7 +159,7 @@ export function useCapture(onCaptured: () => void) {
  * appears while a file is actually over the window — it is a state change, not
  * an animation, and it disappears the instant the drag ends.
  */
-export function useWindowCapture(enqueue: (files: File[], source: Pending["source"]) => void) {
+export function useWindowCapture(enqueue: (files: File[], source: Source) => void) {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
 
@@ -193,6 +231,12 @@ export function CapturePanel({
   const [noteError, setNoteError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Recordings from this session, so their transcripts can be shown as they
+  // arrive. `audio/` only: a photograph has nothing to be typed up.
+  const recordings = capture.recent.filter(
+    (result) => result.short && (result.mime ?? "").startsWith("audio/"),
+  );
+
   const submitNote = async () => {
     if (!text.trim()) return;
     try {
@@ -237,12 +281,21 @@ export function CapturePanel({
         </span>
       </div>
 
+      <div className="mt-8 border-t border-[color:var(--color-rule)] pt-6">
+        <Recorder onRecorded={capture.enqueueBlob} pending={capture.pending} />
+        {/* Directly under the recorder, not at the foot of the page. What just
+            came back from the microphone belongs beside the microphone; two
+            sections further down it reads as being about something else. */}
+        {recordings.map((result) => (
+          <Transcribing key={result.short} short={result.short!} />
+        ))}
+      </div>
+
       <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
-        Or a note in your own words
+        Or write it down
       </h2>
       <p className="mt-1 text-[color:var(--color-muted)]">
-        Filed as something you said, dated the moment you write it. Speaking a note
-        instead of typing it is coming.
+        Filed as something you said, dated the moment you write it.
       </p>
       <textarea
         value={text}
@@ -270,6 +323,88 @@ export function CapturePanel({
   );
 }
 
+/**
+ * What became of a recording that was just sent.
+ *
+ * Three states, kept apart because they call for different things from the
+ * person reading: it is being typed up, here is what it said, or it could not
+ * be typed up and here is why. A blank where a transcript should be is the one
+ * outcome that says none of those.
+ */
+function Transcribing({ short }: { short: string }) {
+  const [meta, setMeta] = useState<ArtifactMeta | null>(null);
+  const [gaveUp, setGaveUp] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    const began = Date.now();
+    const poll = () => {
+      api
+        .artifactMeta(short)
+        .then((result) => {
+          if (!live) return;
+          setMeta(result);
+          const settled =
+            result.transcript !== null ||
+            (result.job !== null && result.job.state === "unreadable") ||
+            (result.job !== null && result.job.state === "needs-attention");
+          if (settled) window.clearInterval(timer);
+          else if (Date.now() - began > TRANSCRIPT_GIVE_UP_MS) {
+            setGaveUp(true);
+            window.clearInterval(timer);
+          }
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(poll, TRANSCRIPT_POLL_MS);
+    poll();
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [short]);
+
+  if (!meta) return null;
+
+  const transcript = meta.transcript;
+  const failed =
+    meta.job && (meta.job.state === "unreadable" || meta.job.state === "needs-attention");
+
+  return (
+    <div className="mt-6 border-t border-[color:var(--color-rule)] pt-4">
+      <h2 className="text-lg font-semibold">What you just said</h2>
+      {transcript ? (
+        <>
+          <p className="mt-1">{transcript.text || "There was no speech in that recording."}</p>
+          <p className="mt-1 text-[color:var(--color-muted)]">
+            Written down on this computer. The recording itself is kept and is not
+            replaced by this.{" "}
+            {transcript.dropped > 0
+              ? `${transcript.dropped} part${transcript.dropped === 1 ? "" : "s"} of it were
+                 left out because they were not speech.`
+              : null}
+          </p>
+        </>
+      ) : failed ? (
+        <p className="mt-1 text-[color:var(--color-warn)]">
+          This could not be written down: {meta.job?.reason ?? "the speech model did not run"}.
+          The recording itself is safe in your folder.
+        </p>
+      ) : gaveUp ? (
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          Still being written down. It is safe in your folder; this page has stopped
+          checking, and the timeline will show it when it is done.
+        </p>
+      ) : (
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          Being written down on this computer. This takes a few seconds and does not
+          need the internet.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCapture> }) {
   if (capture.pending.length === 0 && capture.recent.length === 0) return null;
 
@@ -279,13 +414,20 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
       {capture.note ? (
         <p className="mt-1 text-[color:var(--color-muted)]">{capture.note}</p>
       ) : null}
+      {!capture.durable ? (
+        <p className="mt-1 text-[color:var(--color-warn)]">
+          This browser is not letting the page save things for later, so anything
+          waiting here would be lost if you closed the tab. Keep it open until the
+          list below is empty.
+        </p>
+      ) : null}
 
       {capture.pending.length > 0 ? (
         <div className="table-wrap"><table className="mt-1">
           <tbody>
             {capture.pending.map((item) => (
               <tr key={item.id}>
-                <td>{item.files.map((file) => file.name).join(", ")}</td>
+                <td>{item.filename}</td>
                 <td>
                   {item.error ? (
                     <span className="text-[color:var(--color-alarm)]">
@@ -302,7 +444,7 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
                     <>
                       <button
                         type="button"
-                        onClick={() => capture.retry(item.id)}
+                        onClick={() => capture.retry(item)}
                         className="btn"
                       >
                         Try again
