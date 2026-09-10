@@ -90,6 +90,72 @@ export interface ReviewItem {
   citations: Citation[];
 }
 
+/**
+ * One queue entry as the inbox needs it, values included.
+ *
+ * The only shape in this file that carries a *proposed* value. Everywhere else
+ * a gated value is withheld, because a value shown beside a current one reads
+ * as current; here the diff is the point of the screen, and a queue that asked
+ * for a tap without showing what it agrees to would be asking someone to sign
+ * an unread page.
+ *
+ * A withdrawal is the exception within the exception: it carries no claims at
+ * all, so `proposed` is null and nothing on screen can reproduce what was
+ * retracted.
+ */
+export interface InboxItem {
+  id: string;
+  kind: string;
+  consequence: "high" | "medium" | "low";
+  subject_id: string;
+  name: string;
+  predicate: string;
+  predicate_label: string;
+  summary: string;
+  /** What may be done to this item. The server refuses anything else. */
+  actions: string[];
+  /** How many claims one tap decides. Two documents agreeing are one item. */
+  sources_folded: number;
+  targets: string[];
+  proposed: Claim | null;
+  /** Both sides of a disagreement. Never one picked, never averaged. */
+  readings: Claim[];
+  current: Claim | null;
+  resolution: string | null;
+  citations: Citation[];
+  /** For a stop: whether confirming takes the medication off the list. */
+  stop: { transitions: boolean; evidence_tier: Tier | null } | null;
+  dateable: {
+    span: string | null;
+    reference: string;
+    candidates: {
+      label: string;
+      reason: string;
+      rendered: string;
+      occurred_at: { value: string; precision: string; uncertainty_days: number };
+    }[];
+  } | null;
+}
+
+export interface ReviewQueue {
+  counts: { total: number; by_tier: Record<string, number>; by_kind: Record<string, number> };
+  tiers: { high: InboxItem[]; medium: InboxItem[]; low: InboxItem[] };
+  actionable: boolean;
+  anomalies: { count: number; items: string[] };
+  as_of: string;
+  /** Present on the answer to a decision, including one that came too late. */
+  decided?: {
+    id: string;
+    action?: string;
+    kind?: string;
+    subject_id?: string;
+    name?: string;
+    events?: string[];
+    claims_decided?: number;
+    message: string;
+  };
+}
+
 export interface EntitySummary {
   id: string;
   kind: "med" | "allergy" | "problem" | "person";

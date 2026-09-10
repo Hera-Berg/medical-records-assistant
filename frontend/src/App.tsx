@@ -7,9 +7,10 @@
  * record is the same action as dropping a file in, arriving through a different
  * input, and a tab of its own would imply a conversation.
  *
- * There is no review inbox here and no consultation summary. Those are phases 7
- * and 8, and a half-built review flow would be a way for a high-consequence
- * claim to reach the record without a deliberate tap.
+ * The review inbox is here; the consultation summary is phase 8. The inbox is
+ * the only screen that puts anything into the record, which is why it is the
+ * one place a proposed value is shown at all — everywhere else a gated value
+ * would be read as current.
  *
  * There is also no assistant to ask. Answering questions about the record is
  * phase 10 and it arrives with retrieval, citation-per-sentence and a refusal
@@ -33,6 +34,7 @@ import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./compo
 import { Entity } from "./components/Entity";
 import { Files } from "./components/Files";
 import { Record } from "./components/Record";
+import { Review } from "./components/Review";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
@@ -126,6 +128,8 @@ export function App() {
     screen = (
       <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} />
     );
+  } else if (first === "review") {
+    screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
   } else if (first === "settings") {
     screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
   } else {
@@ -233,6 +237,13 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "files") {
     return { title: "Your folder", subtitle: "Reading…" };
+  }
+  if (first === "review") {
+    return {
+      title: "Waiting for you",
+      subtitle:
+        "What has been read out of your documents and is waiting for you to say yes, no, or that it should say something else. Nothing important joins your record until you do.",
+    };
   }
   if (first === "settings") {
     return {

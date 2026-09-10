@@ -18,6 +18,7 @@ import type {
   FileContent,
   FileListing,
   Health,
+  ReviewQueue,
   Settings,
   Timeline,
   WikiIndex,
@@ -139,6 +140,41 @@ export const api = {
       `/api/files?path=${encodeURIComponent(path)}`,
       { method: "DELETE" },
     ),
+
+  review: () => request<ReviewQueue>("/api/review"),
+
+  /**
+   * Decide one review item.
+   *
+   * The server re-derives which claims this item folded and decides all of
+   * them, so one tap on a fact two documents agree about emits one
+   * confirmation per document and the queue does not come back to ask again.
+   *
+   * A `409` is not a failure to report as one: it means the item was decided
+   * somewhere else — the other device, or another tab — and the body carries
+   * both the explanation and the refreshed queue. The caller shows the sentence
+   * and swaps the list, which is what the user needs either way.
+   */
+  decide: async (
+    id: string,
+    body: {
+      action: string;
+      value?: string;
+      target?: string;
+      occurred_at?: { value: string; precision: string; uncertainty_days: number };
+    },
+  ): Promise<ReviewQueue> => {
+    const response = await fetch(`/api/review/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {
+      throw new ApiError("the local server is not responding", 0);
+    });
+    if (response.status === 409) return (await response.json()) as ReviewQueue;
+    if (!response.ok) throw new ApiError(await detailOf(response), response.status);
+    return (await response.json()) as ReviewQueue;
+  },
 
   rebuild: () => request<Record<string, unknown>>("/api/rebuild", { method: "POST" }),
 

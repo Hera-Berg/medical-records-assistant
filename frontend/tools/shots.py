@@ -38,11 +38,10 @@ ORIGIN = "http://127.0.0.1:7777"
 DESKTOP = {"width": 1100, "height": 900}
 PHONE = {"width": 390, "height": 844}
 
-#: What the page says once a transcript has landed. It is the phase 6 deferral
-#: rather than anything about the transcript itself, because that sentence is
-#: the one thing shown in every finished state — including a recording that
-#: turned out to hold no speech.
-TYPED_UP = "Transcripts aren\u2019t read for medications yet."
+#: What the page says once a transcript has landed and before the box has read
+#: it for medications. That sentence is shown in every finished state of the
+#: recorder, including a recording that turned out to hold no speech.
+TYPED_UP = "Typed up \u2014 waiting to be read for medications."
 
 #: Chromium's fake microphone plays a file instead of capturing silence, which
 #: is what makes a real transcript come back at the end of a real recording.
@@ -86,6 +85,114 @@ def shoot(page, out: Path, name: str) -> None:
     print(f"  {target}")
 
 
+def review_shots(play, origin: str, out: Path) -> None:
+    """The review inbox, in every state it can hold.
+
+    Each one is produced against a real server with a real vault rather than
+    posed: the demo stream seeds one item of every review kind, and the states
+    that need a decision to exist — an emptied queue, a decision that arrived
+    too late — are reached by actually making the decision in the browser.
+
+    The awkward shapes are the point. A conflict, a stop below prescriber tier,
+    a withdrawal that must name its artefact and not its content: those are
+    where a queue that reads well on the happy path stops reading well.
+    """
+    browser = play.chromium.launch()
+    context = browser.new_context(viewport=DESKTOP)
+    page = context.new_page()
+
+    page.goto(f"{origin}/review")
+    page.wait_for_selector("text=Important")
+    shoot(page, out, "20-inbox-full")
+
+    # One item, in close-up. The high group's first row is the ordinary case:
+    # a high-consequence claim with confirm, correct and reject.
+    page.get_by_role("button", name="Correct").first.click()
+    page.wait_for_selector("text=It should say")
+    shoot(page, out, "21-correcting-inline")
+    page.get_by_role("button", name="Cancel").first.click()
+
+    # A stop proposal: its own action, its own words, and no keystroke.
+    stop = page.locator("article", has_text="Confirm the stop").first
+    stop.scroll_into_view_if_needed()
+    shoot(page, out, "22-stop-proposal")
+
+    # A conflict: both readings, neither chosen, and no confirm offered.
+    conflict = page.locator("article", has_text="disagree").first
+    conflict.scroll_into_view_if_needed()
+    shoot(page, out, "23-conflict")
+
+    # A withdrawal: names its artefact, never its content.
+    withdrawn = page.locator("article", has_text="later rejected").first
+    withdrawn.scroll_into_view_if_needed()
+    shoot(page, out, "24-withdrawal")
+
+    # A dateable item: the phrase, and the candidate offered as a button.
+    dateable = page.locator("article", has_text="dates it only as").first
+    dateable.scroll_into_view_if_needed()
+    shoot(page, out, "25-dateable")
+
+    # --- a decision that arrived too late -------------------------------
+    #
+    # Two tabs, which is the ordinary way this happens: one confirms, the other
+    # is still holding the list from before. Not simulated — the second tab
+    # really does post an id that has already been decided.
+    second = context.new_page()
+    second.goto(f"{origin}/review")
+    second.wait_for_selector("text=Important")
+
+    page.get_by_role("button", name="Confirm", exact=True).first.click()
+    page.wait_for_timeout(600)
+    shoot(page, out, "26-confirmed")
+
+    second.get_by_role("button", name="Confirm", exact=True).first.click()
+    second.wait_for_selector("text=already confirmed")
+    shoot(second, out, "27-already-decided-elsewhere")
+    second.close()
+
+    # --- an emptied queue ----------------------------------------------
+    #
+    # Reached by deciding everything, so the empty state is one a person can
+    # actually arrive at rather than one only a fresh vault ever sees.
+    #
+    # Every kind is decided by its own action, which is the point: there is no
+    # single button that empties this queue, and a script that pretended
+    # otherwise would be photographing a screen the app does not have.
+    deadline = time.time() + 90
+    order = (
+        "This one is wrong",       # a conflict, per reading
+        "Yes, I meant to reject it",  # a withdrawal
+        "Confirm the stop",           # a stop, by name
+        "Reject",                     # anything ordinary
+    )
+    while time.time() < deadline:
+        page.reload()
+        page.wait_for_timeout(300)
+        clicked = False
+        for name in order:
+            button = page.get_by_role("button", name=name)
+            if button.count():
+                button.first.click()
+                page.wait_for_timeout(500)
+                clicked = True
+                break
+        if not clicked:
+            break
+    page.reload()
+    page.wait_for_timeout(500)
+    shoot(page, out, "28-inbox-empty")
+
+    small = context.new_page()
+    small.set_viewport_size(PHONE)
+    small.goto(f"{origin}/review")
+    small.wait_for_timeout(500)
+    shoot(small, out, "29-inbox-phone")
+    small.close()
+
+    context.close()
+    browser.close()
+
+
 def main() -> int:
     from playwright.sync_api import sync_playwright
 
@@ -96,6 +203,16 @@ def main() -> int:
         "--no-audio",
         action="store_true",
         help="skip the states that need espeak-ng and ffmpeg",
+    )
+    parser.add_argument(
+        "--review-only",
+        action="store_true",
+        help=(
+            "photograph only the review inbox. Point this at a server holding a "
+            "demo vault: the demo stream seeds one item of every review kind, "
+            "and this makes real decisions against it, so run it on a vault you "
+            "are willing to have changed"
+        ),
     )
     parser.add_argument(
         "--waiting-only",
@@ -116,6 +233,11 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="health-agent-shots-"))
 
     with sync_playwright() as play:
+        if args.review_only:
+            review_shots(play, args.origin, out)
+            print(f"\n{len(list(out.glob('*.png')))} screenshots in {out}")
+            return 0
+
         if args.waiting_only:
             spoken = synthesise(work)
             live = play.chromium.launch(

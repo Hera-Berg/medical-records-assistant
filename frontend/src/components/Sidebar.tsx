@@ -97,6 +97,17 @@ export function Sidebar({
       <nav className="flex flex-wrap gap-0.5 px-2 pb-3 md:block md:gap-1 md:pb-0">
         <Item to="/" label="Timeline" path={path} navigate={navigate} exact icon={<Clock />} />
         <Item to="/record" label="Your record" path={path} navigate={navigate} icon={<Book />} />
+        <Item
+          to="/review"
+          label="Waiting for you"
+          path={path}
+          navigate={navigate}
+          icon={<Inbox />}
+          /* The count, not a dot. "4" says how much work it is; a dot says
+             only that there is some, which is the thing people learn to
+             ignore. */
+          note={health && health.review.total > 0 ? String(health.review.total) : undefined}
+        />
         <Item to="/files" label="Files" path={path} navigate={navigate} icon={<Folder />} />
         <Item
           to="/add"
@@ -155,6 +166,17 @@ export function Sidebar({
     </aside>
   );
 }
+
+function Inbox() {
+  return (
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M3 11.5V15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5" />
+      <path d="M3 11.5 5 5h10l2 6.5" />
+      <path d="M3 11.5h4l1 2h4l1-2h4" />
+    </svg>
+  );
+}
+
 
 function Item({
   to,

@@ -260,14 +260,56 @@ def build(
         "pathology", "allergy:sulfonamides", "reaction", "swelling", 4,
         occurred=_fuzzy(clock.date(26)), document_date=26,
     )
-    propose(
-        "pathology", "problem:hypothyroidism", "onset", "around March", 3,
-        occurred=_fuzzy(clock.date(190), "month", 20), document_date=26,
+    # A source that dated something in words rather than with a date. The
+    # phrase is kept verbatim and `occurred_at` stays null — the model never
+    # resolves one, because the computus is arithmetic but the *year* is a
+    # guess. The projection raises a dateable review item carrying the candidate
+    # it can compute, for the user to confirm in one tap.
+    #
+    # It was seeded with a resolved date until phase 7, which made it a claim no
+    # extractor following the rules could have produced.
+    onset = propose(
+        "pathology", "problem:hypothyroidism", "onset", "since around Easter", 6,
+        occurred=None, occurred_span="around Easter", document_date=26,
     )
+    # Confirmed, so the phrase is in the record and the only thing still open is
+    # *when*. That is its own review kind: nothing is wrong and nothing is
+    # waiting to be applied — only the person who was there can turn "around
+    # Easter" into a date, and the queue offers the computed candidate rather
+    # than adopting it.
+    confirm(onset, 5)
     propose(
         "voice-note", "person:dr-nguyen", "contact", "the Rosewood clinic", 9,
         tier="patient-reported",
     )
+
+    # --- a stop proposal nobody has decided ----------------------------------
+    #
+    # A prescriber-issued document saying to cease, waiting on a tap. It is the
+    # one queue item that must never be a generic accept: the inbox renders it
+    # as its own action, and the route refuses `confirm` against it.
+    propose(
+        "discharge-summary", "med:metformin-hydrochloride", "status", "stopped", 5,
+        occurred=_fuzzy(clock.date(41)), document_date=41,
+        subject_name="Metformin Hydrochloride",
+    )
+
+    # --- a reading confirmed and then rejected -------------------------------
+    #
+    # Two user decisions about the same reading of one document, pointing
+    # opposite ways: the later one governs and the content comes out, but the
+    # direction of the mistake is unknowable, so the queue asks which was meant
+    # — naming the artefact and never reproducing what it said.
+    heard = propose(
+        "voice-note", "problem:insomnia", "name", "insomnia", 9,
+        occurred=_fuzzy(clock.date(9)), tier="patient-reported",
+    )
+    confirm(heard, 8, hour=9)
+    reheard = propose(
+        "voice-note", "problem:insomnia", "name", "insomnia", 7,
+        occurred=_fuzzy(clock.date(9)), tier="patient-reported",
+    )
+    events.append(authoring.reject(device, reheard.id, ts=clock.ts(6, hour=21)))
 
     # --- a rejected reading, which must appear in no generated file -----------
     #

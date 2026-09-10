@@ -116,8 +116,8 @@ export function Attention({ health, error }: { health: Health | null; error: str
             record without you tapping to say so.{" "}
           </>
         ) : null}
-        Confirming from this screen is not built yet; until it is, they wait, and your
-        record shows only what you have already agreed to.
+        They are on the <strong>Waiting for you</strong> screen, and your record shows
+        only what you have already agreed to until you get to them.
       </Banner>,
     );
   }

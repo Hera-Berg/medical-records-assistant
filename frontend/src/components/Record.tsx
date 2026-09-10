@@ -212,10 +212,11 @@ export function Record({
             Nothing important is added to your record without you saying so, so none of
             it is on the lists above.
           </p>
-          <p className="text-[color:var(--color-muted)]">
-            Confirming from this screen is not built yet. Until it is,{" "}
-            <code className="font-mono">health-agent rebuild</code> on the terminal lists
-            what is waiting.
+          <p>
+            <Link to="/review" navigate={navigate}>
+              Go through them
+            </Link>
+            .
           </p>
         </>
       ) : null}
