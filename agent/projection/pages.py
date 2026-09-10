@@ -431,8 +431,15 @@ def _merge_paragraphs(document: Document, entity: Entity, citer: Citer) -> None:
 
 def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
     contradictions = entity.contradictions
+    # A stop proposal is a pending change like any other *on this page*. It
+    # gets its own kind so the inbox can offer it as a distinct act, but here
+    # the sentence is the same one and for the same reason: it says a decision
+    # is waiting without stating what the decision would do. "This may have
+    # been stopped" printed on a medication page reads as though it had been.
     pending = [
-        item for item in entity.review if item.kind == reconcile.AWAITING
+        item
+        for item in entity.review
+        if item.kind in (reconcile.AWAITING, reconcile.STOP_PROPOSED)
     ]
     dateable = [item for item in entity.review if item.kind == reconcile.DATEABLE]
     merges = [item for item in entity.review if item.kind == reconcile.MERGE_PROPOSED]

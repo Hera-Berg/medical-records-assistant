@@ -45,7 +45,7 @@ from datetime import date, datetime
 from typing import Iterable, Mapping
 
 from . import anomalies as anomalies_mod
-from . import dates, reconcile, subjects, tiers
+from . import dates, reconcile, stops, subjects, tiers
 from .claims import Claim
 from .dates import FuzzyDate
 from .dispense import Dispense
@@ -64,22 +64,6 @@ STATUS_PRECEDENCE = (STOPPED, CONFLICTED, STALE, ACTIVE)
 #: rather than a ``conflict``: nothing here contradicts anything, the patient and
 #: the prescriber are simply answering different questions.
 STOP_REPORTED = "reported-stop"
-
-#: Values of a ``status`` predicate that mean the thing is over.
-_STOPPED_WORDS = frozenset({"stopped", "ceased", "discontinued", "stop", "resolved", "inactive"})
-
-#: Evidence tiers a *proposed* stop may carry. A confirmed proposal is one tap,
-#: and a tap is cheaper than a correction, so the document behind the proposal
-#: has to be one that can actually cease a medication. ``patient-reported`` and
-#: ``inferred`` can never produce a stop however emphatically they are confirmed
-#: — the user saying "I think I stopped that" is a correction to type, not a
-#: proposal to accept. A ``claim.corrected`` is exempt: the user authored the
-#: value itself, so there is no extractor's reading to vouch for.
-#:
-#: This is one half of the guard. The other half is phase 7's: the review inbox
-#: must render a stop proposal as its own distinct action, never as a generic
-#: accept in a tap-through queue. See rule 4 in ``CLAUDE.md``.
-_STOP_TIERS = frozenset({"prescriber-issued", "lab-issued"})
 
 
 @dataclass(frozen=True)
@@ -240,12 +224,6 @@ def _latest_evidence(claims: tuple[Claim, ...]) -> FuzzyDate | None:
     return best
 
 
-def _stated_stop(claim: Claim) -> bool:
-    """Whether this ``status`` claim says the thing is over."""
-    stated = claim.value.fields.get("status") or claim.value.literal.strip().lower()
-    return stated in _STOPPED_WORDS
-
-
 def _stop_report(slot: Slot | None) -> StopReport | None:
     """A user-endorsed stop the tier rule will not act on.
 
@@ -259,7 +237,7 @@ def _stop_report(slot: Slot | None) -> StopReport | None:
     candidates = [
         c
         for c in slot.endorsed_claims()
-        if not c.is_correction and _stated_stop(c) and c.evidence_tier not in _STOP_TIERS
+        if not c.is_correction and stops.stated_stop(c) and c.evidence_tier not in stops.STOP_TIERS
     ]
     if not candidates:
         return None
@@ -280,18 +258,18 @@ def _is_stop(slot: Slot) -> bool:
     The two paths are not equally cheap, so they are not equally trusted. A
     correction is the user authoring the value and stands on its own. A confirmed
     proposal is one tap on an extractor's reading, so the reading has to come
-    from a source that can cease a medication: see :data:`_STOP_TIERS`.
+    from a source that can cease a medication: see :data:`.stops.STOP_TIERS`.
     """
     winner = slot.winner
     if winner is None:
         return False
-    if not _stated_stop(winner):
+    if not stops.stated_stop(winner):
         return False
     if winner.is_correction:
         return True
     if slot.review_state != reconcile.REVIEW_CONFIRMED:
         return False
-    return winner.evidence_tier in _STOP_TIERS
+    return winner.evidence_tier in stops.STOP_TIERS
 
 
 def _pick_dispense(claims: tuple[Claim, ...]) -> tuple[Dispense | None, Claim | None]:

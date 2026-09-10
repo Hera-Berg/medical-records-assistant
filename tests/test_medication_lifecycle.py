@@ -16,6 +16,7 @@ import pytest
 
 from agent import projection
 from agent.projection import entities as entities_mod
+from agent.projection import reconcile
 
 from .conftest import claim, confirm, correct, ingested, on_day
 
@@ -324,7 +325,7 @@ def test_an_outranked_stop_is_still_reported():
 def test_an_unconfirmed_stop_proposal_is_not_a_reported_stop():
     """The annotation records a *user* act, not every reading the model offers.
 
-    An untouched proposal is already in the queue as awaiting-confirmation;
+    An untouched proposal is already in the queue as its own distinct kind;
     printing it on the page as well would state a change nobody has accepted.
     """
     stop = claim(DEVICE, "med:perindopril", "status", "stopped", ts=on_day(20),
@@ -334,7 +335,7 @@ def test_an_unconfirmed_stop_proposal_is_not_a_reported_stop():
 
     assert entity.stop_report is None
     assert "stop_reported" not in result.files[entity.rel_path].decode()
-    assert [item.kind for item in result.review] == ["awaiting-confirmation"]
+    assert [item.kind for item in result.review] == [reconcile.STOP_PROPOSED]
 
 
 def test_a_transitioned_stop_needs_no_annotation():

@@ -37,7 +37,7 @@ from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
 from . import claims as claims_mod
-from . import dates, drugs, temporal, tiers
+from . import dates, drugs, stops, temporal, tiers
 from .anomalies import Anomaly
 from .claims import Claim, ClaimProblem
 
@@ -74,6 +74,20 @@ MERGE_PROPOSED = "merge-proposed"
 
 #: A claim the gate has not applied, waiting on a tap.
 AWAITING = "awaiting-confirmation"
+
+#: A pending claim that says a medication has stopped.
+#:
+#: Its own kind rather than an :data:`AWAITING` item, because rule 4 requires
+#: the review inbox to "render stop proposals as their own distinct action,
+#: never as a generic accept in a tap-through queue". A kind is what makes that
+#: hold: the inbox cannot accidentally render one as an ordinary confirmation,
+#: and the route that acts on the queue refuses a generic confirm against one.
+#: A guard that lived only in the frontend would last until the next redesign.
+#:
+#: The item's claims carry their own evidence tiers, which is what says whether
+#: confirming will take the medication off the list or only record that it was
+#: reported stopped. See :mod:`.stops`.
+STOP_PROPOSED = "stop-proposed"
 
 # How a slot resolved.
 SETTLED = "settled"
@@ -276,6 +290,40 @@ def _dateable_item(claim: Claim) -> ReviewItem | None:
         predicate=claim.predicate,
         summary=summary,
         claims=(claim,),
+    )
+
+
+def _stop_item(subject_id: str, claims: list[Claim]) -> ReviewItem:
+    """A pending stop, saying before the tap what confirming it will do.
+
+    The two outcomes are genuinely different acts and the summary names which
+    one this is. A source that may cease a medication is offered as taking it
+    off the list; anything below that tier is offered as recording that it was
+    reported stopped, which is what confirming it will actually achieve — the
+    medication stays on the list and the discrepancy becomes visible. Neither
+    wording is a warning attached to a generic accept: they are the sentences
+    for two different buttons.
+    """
+    claim = claims[0]
+    if stops.transitions(claim):
+        summary = (
+            f"{subject_id} status: a {claim.evidence_tier} source says this was "
+            f"stopped. Confirming takes it off your medication list"
+        )
+    else:
+        summary = (
+            f"{subject_id} status: a {claim.evidence_tier} source says this was "
+            f"stopped. Confirming records that on the page and keeps it on your "
+            f"medication list — only a prescriber-issued or lab-issued source can "
+            f"take a medication off it"
+        )
+    return ReviewItem(
+        kind=STOP_PROPOSED,
+        consequence=claim.consequence,
+        subject_id=subject_id,
+        predicate=claim.predicate,
+        summary=summary,
+        claims=tuple(claims),
     )
 
 
@@ -884,6 +932,12 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
     # conflict, not a duplicate, and the key above keeps them apart.
     for (subject_id, predicate, _value_key, reason), pending in sorted(awaiting.items()):
         ordered = sorted(pending, key=lambda c: c.sort_key)
+        # Every claim in a fold shares a subject, a predicate and a normalised
+        # value, so whether the fold is a stop is a property of the fold rather
+        # than of any one of its claims.
+        if stops.is_stop_claim(ordered[0]):
+            review.append(_stop_item(subject_id, ordered))
+            continue
         review.append(
             ReviewItem(
                 kind=AWAITING,
