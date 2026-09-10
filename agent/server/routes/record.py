@@ -165,38 +165,6 @@ def wiki_entity(
     return detail
 
 
-@router.get("/api/review")
-def review(state: RecordState = Depends(get_state)) -> dict[str, Any]:
-    """What is waiting on a person, grouped by consequence tier.
-
-    Phase 5 reports this; phase 7 acts on it. There is deliberately no route
-    here that confirms, corrects or rejects anything — the consequence gate and
-    the correction flow are that phase's work, and a half-built one would be a
-    way for a high-consequence claim to reach the wiki without a deliberate tap.
-
-    The entries carry their summaries and their sources but no claim values, for
-    the same reason the entity page does not print a pending value beside a
-    current one: it gets read as current.
-    """
-    snapshot = state.snapshot()
-    items = snapshot.projection.review
-    grouped: dict[str, list[dict[str, Any]]] = {"high": [], "medium": [], "low": []}
-    for item in items:
-        grouped.setdefault(item.consequence, []).append(
-            serialise.review_item(item, snapshot.citer)
-        )
-    return {
-        "counts": serialise.review_counts(items),
-        "tiers": grouped,
-        "actionable": False,
-        "note": (
-            "Reviewing is phase 7. Nothing here can be confirmed, corrected or "
-            "rejected yet — use `health-agent` on the terminal in the meantime."
-        ),
-        "as_of": snapshot.built_ts,
-    }
-
-
 @router.get("/api/medications")
 def medications(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     """The generated current-medications view on its own.

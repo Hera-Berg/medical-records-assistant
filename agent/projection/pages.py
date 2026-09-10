@@ -483,19 +483,36 @@ def _review_section(document: Document, entity: Entity, citer: Citer) -> None:
     _dateable_paragraphs(document, entity, citer)
 
 
-def _replacement_phrase(slot: Slot, citer: Citer) -> tuple[str, list[Citation]]:
+def _replacement_phrase(
+    slot: Slot, replaced, citer: Citer
+) -> tuple[str, list[Citation]]:
     """"replaced by your correction to 5mg daily", and the footnote for it.
 
     Naming the replacement is what makes the history auditable rather than
     merely present: "what did I correct, and from what" needs both halves on the
     same line, each pointing at its own source.
+
+    It has to say what the correction *did*, which is not always replace a
+    value. Answering "when was this?" for a source that said only "around
+    Easter" is a correction carrying the same value and a date, and describing
+    it as "since around Easter, replaced by your correction to since around
+    Easter" reports a change that did not happen — in the one section whose job
+    is making real changes visible. So the phrase is built against the reading
+    being replaced rather than against the slot alone.
     """
     winner = slot.winner
     if winner is None:
         return "superseded, and no value currently stands in its place", []
     citation = citer.cite(winner.cite, _correction_description(winner))
     if winner.is_correction:
-        return f"replaced by your correction to {winner.value.literal}", [citation]
+        if not replaced.value.agrees_with(winner.value):
+            return f"replaced by your correction to {winner.value.literal}", [citation]
+        # Same value, so something else about it changed. A date is the case
+        # this path exists for: it is what answering a dateable review item
+        # produces, and the answer is the user's, not the document's.
+        if winner.occurred_at is not None and winner.occurred_at != replaced.occurred_at:
+            return f"dated by you as {winner.occurred_at.render()}", [citation]
+        return "restated by your correction", [citation]
     phrase, _ = _claim_phrase(winner, citer)
     return f"replaced by {phrase}", [citation]
 
@@ -539,10 +556,10 @@ def _history_section(document: Document, entity: Entity, citer: Citer) -> None:
     rows: list[tuple[str, list[Citation]]] = []
     for predicate in sorted(entity.slots):
         slot = entity.slots[predicate]
-        replacement, replacement_citations = _replacement_phrase(slot, citer)
         for claim in slot.superseded:
             if _is_restatement(claim, slot.winner):
                 continue
+            replacement, replacement_citations = _replacement_phrase(slot, claim, citer)
             phrase, citation = _claim_phrase(claim, citer)
             rows.append(
                 (

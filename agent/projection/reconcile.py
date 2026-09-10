@@ -228,7 +228,7 @@ class Slot:
 class ReviewItem:
     """Something waiting on a person. Phase 7 renders these; phase 3 counts them."""
 
-    kind: str  # AWAITING | conflict | contradiction | WITHDRAWN | DATEABLE | MERGE_PROPOSED
+    kind: str  # AWAITING | STOP_PROPOSED | conflict | contradiction | WITHDRAWN
     consequence: str
     subject_id: str
     predicate: str
@@ -238,6 +238,11 @@ class ReviewItem:
     #: claims. A withdrawal names its artefact and nothing else: the point of it
     #: is that the content must not be reproduced anywhere.
     cite: str | None = None
+    #: The claim events a decision on this item applies to, for the kinds that
+    #: deliberately carry no claims. An event id reproduces nothing — it is an
+    #: opaque identifier, not content — so a withdrawal can be acted on from the
+    #: inbox without the retracted words being anywhere near it.
+    targets: tuple[str, ...] = ()
 
     @property
     def sort_key(self) -> tuple[Any, ...]:
@@ -248,6 +253,7 @@ class ReviewItem:
             self.kind,
             tuple(c.event_id for c in self.claims),
             self.cite or "",
+            self.targets,
         )
 
 
@@ -613,7 +619,26 @@ def _resolve(
                 reverse=True,
             )
         )
-        others = [c for c in admitted if c is not winner and c not in disagreeing]
+        others = [
+            c
+            for c in admitted
+            if c is not winner
+            and c not in disagreeing
+            # One act, recorded once per claim it acted on, is not several
+            # earlier readings. Confirming or correcting a fact two documents
+            # agree about emits one event per claim — that is what keeps the
+            # second document from coming back to ask again — and rendering the
+            # siblings here produced "replaced by your correction to 50mg
+            # daily" against a reading of 50mg daily, which is a sentence about
+            # nothing.
+            #
+            # Only corrections that *agree* with the winner are dropped. A
+            # correction with a different value is a decision the user later
+            # changed their mind about, and "what did I correct, and from what"
+            # has to stay answerable. The readings all of these replaced are
+            # untouched: each is in `replaced` with its own artefact.
+            and not (c.is_correction and c.value.key == winner.value.key)
+        ]
         resolution = CONTRADICTED if disagreeing else SETTLED
         if disagreeing:
             review.append(
@@ -836,6 +861,7 @@ def reconcile(events: Iterable[Event], as_of: datetime) -> Reconciliation:
                         f"again if that is not what you meant"
                     ),
                     cite=parsed.cite,
+                    targets=(parsed.event_id,),
                 )
             )
         elif admission.state == PENDING:

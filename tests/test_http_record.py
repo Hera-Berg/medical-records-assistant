@@ -160,8 +160,14 @@ def test_a_subject_known_only_from_a_pending_claim_has_no_page(record, client):
     assert awaiting, "a gated claim vanished instead of queuing"
     assert awaiting[0]["citations"], "the source is still named"
 
-    # And nothing anywhere prints what it said.
-    assert "anaphylaxis" not in json.dumps(review)
+    # The inbox is the one place the proposed value belongs: the screen exists
+    # to show what a tap would agree to, and a queue that asked for a decision
+    # without showing the value would be asking someone to sign an unread page.
+    assert awaiting[0]["proposed"]["value"]["literal"] == "anaphylaxis"
+
+    # Everywhere else it stays out until it has been confirmed. The record's
+    # own views must not print a gated value, because a value shown beside a
+    # current one is read as current.
     assert "anaphylaxis" not in json.dumps(client.get("/api/wiki").json())
     assert "anaphylaxis" not in json.dumps(client.get("/api/timeline").json())
 

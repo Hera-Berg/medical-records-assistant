@@ -36,8 +36,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..projection import claims as claims_mod
 from ..projection import entities as entities_mod
-from ..projection import reconcile
+from ..projection import reconcile, temporal
 from ..projection.citations import Citation, Citer
 from ..projection.dates import parse_iso_date
 from ..projection.claims import Claim
@@ -185,6 +186,109 @@ def review_item(item: ReviewItem, citer: Citer) -> dict[str, Any]:
         "predicate": item.predicate,
         "summary": item.summary,
         "citations": [citation(citer, key) for key in keys],
+    }
+
+
+def inbox_item(entry, citer: Citer) -> dict[str, Any]:
+    """One queue entry as the review inbox needs it — including its values.
+
+    This is the one serialiser in this module that sends a proposed value, and
+    the exception is deliberate rather than an oversight in the rule above. An
+    entity page must not print a pending value beside a current one, because
+    there it reads as current. The inbox is the opposite situation: the whole
+    purpose of the screen is to show what would change, and a queue that asked
+    "confirm this?" without saying what "this" is would be asking for a tap on
+    an unread document.
+
+    What still never appears is rejected content. A rejected reading produces no
+    queue item at all, and a withdrawal deliberately carries no claims — so this
+    function has nothing to filter, which is what makes the property hold rather
+    than depend on it remembering to.
+    """
+    item = entry.item
+    proposed = entry.proposed
+    slot_now = entry.slot
+    current = slot_now.winner if slot_now is not None else None
+
+    return {
+        "id": entry.id,
+        "kind": item.kind,
+        "consequence": item.consequence,
+        "subject_id": item.subject_id,
+        "name": entry.name,
+        "predicate": item.predicate,
+        "predicate_label": _predicate_label(item.predicate),
+        "summary": item.summary,
+        "actions": list(entry.actions),
+        # How many claims one tap decides. Two documents stating the same dose
+        # are one item and one decision, and the interface says so rather than
+        # leaving a user wondering what happened to the second document.
+        "sources_folded": len(entry.targets),
+        "targets": list(entry.targets),
+        "proposed": claim(proposed, citer) if proposed is not None else None,
+        # Both sides of a disagreement, in the order the projection put them.
+        # Never one picked, never averaged.
+        "readings": [claim(c, citer) for c in item.claims] if len(item.claims) > 1 else [],
+        "current": claim(current, citer, "Recorded claim") if current is not None else None,
+        "resolution": slot_now.resolution if slot_now is not None else None,
+        "citations": [
+            citation(citer, c.cite, "Proposed from") for c in item.claims
+        ] or ([citation(citer, item.cite, "Proposed from")] if item.cite else []),
+        "stop": _stop_detail(entry),
+        "dateable": _dateable_detail(entry),
+    }
+
+
+def _predicate_label(predicate: str) -> str:
+    """"Dose", "Reaction" — the wiki page's own word for the row."""
+    words = predicate.replace("_", " ").replace(".", " ").split()
+    return " ".join(w[:1].upper() + w[1:] for w in words)
+
+
+def _stop_detail(entry) -> dict[str, Any] | None:
+    """What confirming a stop would actually do, sent before it is confirmed.
+
+    ``transitions`` is computed from the evidence tier by the same function the
+    entity builder uses, so the button's promise and the record's behaviour
+    cannot disagree.
+    """
+    if entry.transitions is None:
+        return None
+    claim_ = entry.proposed
+    return {
+        "transitions": entry.transitions,
+        "evidence_tier": claim_.evidence_tier if claim_ is not None else None,
+    }
+
+
+def _dateable_detail(entry) -> dict[str, Any] | None:
+    """The phrase, and the dates it might mean. Offers only.
+
+    Each candidate carries the whole fuzzy date it would write — value,
+    precision and uncertainty — so confirming one sends back exactly what was
+    offered rather than a date the client reconstructed from a label.
+    """
+    if entry.kind != reconcile.DATEABLE or entry.proposed is None:
+        return None
+    claim_ = entry.proposed
+    reference, source = claims_mod.dating_reference(claim_)
+    offered = temporal.candidates(claim_.occurred_span, parse_iso_date(reference))
+    return {
+        "span": claim_.occurred_span,
+        "reference": temporal.describe_reference(source),
+        "candidates": [
+            {
+                "label": candidate.label,
+                "reason": candidate.reason,
+                "rendered": candidate.date.render(),
+                "occurred_at": {
+                    "value": candidate.date.iso,
+                    "precision": candidate.date.precision,
+                    "uncertainty_days": candidate.date.uncertainty_days,
+                },
+            }
+            for candidate in offered
+        ],
     }
 
 

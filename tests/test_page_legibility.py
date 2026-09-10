@@ -402,3 +402,134 @@ def test_elapsed_phrases_are_never_ungrammatical():
         assert " 1 years " not in f" {phrase} ", f"{days} days -> {phrase!r}"
         assert " 1 months " not in f" {phrase} ", f"{days} days -> {phrase!r}"
         assert " 1 days " not in f" {phrase} ", f"{days} days -> {phrase!r}"
+
+
+# --- what a correction actually did, said accurately ------------------------
+#
+# Both of these were found the same way as everything above: by answering a
+# review item in a scratch vault and reading the page that came out. The suite
+# was green for both.
+
+
+def _folded(value: str, correction: str | None = None, occurred=None):
+    """Two scripts stating the same dose, then one act of the user's on both.
+
+    A confirmation and a correction from the inbox each emit one event per
+    claim, which is what stops the second document coming back to ask again.
+    The question these tests answer is what that looks like on the page.
+    """
+    first = claim(
+        DEVICE, "med:perindopril", "dose", value, ts=on_day(3), artifact="a3f91c",
+        occurred={"value": "2026-09-03", "precision": "day", "uncertainty_days": 0},
+    )
+    second = claim(
+        DEVICE, "med:perindopril", "dose", value, ts=on_day(4), artifact="77b210",
+        occurred={"value": "2026-09-04", "precision": "day", "uncertainty_days": 0},
+    )
+    events = [
+        ingested(DEVICE, "a3f91c", ts=on_day(1)),
+        ingested(DEVICE, "77b210", ts=on_day(2)),
+        first,
+        second,
+    ]
+    for target in (first, second):
+        events.append(
+            correct(
+                DEVICE,
+                value=correction or value,
+                target=target.id,
+                ts=on_day(5),
+                **({"occurred_at": occurred} if occurred else {}),
+            )
+        )
+    result = _project(events)
+    entity = result.entities["med:perindopril"]
+    return result.files[entity.rel_path].decode("utf-8")
+
+
+def test_one_correction_of_a_folded_fact_is_not_several_earlier_readings():
+    """A correction is one act, however many claims it was recorded against.
+
+    Correcting a fact two documents agree about emits one `claim.corrected` per
+    claim. Rendering the siblings as history produced "5mg daily, replaced by
+    your correction to 5mg daily" — a value replaced by itself, describing a
+    change that did not happen — above the readings that genuinely were
+    replaced.
+    """
+    page = _folded("5mg daily", correction="50mg daily")
+
+    assert "replaced by your correction to 50mg daily" in page
+    assert "50mg daily (prescriber-issued), replaced by" not in page
+
+    # Both readings the correction replaced are still there, each with its own
+    # artefact: a mistyped correction is undetectable once the original is gone.
+    history = page.split("## Earlier readings")[1]
+    assert history.count("5mg daily") == 2
+    assert "[^a3f91c]" in history and "[^77b210]" in history
+
+
+def test_dating_a_vague_phrase_is_not_described_as_replacing_the_value():
+    """Answering "when was this?" changes the date, not the dose.
+
+    The dateable review item is answered with a correction that restates the
+    value verbatim and adds the date the user supplied. Describing that as
+    "replaced by your correction to <the same words>" reports a change that did
+    not happen, in the one section whose job is making real changes visible.
+    """
+    onset = claim(
+        DEVICE, "problem:migraine", "onset", "since around Easter", ts=on_day(3),
+        artifact="a3f91c", occurred=None, occurred_span="around Easter",
+        artifact_ts="2026-05-02T00:00:00Z",
+    )
+    result = _project(
+        [
+            ingested(DEVICE, "a3f91c", ts=on_day(1)),
+            onset,
+            confirm(DEVICE, onset.id, ts=on_day(4)),
+            correct(
+                DEVICE,
+                value="since around Easter",
+                target=onset.id,
+                ts=on_day(6),
+                occurred_at={
+                    "value": "2026-04-05",
+                    "precision": "day",
+                    "uncertainty_days": 14,
+                },
+            ),
+        ]
+    )
+    page = result.files[result.entities["problem:migraine"].rel_path].decode("utf-8")
+
+    assert "dated by you as around 5 April 2026 (±14 days)" in page
+    assert "replaced by your correction to since around Easter" not in page
+
+    # The phrase the source actually used survives, so a reader can see what
+    # the date was an answer to. Discarding it would lose the evidence.
+    assert "dated only as “around Easter”" in page
+
+
+def test_a_correction_the_user_changed_their_mind_about_stays_visible():
+    """Only a correction that agrees with the winner is folded away.
+
+    An earlier correction stating a *different* value is a decision the user
+    later reversed, and "what did I correct, and from what" has to stay
+    answerable across both of them.
+    """
+    proposed = claim(
+        DEVICE, "med:perindopril", "dose", "5Omcg daily", ts=on_day(3), artifact="a3f91c"
+    )
+    result = _project(
+        [
+            ingested(DEVICE, "a3f91c", ts=on_day(1)),
+            proposed,
+            correct(DEVICE, value="50mcg daily", target=proposed.id, ts=on_day(4)),
+            correct(DEVICE, value="100mcg daily", target=proposed.id, ts=on_day(6)),
+        ]
+    )
+    page = result.files[result.entities["med:perindopril"].rel_path].decode("utf-8")
+    history = page.split("## Earlier readings")[1]
+
+    assert "100mcg daily" in page.split("## Current")[1].split("##")[0]
+    assert "50mcg daily" in history
+    assert "5Omcg daily" in history
