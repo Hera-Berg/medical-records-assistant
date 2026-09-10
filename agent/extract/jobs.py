@@ -279,15 +279,29 @@ class Queue:
             not_before=format_ts(datetime.fromtimestamp(when, tz=timezone.utc)),
         )
 
-    def park_for_auth(self, reason: str) -> tuple[Job, ...]:
-        """Stop everything. The key was rejected and a person has to act.
+    def park_for_auth(
+        self, reason: str, artifacts: Iterable[str] | None = None
+    ) -> tuple[Job, ...]:
+        """Stop the work that needs the box. The key was rejected.
 
-        Every runnable job is marked, not just the one that failed: the next job
-        would fail the same way, and a queue that kept trying would turn one
-        clear message into fifty and might trip lockout on the box.
+        Every runnable job for that reader is marked, not just the one that
+        failed: the next would fail the same way, and a queue that kept trying
+        would turn one clear message into fifty and might trip lockout on the
+        box.
+
+        *artifacts* restricts the park to jobs the rejected credential actually
+        affects. It exists because the queue holds work for two readers, and
+        only one of them authenticates against anything: a recording is read by
+        a model on this machine, so marking it ``blocked-auth`` would be false,
+        would hide it behind a resume the user has no reason to perform, and
+        would break the promise that a voice note is typed up whatever the box
+        is doing.
         """
+        wanted = set(artifacts) if artifacts is not None else None
         parked = []
         for job in self.runnable():
+            if wanted is not None and job.artifact not in wanted:
+                continue
             parked.append(self.update(job, BLOCKED_AUTH, reason))
         return tuple(parked)
 

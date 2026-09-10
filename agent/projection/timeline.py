@@ -129,6 +129,42 @@ def _capture_source(event: Event) -> str | None:
     return None
 
 
+#: How much of a transcript a timeline row shows. A voice note is minutes of
+#: speech and the timeline is a scanning surface: the opening sentence is what
+#: says which recording this is, and the artefact page has the whole thing.
+TRANSCRIPT_PREVIEW = 240
+
+
+def transcripts(events: Iterable[Event]) -> dict[str, str]:
+    """The newest transcript for each artefact, by short hash.
+
+    Read from ``extraction.completed`` rather than from a note event, because
+    that is where the speech model's output goes and because a transcript is
+    the model's reading of the recording rather than something the user said in
+    words. Newest wins: a forced re-transcription appends a second read, and the
+    later one is what the record shows — with the earlier still in the log.
+    """
+    latest: dict[str, tuple[tuple[Any, ...], str]] = {}
+    for event in events:
+        if event.type != "extraction.completed":
+            continue
+        text = event.payload.get("transcript")
+        artifact = event.payload.get("artifact")
+        if not isinstance(text, str) or not isinstance(artifact, str) or not artifact:
+            continue
+        current = latest.get(artifact)
+        if current is None or event.sort_key > current[0]:
+            latest[artifact] = (event.sort_key, text)
+    return {artifact: text for artifact, (_, text) in latest.items()}
+
+
+def _preview(text: str, limit: int = TRANSCRIPT_PREVIEW) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 1].rstrip() + "\u2026"
+
+
 def _note_text(event: Event) -> str:
     payload = event.payload
     for name in ("text", "transcript", "note"):
@@ -169,6 +205,8 @@ def build(
             admitted.setdefault(claim.event_id, claim)
             filed_under.setdefault(claim.event_id, slot.subject_id)
 
+    spoken = transcripts(events)
+
     for event in events:
         if event.type == "artifact.ingested":
             placed = _artifact_date(event)
@@ -178,14 +216,21 @@ def build(
             short = str(event.payload.get("short") or "")
             if not short:
                 continue
+            noun = citations.artifact_noun(mime, _capture_source(event))
+            said = spoken.get(short, "").strip()
             rows.append(
                 Row(
                     date=placed[0],
                     date_kind=placed[1],
                     marker=MARKER_ARTEFACT,
+                    # A recording that has been typed up says what it said. The
+                    # row is what someone scans to find the note where they
+                    # mentioned the headaches, and "an audio recording was added
+                    # to the record" is the one thing about it they already know.
                     text=(
-                        f"{citations.artifact_noun(mime, _capture_source(event))} was "
-                        f"added to the record"
+                        f"{noun}: \u201c{_preview(said)}\u201d"
+                        if said
+                        else f"{noun} was added to the record"
                     ),
                     cite=short,
                     event_id=event.id,

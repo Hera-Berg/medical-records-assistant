@@ -35,7 +35,13 @@ _YAML_LOOKS_TYPED = re.compile(
     r"^(?:true|false|null|~|yes|no|on|off|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)$",
     re.IGNORECASE,
 )
-_SENTENCE_END = ".?!"
+_SENTENCE_END = ".?!\u2026"
+#: Closing marks that may sit *after* the full stop. A sentence ending in a
+#: quotation — a transcript on the timeline, a label's own wording on an entity
+#: page — is already terminated; appending a second stop after the quote gives
+#: ``changed.\u201d.``, which is the kind of thing a reader notices and no
+#: assertion was ever going to catch.
+_CLOSERS = "\u201d\u2019\"')]\u00bb"
 
 
 class Sentence:
@@ -73,7 +79,8 @@ class Sentence:
     def body(self) -> str:
         """The prose, terminated, with no markers."""
         text = self.text
-        if text[-1] not in _SENTENCE_END:
+        terminal = text.rstrip(_CLOSERS)
+        if not terminal or terminal[-1] not in _SENTENCE_END:
             text += "."
         return text
 

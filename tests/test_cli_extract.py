@@ -615,13 +615,14 @@ def test_an_idle_run_says_how_much_of_the_vault_was_already_read(
     ingest_mod.ingest_bytes(
         configured, _image(), ingest_mod.CaptureContext(source="camera")
     )
-    # A recording: the vision model correctly declines it, so it stays unread
-    # and terminal while the image is read.
+    # An archive: there is no reader for it at all, so it stays unread and
+    # terminal while the image is read. Deliberately not a recording — those
+    # belong to the speech drain and stay queued for it rather than going
+    # terminal here.
     ingest_mod.ingest_bytes(
         configured,
-        b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
-        b"\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00",
-        ingest_mod.CaptureContext(source="recorder"),
+        b"PK\x03\x04\x14\x00\x00\x00\x00\x00" + b"\x00" * 48,
+        ingest_mod.CaptureContext(source="import"),
     )
     _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
     _run(["extract"], configured)
@@ -749,9 +750,8 @@ def test_a_read_line_never_runs_its_label_into_the_hash(monkeypatch, configured)
     """`unreadable3be48e` — the states are longer than the column they sit in."""
     ingest_mod.ingest_bytes(
         configured,
-        b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
-        b"\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00",
-        ingest_mod.CaptureContext(source="recorder"),
+        b"PK\x03\x04\x14\x00\x00\x00\x00\x00" + b"\x00" * 48,
+        ingest_mod.CaptureContext(source="import"),
     )
     _patch_client(monkeypatch, lambda r: httpx.Response(200, json=_answer()))
     _, output = _run(["extract"], configured)

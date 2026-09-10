@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from ...ingest import mime as mime_mod
 from ...ingest import sidecar as sidecar_mod
 from .. import lookup, serialise, serving
 from ..deps import get_index, get_state
@@ -128,6 +129,12 @@ def artifact_meta(
             # above, so a disagreement between it and the log stays visible.
             extra["sidecar"] = side
     extra["citation"] = serialise.citation(snapshot.citer, short)
+    # Present only for a recording that has been typed up. `null` where the
+    # speech model has not run yet is what the interface polls on, and it is
+    # distinct from a transcript that came back empty — a recording of silence
+    # has a transcript, and it says nothing.
+    extra["transcript"] = serialise.transcript_summary(snapshot.events, short)
+    extra["is_recording"] = mime_mod.is_speech(located.artifact.mime)
     return serialise.artifact_summary(located.artifact, extra)
 
 

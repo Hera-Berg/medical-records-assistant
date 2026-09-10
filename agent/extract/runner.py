@@ -39,6 +39,7 @@ from ..errors import (
     RateLimited,
 )
 from ..events.envelope import Event
+from ..ingest.mime import is_speech
 from ..llm import redaction
 from ..llm.client import Client, parse_json_content
 from ..projection import citations as citations_mod
@@ -358,6 +359,12 @@ def drain(
     wanted = set(only) if only is not None else None
     outcomes: list[Outcome] = []
     appended = 0
+    # One queue, two readers. A recording belongs to the speech drain, which
+    # runs locally and does not need the box, so it is passed over here rather
+    # than reaching the model and coming back as "this is a recording". Skipped
+    # silently, and *not* marked on the job: the other drain still has to pick
+    # it up.
+    artifacts = citations_mod.index_artifacts(list(vault.read().events))
 
     if queue.is_parked:
         return DrainReport(
@@ -371,15 +378,27 @@ def drain(
     for job in queue.ready(now):
         if wanted is not None and job.artifact not in wanted:
             continue
+        found = artifacts.get(job.artifact)
+        if found is not None and is_speech(found.mime):
+            continue
         if limit is not None and len(outcomes) >= limit:
             break
         running = queue.started(job)
         try:
             outcome = extractor.run(job.artifact)
         except AuthRejected as exc:
-            # Terminal, and it stops the whole queue rather than this one job.
+            # Terminal, and it stops every job that needs the box rather than
+            # this one job. Recordings are excluded: they are read locally, and
+            # a rejected key has nothing to do with them.
             reason = redaction.scrub(str(exc))
-            parked = queue.park_for_auth(reason)
+            parked = queue.park_for_auth(
+                reason,
+                artifacts=[
+                    short
+                    for short in artifacts
+                    if not is_speech(artifacts[short].mime)
+                ],
+            )
             return DrainReport(
                 outcomes=tuple(outcomes),
                 appended=appended,
@@ -493,6 +512,22 @@ def explain_idle(
         if extracted
         else ""
     )
+
+    # Recordings are not this reader's work. They are unread here and will stay
+    # unread here however many times this runs, so saying "1 artefact has no
+    # extraction" about one would send someone to debug the endpoint over a
+    # voice note that is waiting for a local model.
+    recordings = [short for short in unread if is_speech(artifacts[short].mime)]
+    if recordings:
+        verb = "is a recording" if len(recordings) == 1 else "are recordings"
+        note = (
+            f"{len(recordings)} of them {verb}, which the speech model types up on "
+            f"this machine — run `health-agent transcribe`"
+        )
+        unread = [short for short in unread if short not in set(recordings)]
+        if not unread:
+            return f"{done_note}{note}"
+        done_note = f"{done_note}{note}; "
 
     # Unread, but the queue is not offering them. Either they are terminal —
     # already given up on, or found unreadable — or they are backing off.

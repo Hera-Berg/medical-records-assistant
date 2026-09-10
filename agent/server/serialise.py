@@ -409,6 +409,49 @@ def artifact_summary(artifact, mapping: Mapping[str, Any] | None = None) -> dict
     }
 
 
+def transcript_summary(events, short: str) -> dict[str, Any] | None:
+    """The transcript of one recording, or ``None`` if it has not been typed up.
+
+    Segments and their word-level timestamps are included in full. That is the
+    point of storing them: a claim from a voice note cites the four seconds it
+    came from, and the interface can play exactly those four seconds. A summary
+    that dropped the words would leave the citation granularity in the log and
+    out of everything that could use it.
+
+    ``dropped`` is reported as a **count and reasons, never as text**. Discarded
+    segments are hallucinations — "Thank you for watching" over silence — and
+    they are kept in the event as provenance. Handing them to a browser that
+    renders them beside a real transcript would put invented sentences on the
+    screen next to true ones.
+    """
+    from ..asr.runner import transcript_events  # noqa: PLC0415 - import cycle
+
+    event = transcript_events(events).get(short)
+    if event is None:
+        return None
+    payload = event.payload
+    dropped = payload.get("dropped") or []
+    reasons: dict[str, int] = {}
+    for item in dropped:
+        if isinstance(item, dict):
+            reason = str(item.get("reason") or "not-speech")
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "event": event.id,
+        "ts": event.ts,
+        "model": (event.provenance or {}).get("model"),
+        "model_rev": (event.provenance or {}).get("model_rev"),
+        "text": payload.get("transcript") or "",
+        "language": payload.get("language"),
+        "duration_s": payload.get("duration_s"),
+        "segments": payload.get("segments") or [],
+        "dropped": len(dropped),
+        "dropped_reasons": reasons,
+        "hotwords": payload.get("hotwords") or [],
+        "supersedes": payload.get("supersedes"),
+    }
+
+
 #: Review kinds whose entries never carry claim values, for the interface to
 #: render differently. Kept here so one list serves the API and the SPA.
 CONTENT_FREE_KINDS = (reconcile.WITHDRAWN,)

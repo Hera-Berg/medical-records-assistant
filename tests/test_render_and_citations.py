@@ -88,6 +88,25 @@ def test_an_uncited_sentence_cannot_be_constructed():
         Sentence("The dose was increased", [])
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Started by Dr Nguyen", "Started by Dr Nguyen."),
+        ("Started by Dr Nguyen.", "Started by Dr Nguyen."),
+        ("Was it?", "Was it?"),
+        # A quoted sentence is already terminated. Appending a second stop
+        # after the closing quote gives `changed.".`, which is what a
+        # transcript on the timeline reads as.
+        ("A recording: \u201cthe tablets changed.\u201d", "A recording: \u201cthe tablets changed.\u201d"),
+        ("The label read \u201cperindopril arginine\u201d", "The label read \u201cperindopril arginine\u201d."),
+        # A truncated quotation ends in an ellipsis, which terminates it.
+        ("A recording: \u201cright, so\u2026\u201d", "A recording: \u201cright, so\u2026\u201d"),
+    ],
+)
+def test_a_sentence_is_terminated_once_and_only_once(text, expected):
+    assert Sentence(text, [CITE]).body() == expected
+
+
 def test_a_line_appended_without_a_citation_is_caught_at_render():
     """Belt and braces: the structural guard is not the only guard."""
     document = Document()

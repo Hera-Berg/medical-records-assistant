@@ -53,8 +53,10 @@ import getpass
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, TextIO
 
+from .asr import runner as speech_mod
 from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
@@ -465,6 +467,121 @@ def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_transcribe(args: argparse.Namespace, out: TextIO) -> int:
+    """Type up recordings with the local speech model.
+
+    Never contacts the box, never needs a key, and works on a plane. That is the
+    whole reason speech runs on this machine rather than on the one with the
+    GPU.
+
+    ``--force`` is the answer to the one real cost of how idempotency is keyed
+    here. The hotword list is deliberately not part of the key, so improving it
+    — which happens every time a medication is added to the record — does not
+    re-transcribe anything by itself. A recording made when the record was
+    nearly empty therefore keeps whatever an unbiased model made of its drug
+    names, and that is exactly the recording most likely to have got them wrong.
+    ``--force`` re-reads it with the current list and appends a second
+    ``extraction.completed`` saying which read it superseded. Both stay in the
+    log, and a correction the user typed still outranks either.
+    """
+    vault = Vault.open(args.vault)
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    transcriber = speech_mod.Transcriber(vault)
+
+    only: list[str] | None = None
+    if args.artifact:
+        only = [runner_mod.resolve_artifact(vault, token) for token in args.artifact]
+    if args.force and not only:
+        raise HealthAgentError(
+            "--force re-reads one named recording: pass --artifact <hash> with it. "
+            "Re-transcribing an entire vault by accident is minutes of laptop per "
+            "recording and a second event for each"
+        )
+
+    outcomes: list[speech_mod.Outcome] = []
+    appended = 0
+
+    if only is not None:
+        events = list(vault.read().events)
+        for short in only:
+            outcome = transcriber.run(short, events=events, force=args.force)
+            outcomes.append(outcome)
+            if not args.dry_run:
+                for event in outcome.events:
+                    vault.append(event)
+                    events.append(event)
+                    appended += 1
+                job = queue.for_artifact(short)
+                if job is not None and outcome.state == jobs_mod.DONE:
+                    queue.finished(job, key=transcriber.key_for(short).as_dict())
+        idle_reason = None
+    elif args.dry_run:
+        runner_mod.enqueue_unread(vault, queue)
+        waiting = speech_mod.speech_jobs(vault, queue, _now())
+        print(f"dry run   {len(waiting)} recording(s) would be typed up", file=out)
+        for job in waiting:
+            print(f"          {job.describe()}", file=out)
+        return EXIT_OK
+    else:
+        runner_mod.enqueue_unread(vault, queue)
+        report = speech_mod.drain(vault, transcriber, queue, moment=_now())
+        outcomes = list(report.outcomes)
+        appended = report.appended
+        idle_reason = report.idle_reason
+
+    if args.json:
+        json.dump(
+            {
+                "outcomes": [
+                    {
+                        "artifact": o.artifact,
+                        "state": o.state,
+                        "reading": o.reading,
+                        "reason": o.reason,
+                        "words": (
+                            sum(len(s.words) for s in o.transcript.segments)
+                            if o.transcript is not None
+                            else 0
+                        ),
+                        "dropped": (
+                            len(o.transcript.dropped) if o.transcript is not None else 0
+                        ),
+                    }
+                    for o in outcomes
+                ],
+                "events_appended": appended,
+                "idle_reason": idle_reason,
+                "hotwords": list(transcriber.hotwords()),
+            },
+            out,
+            indent=2,
+            sort_keys=True,
+        )
+        print("", file=out)
+        return EXIT_OK
+
+    for outcome in outcomes:
+        print(outcome.describe(), file=out)
+        if outcome.transcript is not None and outcome.transcript.dropped:
+            # The count, not the text. A discarded hallucination is provenance
+            # in the log; printing it on a terminal is repeating it.
+            print(
+                f"          {len(outcome.transcript.dropped)} segment(s) discarded "
+                f"as not speech — kept in the event, not in the transcript",
+                file=out,
+            )
+    print(f"appended  {appended} event(s)", file=out)
+    if idle_reason:
+        print(f"nothing   {idle_reason}", file=out)
+    if appended:
+        print(
+            "\nThe recordings are unchanged and still in raw/. Run "
+            "`health-agent rebuild` to put the transcripts on the timeline.",
+            file=out,
+        )
+    return EXIT_OK
+
+
 def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     """Write the inference credential to the OS keychain.
 
@@ -555,7 +672,32 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
     """
     from tests.fixtures import corpus  # noqa: PLC0415 - only needed here
 
+    import tempfile  # noqa: PLC0415 - only needed here
+
+    from .asr import evaluate as speech_eval  # noqa: PLC0415
+
     vault = Vault.open(args.vault)
+
+    if args.speech:
+        # No box, no key, no network. The reason this can be a separate run at
+        # all is that the model it scores is on this machine.
+        transcriber = speech_mod.Transcriber(vault)
+        with tempfile.TemporaryDirectory(prefix="health-agent-eval-") as workdir:
+            report = speech_eval.run_corpus(
+                corpus.FIXTURES,
+                hotwords=transcriber.hotwords(),
+                workdir=Path(workdir),
+                language=vault.config.locale,
+                both_ways=not args.biased_only,
+            )
+        if args.json:
+            json.dump(report.to_dict(), out, indent=2, sort_keys=True)
+            print("", file=out)
+            return EXIT_OK if report.ok else EXIT_PROBLEMS
+        for line in report.describe():
+            print(line, file=out)
+        return EXIT_OK if report.ok else EXIT_PROBLEMS
+
     fixtures = corpus.for_phase(4)
     with session.open_client(vault) as client:
         report = evaluate_mod.run_corpus(client, fixtures, locale=vault.config.locale)
@@ -567,11 +709,15 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
 
     for line in report.describe():
         print(line, file=out)
-    skipped = [f.name for f in corpus.FIXTURES if f.phase > 4]
-    if skipped:
+    deferred = [f.name for f in corpus.FIXTURES if f.phase > 4]
+    if deferred:
+        # Their audio is real and their transcripts are scored by `eval
+        # --speech`. What is deferred is their *claims*: proposing one from a
+        # transcript is this model reading it as text, and that is phase 7.
         print(
-            f"\nnot run   {', '.join(skipped)} — these need the speech model, "
-            f"which is phase 6",
+            f"\nnot run   {', '.join(deferred)} — these are recordings. "
+            f"`health-agent eval --speech` scores their transcripts; proposing "
+            f"claims from a transcript is phase 7",
             file=out,
         )
     return EXIT_OK if report.ok else EXIT_PROBLEMS
@@ -769,6 +915,39 @@ def build_parser() -> argparse.ArgumentParser:
     _add_vault(extract)
     extract.set_defaults(func=cmd_extract)
 
+    transcribe = subparsers.add_parser(
+        "transcribe",
+        help="type up recordings with the local speech model (never touches the box)",
+    )
+    transcribe.add_argument(
+        "--artifact",
+        action="append",
+        metavar="HASH",
+        default=None,
+        help=(
+            "type up this recording and nothing else, by the short hash in its "
+            "raw/ filename or its wiki footnote; repeatable"
+        ),
+    )
+    transcribe.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "re-read a recording that has already been typed up, with the current "
+            "hotword list. Requires --artifact. The earlier transcript stays in "
+            "the log and the new event records that it superseded it"
+        ),
+    )
+    transcribe.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="say which recordings are waiting without reading or appending anything",
+    )
+    transcribe.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(transcribe)
+    transcribe.set_defaults(func=cmd_transcribe)
+
     set_key = subparsers.add_parser(
         "set-key",
         help="store the inference credential in the OS keychain (never in the vault)",
@@ -821,6 +1000,22 @@ def build_parser() -> argparse.ArgumentParser:
             "score the configured model against the golden corpus; run this "
             "before accepting a model or prompt change"
         ),
+    )
+    evaluate.add_argument(
+        "--speech",
+        action="store_true",
+        help=(
+            "score the local speech model on the corpus recordings instead. "
+            "Needs no box and no key: it reports term recall biased and "
+            "unbiased, which is what says whether the hotword list is earning "
+            "its place"
+        ),
+    )
+    evaluate.add_argument(
+        "--biased-only",
+        action="store_true",
+        dest="biased_only",
+        help="with --speech, skip the unbiased comparison run (roughly twice as fast)",
     )
     evaluate.add_argument("--json", action="store_true", help="machine-readable output")
     _add_vault(evaluate)

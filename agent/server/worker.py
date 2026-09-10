@@ -29,6 +29,15 @@ about this is surfaced as a failure.
 thread happened to be scheduled first is a test that fails on a slower machine
 for reasons nobody can reproduce. A test that wants this behaviour calls
 :meth:`Worker.run_once` directly and synchronously.
+
+**Speech drains first, locally, and unconditionally.** Recordings are read by
+``faster-whisper`` on this machine, so nothing about typing up a voice note
+needs the box — and until phase 6 the loop was structured so that it did anyway:
+every drain happened inside the client context, so an unconfigured endpoint, a
+sleeping box or a queue parked on a rejected key all stopped a recording being
+transcribed. That was a bug rather than a design, and it defeated the reason
+speech runs locally at all. A pass now transcribes what it can before it so much
+as looks at the endpoint.
 """
 
 from __future__ import annotations
@@ -37,12 +46,15 @@ import logging
 import threading
 from typing import Any
 
+from ..asr import runner as speech_mod
 from ..errors import EndpointNotConfigured, HealthAgentError, InferenceError
 from ..extract import jobs as jobs_mod
 from ..extract import probe as probe_mod
 from ..extract import runner as runner_mod
 from ..extract import session
+from ..ingest import mime as mime_mod
 from ..llm import redaction
+from ..projection import citations as citations_mod
 from . import endpoint_state
 from .state import RecordState
 
@@ -65,9 +77,17 @@ PROBE_SECONDS = 300.0
 class Worker:
     """A daemon thread that drains the extraction queue when it can."""
 
-    def __init__(self, state: RecordState, probe_vision: bool = True):
+    def __init__(
+        self,
+        state: RecordState,
+        probe_vision: bool = True,
+        speech: Any | None = None,
+    ):
         self.state = state
         self.probe_vision = probe_vision
+        #: Injected by tests. Left ``None``, ``faster-whisper`` is loaded on the
+        #: first recording and kept for the life of the process.
+        self.speech = speech
         self._thread: threading.Thread | None = None
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -132,11 +152,19 @@ class Worker:
 
         Called by the loop, and called directly by tests — which is the point of
         it being a method that returns rather than a loop body.
+
+        Speech first and outside every guard below it. A recording is read on
+        this machine, so an unconfigured endpoint, a sleeping box and a queue
+        parked on a rejected key are all irrelevant to it — and each of them
+        used to stop it.
         """
+        transcribed = self._drain_speech()
+
         if self._stalled:
-            # Needs a person, not a retry. Keep reporting, stop asking.
-            # `resume()` is what clears this.
-            return PROBE_SECONDS
+            # Needs a person, not a retry. Keep reporting, stop asking — but the
+            # speech pass above already ran, because none of what a person has
+            # to fix is between a recording and its transcript.
+            return IDLE_SECONDS if transcribed else PROBE_SECONDS
 
         try:
             with session.open_client(self.state.vault) as client:
@@ -145,12 +173,13 @@ class Worker:
                     self._probed = True
                     if self.state.endpoint.is_terminal:
                         return self._stall()
-                return self._drain(client)
+                wait = self._drain(client)
+                return IDLE_SECONDS if transcribed else wait
         except EndpointNotConfigured:
             # Not a fault. A vault with no [models.vlm] table is simply not one
             # extraction runs against, and a demo vault is deliberately one.
             self.state.set_endpoint(endpoint_state.not_configured())
-            return PROBE_SECONDS
+            return IDLE_SECONDS if transcribed else PROBE_SECONDS
         except (InferenceError, HealthAgentError) as exc:
             self.state.record_endpoint_error(exc)
             self.last_error = redaction.scrub(str(exc))
@@ -161,8 +190,39 @@ class Worker:
             # the resulting *state* rather than from where the exception was
             # caught is what stops one of those two paths retrying for ever.
             if self.state.endpoint.is_terminal:
-                return self._stall()
-            return UNREACHABLE_SECONDS
+                self._stall()
+                return IDLE_SECONDS if transcribed else PROBE_SECONDS
+            return IDLE_SECONDS if transcribed else UNREACHABLE_SECONDS
+
+    def _drain_speech(self) -> bool:
+        """Type up every recording that is waiting. Returns whether any ran.
+
+        Nothing in here can fail in a way the loop has to reason about: there is
+        no socket, no credential and no server, so there is no unreachable state
+        and no auth state. A recording that cannot be read — ffmpeg missing, a
+        file that will not decode — is marked on its own job and the pass
+        continues with the next one.
+        """
+        try:
+            with self.state.lock:
+                queue = self.state.queue()
+                runner_mod.enqueue_unread(self.state.vault, queue)
+                report = speech_mod.drain(
+                    self.state.vault,
+                    speech_mod.Transcriber(self.state.vault, speech=self.speech),
+                    queue,
+                    moment=self.state.now(),
+                )
+                if report.appended:
+                    self.state.invalidate()
+        except HealthAgentError as exc:
+            # Reported, never fatal, and never allowed to stop the pass that
+            # follows: a broken speech path must not take the vision path with
+            # it.
+            self.last_error = redaction.scrub(str(exc))
+            log.warning("speech pass failed: %s", self.last_error)
+            return False
+        return bool(report.outcomes)
 
     def _stall(self) -> float:
         """Stop asking, and park the queue if the reason is the key.
@@ -178,9 +238,23 @@ class Worker:
                 queue = self.state.queue()
                 if not queue.is_parked:
                     queue.park_for_auth(
-                        "authentication was rejected by the inference box"
+                        "authentication was rejected by the inference box",
+                        # Not the recordings. They are read by a model on this
+                        # machine, so calling them blocked on authentication
+                        # would be untrue and would hide them behind a resume
+                        # the user has no reason to perform.
+                        artifacts=self._vision_artifacts(),
                     )
         return PROBE_SECONDS
+
+    def _vision_artifacts(self) -> list[str]:
+        """Artefacts the box reads, as opposed to the ones this machine does."""
+        artifacts = citations_mod.index_artifacts(list(self.state.vault.read().events))
+        return [
+            short
+            for short, artifact in artifacts.items()
+            if not mime_mod.is_speech(artifact.mime)
+        ]
 
     def _run_probe(self, client) -> None:
         """Learn all three states before the first real job runs.

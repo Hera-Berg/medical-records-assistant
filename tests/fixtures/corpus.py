@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import io
 import math
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Callable
 
@@ -68,6 +71,22 @@ class Fixture:
     #: Phases whose readers this fixture needs. A voice note is phase 6's.
     phase: int = 4
     conflicts_with: str | None = None
+    #: Terms that must survive transcription, for a recording. Scored apart
+    #: from ``expected``, because the speech model's contract is the transcript
+    #: and not the claims: reading "40mg daily" out of a transcript is the
+    #: vision model's job and needs the box, and the ASR path deliberately does
+    #: not. A drug name mangled here is an unmatched entity downstream, which is
+    #: why these are the terms that are checked.
+    transcript_expects: tuple[str, ...] = ()
+    #: External programs this fixture's renderer needs. Speech cannot be
+    #: synthesised in pure Python the way a JPEG can be drawn, so the two
+    #: recordings are rendered with espeak-ng and ffmpeg and are reported as
+    #: unavailable rather than failing where those are absent.
+    requires: tuple[str, ...] = ()
+
+    @property
+    def missing_tools(self) -> tuple[str, ...]:
+        return tuple(name for name in self.requires if shutil.which(name) is None)
 
     def bytes(self) -> bytes:
         return self.render()
@@ -119,6 +138,84 @@ def _uneven_light(image: Image.Image) -> Image.Image:
                 for dy in range(min(4, height - y)):
                     pixels[x + dx, y + dy] = column
     return Image.composite(image, Image.new("RGB", image.size, "black"), shade)
+
+
+# --- recordings -------------------------------------------------------------
+#
+# Everything else in this corpus is drawn in pure Python. Speech cannot be, so
+# these two shell out to espeak-ng for the voice and ffmpeg for the container.
+# That is a real dependency and it is declared on the fixture rather than
+# assumed: where the tools are absent the recording is reported as unavailable
+# and the eval says so, instead of a corpus that silently scores nothing.
+#
+# Synthetic, and audibly so. The point is not to sound like a person — it is to
+# put real drug names into real audio, so that "biasing is what makes `small`
+# usable" is a claim the harness can check rather than one the documentation
+# asserts.
+
+#: Chrome records ``audio/webm;opus``, so that is what the fixtures are. A WAV
+#: would skip the decode step the real path always takes.
+_OPUS_ARGS = ("-c:a", "libopus", "-f", "webm")
+
+
+def _speech(words: str, voice: str = "en-gb", speed: int = 145) -> bytes:
+    """Synthesised speech, in the container a browser would have produced."""
+    with tempfile.TemporaryDirectory() as directory:
+        raw = f"{directory}/speech.wav"
+        out = f"{directory}/speech.webm"
+        subprocess.run(
+            ["espeak-ng", "-v", voice, "-s", str(speed), "-w", raw, words],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", raw, *_OPUS_ARGS, out, "-y"],
+            check=True,
+            capture_output=True,
+        )
+        return open(out, "rb").read()
+
+
+def _room_tone(seconds: int, cough_at: int | None = None) -> bytes:
+    """Near-silence, optionally with one transient in it.
+
+    The expected output is nothing at all. Whisper's training corpus is
+    subtitles and over silence it produces subtitle-shaped text — "Thank you for
+    watching" — which is fluent, confident and entirely invented. A cough is
+    included because pure digital silence is an unrealistically easy case: real
+    room tone with a transient in it is what a phone in a waiting room actually
+    captures.
+    """
+    inputs = ["-f", "lavfi", "-i", f"anoisesrc=d={seconds}:c=pink:a=0.0008"]
+    if cough_at is None:
+        chain = []
+    else:
+        inputs += ["-f", "lavfi", "-i", "anoisesrc=d=0.35:c=brown:a=0.35"]
+        chain = [
+            "-filter_complex",
+            f"[1:a]adelay={cough_at * 1000}|{cough_at * 1000},"
+            f"apad=whole_dur={seconds}[c];"
+            f"[0:a][c]amix=inputs=2:duration=first:normalize=0",
+        ]
+    with tempfile.TemporaryDirectory() as directory:
+        out = f"{directory}/tone.webm"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", *inputs, *chain, *_OPUS_ARGS, out, "-y"],
+            check=True,
+            capture_output=True,
+        )
+        return open(out, "rb").read()
+
+
+#: What the rambling voice note says. Kept beside the fixture that renders it,
+#: for the same reason every other fixture's ``text`` is: the words and the
+#: expectations cannot drift if they are in one place.
+RAMBLING_NOTE = (
+    "Right, so. I stopped the sertraline, that was, I think around Easter time, "
+    "somewhere around then. And the doctor put the atorvastatin up to forty "
+    "milligrams daily. That was Doctor Nguyen, at the Rosewood clinic. "
+    "The headaches have been a bit better since the tablets changed."
+)
 
 
 # --- a minimal PDF with a real text layer ----------------------------------
@@ -346,26 +443,42 @@ FIXTURES: tuple[Fixture, ...] = (
             "here is the specific harm the whole system is built to avoid"
         ),
     ),
-    # Phase 6 owns these: they need faster-whisper, and there is no ASR yet.
+    # Phase 6 renders these as real audio and scores the transcript. Their
+    # `expected` **claims** stay deferred: proposing a claim from a transcript
+    # is the vision model reading it as text, which needs the box, and phase 6
+    # is local by design. Phase 7 picks them up.
     Fixture(
         name="rambling-voice-note",
         mime="audio/webm",
-        render=lambda: b"",
-        text="",
+        render=lambda: _speech(RAMBLING_NOTE),
+        text=RAMBLING_NOTE,
         expected=(
             Expected("med:sertraline", "status", "stopped"),
             Expected("med:atorvastatin", "dose", "40mg daily"),
         ),
+        transcript_expects=(
+            "sertraline",
+            "atorvastatin",
+            "Easter",
+            "Nguyen",
+        ),
+        requires=("espeak-ng", "ffmpeg"),
         phase=6,
-        notes="a vague date and two drug names; the date must stay a phrase",
+        notes=(
+            "a vague date and two drug names; the date must stay a phrase. "
+            "Unbiased, `small` hears 'search-reline' and 'at-or-vastatin' — "
+            "which is the whole argument for the hotword list"
+        ),
     ),
     Fixture(
         name="silence-and-a-cough",
         mime="audio/webm",
-        render=lambda: b"",
+        render=lambda: _room_tone(40, cough_at=12),
         text="",
         readable=False,
         expected=(),
+        transcript_expects=(),
+        requires=("ffmpeg",),
         phase=6,
         notes=(
             "expected output: nothing at all. Whisper hallucinates on silence — "

@@ -35,6 +35,11 @@ ocr = ["pytesseract>=0.3"]
 # The default credential store. Without it the env var and the credentials file
 # still work; see MODELS.md, "Credentials".
 keychain = ["keyring>=24"]
+# Local speech. Optional in the same way the deterministic readers are: without
+# it a recording is still captured, stored and kept for ever — it simply is not
+# typed up, and says so. Needs ffmpeg on PATH as well, which is not a Python
+# package and so cannot be declared here.
+speech = ["faster-whisper>=1.1"]
 
 [project.scripts]
 health-agent = "agent.cli:main"

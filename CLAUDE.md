@@ -560,8 +560,19 @@ Do not start a phase before the previous one's tests pass.
 4. **Extraction.** LLM client, prompt templates with hashing, structured output validation, claim
    proposal. Reject and log malformed model output — never coerce it into a valid claim.
 5. **HTTP + SPA shell.** Serve, capture endpoint, timeline read.
-6. **Recorder + transcription.** Device picker, MediaRecorder, Whisper.
-7. **Review inbox.** Consequence gating, correction flow.
+6. **Recorder + transcription.** Device picker, MediaRecorder, Whisper. **Entirely local**: a
+   recording is stored and typed up with the box asleep, off the tailnet, and with the queue parked
+   on a rejected key. The output is a transcript stored verbatim as `extraction.completed`, with
+   word-level timestamps so a claim can cite the seconds it came from. No claims are proposed from
+   it — see phase 7.
+7. **Review inbox.** Consequence gating, correction flow. **Also: claims from transcripts.**
+   Proposing `med:atorvastatin dose 40mg daily` from a voice note is the vision-language model
+   reading the transcript as text, which needs the box — so it was deliberately kept out of phase 6,
+   whose whole point is that a voice note is captured and typed up with no network at all. It is
+   listed here rather than left as "later" because a deferral nobody wrote down is a dropped
+   requirement: the two voice fixtures in `tests/fixtures/` carry expected claims that nothing scores
+   until this is built, and `health-agent eval --speech` scores only their transcripts in the
+   meantime.
 8. **Consultation summary + print view.**
 9. **Wearable bulk import.** Fitbit/Apple Health export parsing, summary-only events.
 10. **Querying the record.** Not before phase 9. See below.

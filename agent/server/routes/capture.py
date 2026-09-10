@@ -14,13 +14,20 @@ socket level and asserts a capture still succeeds.
 document this is, is the model's job, and asking the user at capture time is
 asking them to do it in a corridor.
 
-**``captured_ts`` is null on every path this route serves.** A browser gives
-``File.lastModified`` for a picked or dropped file, and that is a filesystem
-mtime: rewritten by downloads, copies and sync clients. It is recorded as
-``source_mtime_hint``, which is what it is. Drag in a photo taken three days ago
-and a substituted capture time is wrong by three days with nothing about the
-record looking wrong. The live camera and microphone paths genuinely know the
-moment and set it themselves; that is phase 6.
+**``captured_ts`` is null on every path this route serves but one.** A browser
+gives ``File.lastModified`` for a picked or dropped file, and that is a
+filesystem mtime: rewritten by downloads, copies and sync clients. It is
+recorded as ``source_mtime_hint``, which is what it is. Drag in a photo taken
+three days ago and a substituted capture time is wrong by three days with
+nothing about the record looking wrong.
+
+The exception is ``source=recorder``. A recording made by the microphone in
+this tab genuinely happened at a moment this page watched happen, so that
+moment is sent and stored — it is the first path in the application allowed to
+set ``captured_ts``, and the reason the field exists. It is still checked
+rather than trusted: canonical UTC, and not in the future by more than a
+minute's clock skew. A browser clock can be wrong, and a capture time in 2031
+would sort a voice note to the end of the timeline for ever.
 """
 
 from __future__ import annotations
@@ -38,11 +45,21 @@ from ..state import RecordState
 
 router = APIRouter()
 
-#: Capture sources a browser may claim. The rest of
-#: :data:`agent.ingest.CAPTURE_SOURCES` belongs to paths that are not this one:
-#: ``cli`` and ``import`` are the terminal's, and ``camera`` and ``recorder``
-#: are phase 6's, where ``captured_ts`` is genuinely known.
-WEB_SOURCES = frozenset({"upload", "paste", "drop"})
+#: Capture sources a browser may claim. ``cli`` and ``import`` are not here:
+#: they are the terminal's. ``camera`` is not here either — the mobile camera
+#: input arrives as an ordinary file upload and a browser does not tell us when
+#: the shutter fired, so claiming it did would be the substitution this whole
+#: route is careful about.
+WEB_SOURCES = frozenset({"upload", "paste", "drop", "recorder"})
+
+#: Sources that genuinely know when the bytes were made, because the page
+#: watched them being made.
+LIVE_SOURCES = frozenset({"recorder"})
+
+#: How far ahead of this machine a browser's clock may be before its capture
+#: time is refused. Small: this is skew, not a timezone, and the two clocks are
+#: usually the same clock.
+MAX_CLOCK_SKEW_S = 60
 
 
 @router.post("/api/capture", status_code=202)
@@ -50,6 +67,7 @@ def capture(
     files: list[UploadFile],
     source: str = Form("upload"),
     note: str | None = Form(None),
+    captured_ts: str | None = Form(None),
     state: RecordState = Depends(get_state),
 ) -> JSONResponse:
     """Take one or more files into the record and queue them to be read.
@@ -71,6 +89,8 @@ def capture(
     if not files:
         raise HTTPException(status_code=400, detail="no files were sent")
 
+    captured = _captured_ts(state, source, captured_ts)
+
     results: list[dict[str, Any]] = []
     queued: list[str] = []
     failures = 0
@@ -82,7 +102,7 @@ def capture(
         queue = state.queue()
         for upload in files:
             try:
-                result = _store_one(state, upload, source, note)
+                result = _store_one(state, upload, source, note, captured)
             except (IngestError, DeviceIdentityError) as exc:
                 failures += 1
                 results.append(
@@ -164,8 +184,53 @@ def _note(accepted: int, failed: int) -> str:
     return f"{stored}. {kept}"
 
 
+def _captured_ts(state: RecordState, source: str, value: str | None) -> str | None:
+    """The moment the bytes were made, where that is genuinely known.
+
+    Accepted only from a live source, and refused rather than adjusted when it
+    does not make sense. Silently clamping a bad clock would produce a plausible
+    wrong date, which is worse here than an error: the whole point of keeping
+    four timestamps apart is that a wrong one is invisible once written.
+    """
+    if value is None or not value.strip():
+        return None
+    if source not in LIVE_SOURCES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"a capture time was sent with source {source!r}, which cannot know "
+                f"one. Only a recording made in this page knows when it was made; "
+                f"for anything else the file's modification time is not when the "
+                f"photograph was taken, and the record stores an explicit null"
+            ),
+        )
+    if not envelope.is_canonical_ts(value):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"captured_ts {value!r} must be canonical UTC of the form "
+                f"YYYY-MM-DDTHH:MM:SSZ"
+            ),
+        )
+    moment = envelope.parse_ts_or_none(value)
+    if moment is not None and (moment - state.now()).total_seconds() > MAX_CLOCK_SKEW_S:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"captured_ts {value} is in the future. This machine's clock or the "
+                f"browser's is wrong, and a recording dated ahead of today would sit "
+                f"at the end of your timeline until that date passes"
+            ),
+        )
+    return value
+
+
 def _store_one(
-    state: RecordState, upload: UploadFile, source: str, note: str | None
+    state: RecordState,
+    upload: UploadFile,
+    source: str,
+    note: str | None,
+    captured_ts: str | None = None,
 ) -> ingest_mod.IngestResult:
     """Stream one upload into ``raw/``.
 
@@ -177,9 +242,10 @@ def _store_one(
         source=source,
         original_filename=upload.filename,
         declared_mime=upload.content_type,
-        # Explicitly null. See the module docstring — a browser cannot tell us
-        # when a photograph was taken, only when its file was last written.
-        captured_ts=None,
+        # Null on every path but the recorder. See the module docstring — a
+        # browser cannot tell us when a photograph was taken, only when its file
+        # was last written, but it can tell us when its own microphone ran.
+        captured_ts=captured_ts,
         source_mtime_hint=None,
         note=note,
     )

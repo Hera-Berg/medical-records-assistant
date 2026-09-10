@@ -261,3 +261,19 @@ def detect(
             return Detected(guessed, SOURCE_EXTENSION)
 
     return Detected(OCTET_STREAM, SOURCE_UNKNOWN)
+
+
+#: Mime prefixes the speech model reads. Video is included because a phone will
+#: hand over a ``video/mp4`` whose only useful content is its audio track, and
+#: the decoder drops the video stream on the way to the working copy.
+SPEECH_PREFIXES = ("audio/", "video/")
+
+
+def is_speech(mime: str | None) -> bool:
+    """Whether this artefact is one the speech model reads rather than the VLM.
+
+    Lives here rather than in either reader because it is the question that
+    *routes* between them: the extraction queue is one queue, and which of the
+    two drains picks a job up is decided by nothing but this.
+    """
+    return str(mime or "").startswith(SPEECH_PREFIXES)
