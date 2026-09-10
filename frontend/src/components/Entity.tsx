@@ -75,7 +75,14 @@ export function Entity({
 
       <dl className="mt-2 grid grid-cols-[10rem_1fr] gap-x-4">
         <Fact label="Started" value={data.started} />
-        <Fact label="Last confirmed" value={data.last_confirmed} />
+        <Fact
+          label="Last confirmed"
+          value={
+            data.last_confirmed && data.stale && data.last_confirmed_ago
+              ? `${data.last_confirmed} — ${data.last_confirmed_ago}`
+              : data.last_confirmed
+          }
+        />
         <Fact label="Expected to run out" value={data.expected_exhaustion} />
         <Fact label="Evidence tier" value={data.evidence_tier} />
         <Fact label="Sources" value={data.sources.join(", ") || null} mono />

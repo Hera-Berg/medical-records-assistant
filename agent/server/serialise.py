@@ -33,10 +33,13 @@ from coincidence. No number here is ever reconstructed from a float.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..projection import entities as entities_mod
 from ..projection import reconcile
 from ..projection.citations import Citation, Citer
+from ..projection.dates import parse_iso_date
 from ..projection.claims import Claim
 from ..projection.dates import FuzzyDate
 from ..projection.entities import Entity
@@ -207,10 +210,35 @@ def timeline_row(row: Row, citer: Citer) -> dict[str, Any]:
     }
 
 
-def entity_summary(entity: Entity) -> dict[str, Any]:
+def elapsed_since(iso: str | None, as_of: date | None) -> str | None:
+    """"8 months ago", computed here rather than in the browser.
+
+    ``CLAUDE.md``'s example of a stale entry is ``stale — last confirmed 8
+    months ago``, and the phrase is the point: a date makes the reader do the
+    arithmetic, and the reader is a clinician skimming. The wiki page already
+    says it, so the screen has to as well or the two describe the same
+    medication differently.
+
+    It is computed from the projection's ``as_of``, never from the client's
+    clock. A second clock in the browser would disagree with the one the whole
+    record is derived against — quietly, and by exactly the amount that matters
+    around a day boundary.
+    """
+    if iso is None or as_of is None:
+        return None
+    parsed = parse_iso_date(iso)
+    if parsed is None:
+        return None
+    return entities_mod.elapsed_phrase(parsed, as_of)
+
+
+def entity_summary(entity: Entity, as_of: date | None = None) -> dict[str, Any]:
     """The index row for one entity. No claim values beyond the winning ones."""
     dose = entity.slots.get("dose")
     return {
+        "last_confirmed_ago": elapsed_since(
+            entity.last_confirmed.iso if entity.last_confirmed else None, as_of
+        ),
         "id": entity.id,
         "kind": entity.subject.kind,
         "slug": entity.subject.slug,
@@ -241,7 +269,10 @@ def entity_summary(entity: Entity) -> dict[str, Any]:
 
 
 def entity_detail(
-    entity: Entity, citer: Citer, page: bytes | None = None
+    entity: Entity,
+    citer: Citer,
+    page: bytes | None = None,
+    as_of: date | None = None,
 ) -> dict[str, Any]:
     """One entity and its full source chain.
 
@@ -254,7 +285,7 @@ def entity_detail(
     words the folder holds rather than a second rendering of the same facts that
     might not agree with it.
     """
-    detail = entity_summary(entity)
+    detail = entity_summary(entity, as_of)
     detail.update(
         {
             "slots": [slot(entity.slots[name], citer) for name in sorted(entity.slots)],
@@ -318,13 +349,20 @@ def _dispense(entity: Entity) -> dict[str, Any] | None:
     }
 
 
-def medication_view(rows: Iterable[Any]) -> list[dict[str, Any]]:
+def medication_view(
+    rows: Iterable[Any], as_of: date | None = None
+) -> list[dict[str, Any]]:
     """The generated current-medications view.
 
     A view, never a stored file: writing it out would put the medication list in
     two places, and the moment two copies exist one of them is wrong.
     """
-    return [row.to_dict() for row in rows]
+    serialised = []
+    for row in rows:
+        data = row.to_dict()
+        data["last_confirmed_ago"] = elapsed_since(row.last_confirmed, as_of)
+        serialised.append(data)
+    return serialised
 
 
 def anomalies(items: Sequence[str]) -> list[str]:

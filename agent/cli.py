@@ -536,6 +536,12 @@ def cmd_serve(args: argparse.Namespace, out: TextIO) -> int:
             file=out,
         )
     print("\nNothing here is reachable from another machine. Ctrl-C to stop.", file=out)
+    # Flushed before uvicorn takes the process, because it never gives it back.
+    # Python line-buffers a terminal but block-buffers a pipe, so without this
+    # everything above is invisible whenever the output is redirected or
+    # captured — which is how a service manager runs it, and the case where a
+    # person most needs to be told which vault and which port.
+    out.flush()
 
     server_mod.serve(vault, host=host, port=port, worker=not args.no_worker)
     return EXIT_OK

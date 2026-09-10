@@ -96,7 +96,7 @@ def wiki_index(state: RecordState = Depends(get_state)) -> dict[str, Any]:
 
     grouped: dict[str, list[dict[str, Any]]] = {}
     for subject_id in sorted(entities):
-        summary = serialise.entity_summary(entities[subject_id])
+        summary = serialise.entity_summary(entities[subject_id], snapshot.as_of.date())
         grouped.setdefault(summary["kind"], []).append(summary)
 
     return {
@@ -105,7 +105,7 @@ def wiki_index(state: RecordState = Depends(get_state)) -> dict[str, Any]:
             for kind in sorted(subjects.KIND_DIRS)
         },
         "current_medications": serialise.medication_view(
-            snapshot.projection.current_medications
+            snapshot.projection.current_medications, snapshot.as_of.date()
         ),
         "review": serialise.review_counts(snapshot.projection.review),
         "anomalies": snapshot.anomaly_count,
@@ -147,7 +147,9 @@ def wiki_entity(
         )
 
     page = snapshot.projection.files.get(entity.rel_path)
-    detail = serialise.entity_detail(entity, snapshot.citer, page)
+    detail = serialise.entity_detail(
+        entity, snapshot.citer, page, as_of=snapshot.as_of.date()
+    )
     detail["timeline"] = [
         serialise.timeline_row(row, snapshot.citer)
         for row in snapshot.projection.rows
@@ -199,7 +201,9 @@ def medications(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     """
     snapshot = state.snapshot()
     return {
-        "rows": serialise.medication_view(snapshot.projection.current_medications),
+        "rows": serialise.medication_view(
+            snapshot.projection.current_medications, snapshot.as_of.date()
+        ),
         "as_of": snapshot.built_ts,
     }
 

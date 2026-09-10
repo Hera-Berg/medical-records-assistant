@@ -43,16 +43,30 @@ def static_dir() -> Path:
     return Path(__file__).resolve().parent / STATIC_DIRNAME
 
 
-def build_info() -> dict[str, str | None]:
-    """What the committed bundle says about itself."""
+def build_info() -> dict[str, object]:
+    """What the committed bundle says about itself.
+
+    ``dirty`` is passed through rather than dropped. A bundle built from a
+    working tree with uncommitted changes cannot be traced to anything, and the
+    whole reason this file exists is so that "is this interface current" is
+    answerable from a running server. Hiding the one field that says "you
+    cannot know" would defeat it.
+    """
     path = static_dir() / BUILD_INFO_FILENAME
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"present": False, "commit": None, "built": None, "source": None}
+        return {
+            "present": False,
+            "commit": None,
+            "dirty": None,
+            "built": None,
+            "source": None,
+        }
     return {
         "present": True,
         "commit": data.get("commit"),
+        "dirty": data.get("dirty"),
         "built": data.get("built"),
         "source": data.get("source"),
     }

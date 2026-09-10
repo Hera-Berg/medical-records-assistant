@@ -355,3 +355,73 @@ def test_the_four_timestamps_are_reported_separately(record, client):
     # `captured_ts` is unknown for a file that was not captured live, and says
     # so rather than borrowing from a neighbour.
     assert winner["captured_ts"] is None
+
+
+def test_a_stale_entry_says_how_long_using_the_projections_clock(vault):
+    """"8 months ago", and computed on the server.
+
+    ``CLAUDE.md``'s own example of a stale entry is ``stale — last confirmed 8
+    months ago``, and the phrase is the point: a bare date makes a clinician do
+    arithmetic while skimming. The wiki page already says it, so the screen has
+    to as well or the two describe one medication differently — which is the
+    divergence this was found by reading both.
+
+    It is computed from ``as_of``, never from the client's clock. A second clock
+    in the browser would disagree with the one the whole record is derived
+    against, quietly, and by exactly the amount that matters around midnight.
+    """
+    from datetime import datetime, timezone
+
+    from .conftest import api_client
+
+    device = vault.identity.id
+    vault.append(ingested(device, "a3f91c", ts=on_day(1)))
+    dose = claim(
+        device, "med:metformin", "dose", "500mg twice daily", ts=on_day(2),
+        artifact="a3f91c",
+        occurred={"value": "2026-01-13", "precision": "day"},
+        dispense={"quantity": "60 tablets", "frequency": "twice daily",
+                  "repeats": "no repeats"},
+    )
+    vault.append(dose)
+    vault.append(confirm(device, dose.id, ts=on_day(3)))
+
+    pinned = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    with api_client(vault, clock=lambda: pinned) as client:
+        row = next(
+            r for r in client.get("/api/medications").json()["rows"]
+            if r["id"] == "med:metformin"
+        )
+        detail = client.get("/api/wiki/med:metformin").json()
+
+    assert row["stale"] is True
+    assert row["last_confirmed_ago"] == "8 months ago"
+    assert detail["last_confirmed_ago"] == "8 months ago"
+
+    # And it moves with `as_of`, which is what proves it is not the wall clock.
+    later = datetime(2027, 9, 10, tzinfo=timezone.utc)
+    with api_client(vault, clock=lambda: later) as client:
+        row = next(
+            r for r in client.get("/api/medications").json()["rows"]
+            if r["id"] == "med:metformin"
+        )
+    assert row["last_confirmed_ago"] == "20 months ago"
+
+
+def test_a_current_entry_is_not_labelled_with_an_age(vault, client):
+    """The phrase belongs to staleness. On an active entry it is noise."""
+    device = vault.identity.id
+    vault.append(ingested(device, "a3f91c", ts=on_day(1)))
+    dose = claim(device, "med:perindopril", "dose", "5mg daily", ts=on_day(2),
+                 artifact="a3f91c")
+    vault.append(dose)
+    vault.append(confirm(device, dose.id, ts=on_day(3)))
+
+    row = next(
+        r for r in client.get("/api/medications").json()["rows"]
+        if r["id"] == "med:perindopril"
+    )
+    assert row["stale"] is False
+    # Still computed and sent — the interface decides whether to show it — but
+    # the row is not stale, so nothing renders it.
+    assert "last_confirmed_ago" in row

@@ -205,8 +205,17 @@ def elapsed_phrase(earlier: date, later: date) -> str:
         return f"{days} days ago"
     months = days // 30
     if months < 24:
-        return f"{months} months ago"
-    return f"{days // 365} years ago"
+        # 45 to 59 days is one month by this arithmetic, so the plural is
+        # chosen here too rather than assumed.
+        return f"{months} month{'' if months == 1 else 's'} ago"
+    # `days // 365` rather than `months // 12`: a month here is a flat 30 days,
+    # and compounding that approximation over years drifts by a month every six.
+    # It can still land on 1 — the month branch ends at 720 days and a year is
+    # 365 — so the plural is chosen rather than assumed. This sentence is read
+    # by a clinician off a printed page, and "1 years ago" is the kind of thing
+    # that makes a record look machine-generated and therefore unchecked.
+    years = days // 365
+    return f"{years} year{'' if years == 1 else 's'} ago"
 
 
 def _slot_date(claim: Claim) -> FuzzyDate | None:

@@ -113,7 +113,7 @@ def test_the_bundle_cannot_be_escaped_with_a_path(client):
 def test_build_info_says_which_frontend_commit_the_bundle_came_from(client):
     """A committed build can drift from its source. That has to be detectable."""
     body = client.get("/api/build").json()
-    assert set(body) >= {"present", "commit", "built", "source"}
+    assert set(body) >= {"present", "commit", "dirty", "built", "source"}
     # The build is committed, so it is present in a checkout and says where it
     # came from. A bundle that could not name its commit would make "is this
     # interface current" unanswerable from a running server.

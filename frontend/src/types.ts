@@ -103,6 +103,8 @@ export interface EntitySummary {
   evidence_tier: Tier | null;
   dose: string | null;
   last_confirmed: string | null;
+  /** "8 months ago", computed against the projection's as_of, not the browser's clock. */
+  last_confirmed_ago: string | null;
   expected_exhaustion: string | null;
   started: string | null;
   stop_reported: string | null;
@@ -161,6 +163,7 @@ export interface MedicationRow {
   dose: string | null;
   evidence_tier: Tier | null;
   last_confirmed: string | null;
+  last_confirmed_ago: string | null;
   expected_exhaustion: string | null;
   stale: boolean;
   conflicted: boolean;

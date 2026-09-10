@@ -101,7 +101,23 @@ export function Record({
                   <Dose row={row} />
                 </td>
                 <td>{row.evidence_tier ? <TierMark tier={row.evidence_tier} /> : null}</td>
-                <td className="whitespace-nowrap">{row.last_confirmed ?? "—"}</td>
+                <td className="whitespace-nowrap">
+                  {row.last_confirmed ?? "—"}
+                  {/*
+                    The elapsed phrase, not just the date. CLAUDE.md's own
+                    example of a stale entry is "last confirmed 8 months ago",
+                    and that is why: a date asks the reader to do arithmetic,
+                    and the reader is a clinician skimming. It comes from the
+                    server, computed against the same `as_of` the whole record
+                    is derived from — a second clock in the browser would
+                    disagree with it around every day boundary.
+                  */}
+                  {row.stale && row.last_confirmed_ago ? (
+                    <span className="block text-[color:var(--color-muted)]">
+                      {row.last_confirmed_ago}
+                    </span>
+                  ) : null}
+                </td>
                 <td className="whitespace-nowrap">{row.expected_exhaustion ?? "—"}</td>
               </tr>
             ))}
@@ -149,7 +165,14 @@ export function Record({
                         ) : null}
                       </td>
                       <td>{row.evidence_tier ? <TierMark tier={row.evidence_tier} /> : null}</td>
-                      <td className="whitespace-nowrap">{row.last_confirmed ?? "—"}</td>
+                      <td className="whitespace-nowrap">
+                        {row.last_confirmed ?? "—"}
+                        {row.stale && row.last_confirmed_ago ? (
+                          <span className="block text-[color:var(--color-muted)]">
+                            {row.last_confirmed_ago}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="font-mono">{row.sources.join(" ") || "—"}</td>
                     </tr>
                   ))}

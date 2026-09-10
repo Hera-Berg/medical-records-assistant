@@ -382,3 +382,23 @@ def test_the_supply_caveat_is_cited_to_the_stop_not_to_the_script():
     markers = _MARKER.findall(paragraph[0])
     assert "77b210" in markers
     assert "a3f91c" in markers
+
+
+def test_elapsed_phrases_are_never_ungrammatical():
+    """"1 years ago" is a real reachable value, and it looks machine-generated.
+
+    The month branch ends at 720 days and a year is counted as 365, so days
+    720–729 land on a year count of exactly one. This sentence is read by a
+    clinician off a printed page; a record that cannot pluralise reads as one
+    nobody checked.
+    """
+    from datetime import date, timedelta
+
+    from agent.projection.entities import elapsed_phrase
+
+    start = date(2020, 1, 1)
+    for days in range(0, 4000):
+        phrase = elapsed_phrase(start, start + timedelta(days=days))
+        assert " 1 years " not in f" {phrase} ", f"{days} days -> {phrase!r}"
+        assert " 1 months " not in f" {phrase} ", f"{days} days -> {phrase!r}"
+        assert " 1 days " not in f" {phrase} ", f"{days} days -> {phrase!r}"

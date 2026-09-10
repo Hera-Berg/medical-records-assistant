@@ -195,3 +195,54 @@ def test_a_synced_profile_warns_about_shared_storage(vault_root, identity):
 def test_a_command_is_required():
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_serve_says_where_it_is_before_it_blocks(vault, monkeypatch, capsys):
+    """`health-agent serve` must announce itself in a pipe, not only a terminal.
+
+    Found by running it under `nohup`: the log was empty. Python line-buffers a
+    terminal and block-buffers a pipe, and uvicorn never returns the process, so
+    every line above the bind was invisible whenever the output was redirected —
+    which is how a service manager runs it, and exactly when a person most needs
+    to be told which vault and which port.
+    """
+    import io
+
+    from agent import cli
+    from agent.server import runtime
+
+    bound: dict[str, object] = {}
+
+    def fake_serve(vault_arg, host, port, worker):
+        bound.update(host=host, port=port, worker=worker)
+
+    monkeypatch.setattr(runtime, "serve", fake_serve)
+    monkeypatch.setattr("agent.server.serve", fake_serve, raising=False)
+
+    stream = io.StringIO()
+    flushed: list[bool] = []
+    original_flush = stream.flush
+    stream.flush = lambda: (flushed.append(True), original_flush())[1]
+
+    code = cli.main(["serve", "--vault", str(vault.root), "--port", "7799"], out=stream)
+
+    assert code == 0
+    assert flushed, "nothing was flushed before the process was handed to uvicorn"
+    printed = stream.getvalue()
+    assert str(vault.root) in printed
+    assert "http://127.0.0.1:7799" in printed
+    assert bound == {"host": "127.0.0.1", "port": 7799, "worker": True}
+
+
+def test_serve_refuses_a_host_other_machines_can_reach(vault, capsys):
+    """The port is the only boundary; widening it publishes the whole record."""
+    import io
+
+    from agent import cli
+
+    stream = io.StringIO()
+    code = cli.main(
+        ["serve", "--vault", str(vault.root), "--host", "0.0.0.0"], out=stream
+    )
+    assert code == 1
+    assert "no authentication" in stream.getvalue()
