@@ -220,4 +220,33 @@ def test_the_response_says_nothing_has_been_read(client):
         "/api/capture", files={"files": ("a.jpg", JPEG, "image/jpeg")}
     ).json()
     assert "Nothing has been read yet" in body["note"]
+    assert body["note"].startswith("1 file stored and queued")
     assert json.dumps(body).count("queued") >= 1
+
+
+def test_the_note_never_says_stored_when_nothing_was(client):
+    """A reassuring sentence beside `accepted: 0` is what a skimmer reads.
+
+    Found by reading a real response: a vault that could not append returned
+    `accepted: 0, failed: 1` under the words "Stored and queued."
+    """
+    body = client.post(
+        "/api/capture", files={"files": ("empty.jpg", b"", "image/jpeg")}
+    ).json()
+
+    assert body["accepted"] == 0
+    assert "stored and queued" not in body["note"].lower()
+    assert "Nothing was stored" in body["note"]
+
+
+def test_a_partial_batch_says_how_many_of_each(client):
+    body = client.post(
+        "/api/capture",
+        files=[
+            ("files", ("good.jpg", JPEG, "image/jpeg")),
+            ("files", ("empty.jpg", b"", "image/jpeg")),
+        ],
+    ).json()
+
+    assert body["note"].startswith("1 file stored and queued")
+    assert "1 could not be stored" in body["note"]

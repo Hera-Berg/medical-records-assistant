@@ -148,11 +148,26 @@ def build(
     rows: list[Row] = []
 
     admitted: dict[str, Claim] = {}
+    # Which entity each claim was actually filed under. A salt variant is
+    # aliased onto its base drug in the projection, so a claim whose own subject
+    # is `med:metformin-hydrochloride` belongs to the slot for `med:metformin`.
+    # Without this the row falls back to the claim's own slug and the timeline
+    # shows one medication twice under two spellings — which is the duplication
+    # the alias table exists to prevent, and it takes the row's link to a page
+    # that does not exist, because an aliased entity gets no stub.
+    #
+    # The label's own wording is not lost: the settled decision puts that
+    # disclosure on the entity page ("the label read X, filed under Y"), where
+    # there is room for the sentence, and the artefact behind the citation says
+    # it too.
+    filed_under: dict[str, str] = {}
     for slot in reconciliation.slots.values():
         for claim in slot.supporting:
             admitted[claim.event_id] = claim
+            filed_under[claim.event_id] = slot.subject_id
         for claim in slot.superseded:
             admitted.setdefault(claim.event_id, claim)
+            filed_under.setdefault(claim.event_id, slot.subject_id)
 
     for event in events:
         if event.type == "artifact.ingested":
@@ -198,7 +213,12 @@ def build(
         placed = _claim_date(claim)
         if placed is None:
             continue
-        name = entity_names.get(claim.subject.id) or claim.subject.slug
+        subject_id = filed_under.get(event_id, claim.subject.id)
+        name = (
+            entity_names.get(subject_id)
+            or entity_names.get(claim.subject.id)
+            or claim.subject_literal
+        )
         rows.append(
             Row(
                 date=placed[0],
@@ -206,7 +226,7 @@ def build(
                 marker=claim.evidence_tier,
                 text=f"{name} — {claim.predicate}: {claim.value.literal}",
                 cite=claim.cite,
-                subject_id=claim.subject.id,
+                subject_id=subject_id,
                 cite_description=(
                     "Your correction" if claim.is_correction else "Recorded claim"
                 ),

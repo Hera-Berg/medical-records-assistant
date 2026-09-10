@@ -103,7 +103,6 @@ def create_app(
 
     app.state.record = state
     app.state.index = Index.open(vault.root / ".agent")
-    app.state.build_info = static.build_info()
 
     wanted = (not under_pytest()) if worker is None else worker
     app.state.worker = Worker(state, probe_vision=probe_vision) if wanted else None
@@ -124,7 +123,10 @@ def create_app(
         what makes that detectable from a running server rather than by reading
         the interface and wondering.
         """
-        info = dict(app.state.build_info)
+        # Read fresh, so a rebuild while the server runs is reflected without
+        # a restart and the answer cannot be stale in the one place whose whole
+        # job is saying whether the bundle is stale.
+        info = dict(static.build_info())
         info["worker"] = app.state.worker.status() if app.state.worker else None
         return info
 

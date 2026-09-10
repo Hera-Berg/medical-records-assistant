@@ -92,10 +92,13 @@ also a <code>health-agent</code> subcommand on the terminal.</p>
 def mount(app) -> None:
     """Attach the SPA routes. Registered last, so every API path wins."""
     router = APIRouter()
-    directory = static_dir()
 
     @router.get("/{path:path}", include_in_schema=False)
     def spa(path: str, request: Request):
+        # Resolved per request rather than captured at mount. Two stat calls,
+        # and it means a build finished while the server is running is served
+        # without a restart — which is the ordinary way a developer works.
+        directory = static_dir()
         if path.startswith("api/"):
             # Reached only when no API route matched. A bare 404 here would be
             # indistinguishable from the SPA fallback swallowing a typo.

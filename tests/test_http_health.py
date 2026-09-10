@@ -187,6 +187,29 @@ def test_health_reports_a_device_that_may_not_append(app, client, monkeypatch):
     assert "another machine" in device["reason"]
 
 
+def test_a_vault_that_cannot_accept_a_capture_is_not_ok(app, client, monkeypatch):
+    """A writable directory is not the same as a vault that accepts an append.
+
+    Found by reading the response against a real vault: the device identity was
+    missing, every capture failed at the append, and health reported ``ok`` with
+    an empty problems list. Discovering it by failing a capture is discovering it
+    in the waiting room, which is the moment this route exists to spare.
+    """
+    from agent import device as device_mod
+
+    monkeypatch.setattr(
+        device_mod.DeviceIdentity,
+        "mismatch_reason",
+        lambda self: "this identity was issued on another machine",
+    )
+    body = client.get("/api/health").json()
+
+    assert body["vault"]["writable"] is True, "the directory itself is fine"
+    assert body["vault"]["device"]["appendable"] is False
+    assert body["ok"] is False
+    assert any("another machine" in problem for problem in body["problems"])
+
+
 def test_health_does_not_open_a_socket(app, client):
     """A polled route must not wait out a connect timeout against a sleeping box.
 

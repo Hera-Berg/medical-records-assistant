@@ -309,6 +309,12 @@ def _dispense(entity: Entity) -> dict[str, Any] | None:
         "dose_units": supply.dose_units_literal,
         "days_supply": supply.days_supply,
         "unreadable": supply.unreadable,
+        # The condition the wiki page uses to decide whether a Supply section
+        # exists at all. Sent rather than re-derived, so the page and the screen
+        # cannot disagree about whether a source stated a supply: a dose claim's
+        # own frequency reaches `Dispense` as a fallback, and a Supply heading
+        # built from that says only that there is nothing to say.
+        "has_spans": supply.has_spans,
     }
 
 

@@ -138,14 +138,30 @@ def capture(
             "queued": queued,
             "queue_depth": depth,
             "results": results,
-            # Said plainly, every time, because it is the promise this route
-            # makes: the bytes are safe and nothing has read them yet.
-            "note": (
-                "Stored and queued. Nothing has been read yet, and nothing reaches "
-                "the record until it has been."
-            ),
+            # The promise this route makes, said plainly — but only when it
+            # was kept. "Stored and queued" printed above `accepted: 0` is a
+            # reassuring sentence next to a failure, and a person skimming
+            # reads the sentence.
+            "note": _note(len(results) - failures, failures),
         },
     )
+
+
+def _note(accepted: int, failed: int) -> str:
+    """What actually happened, in one sentence, matching the counts beside it."""
+    if accepted == 0:
+        return (
+            "Nothing was stored. The files you sent are still where they were — "
+            "nothing has been taken into the record."
+        )
+    stored = f"{accepted} {'file' if accepted == 1 else 'files'} stored and queued"
+    kept = "Nothing has been read yet, and nothing reaches the record until it has been."
+    if failed:
+        return (
+            f"{stored}; {failed} could not be stored and {'is' if failed == 1 else 'are'} "
+            f"listed above. {kept}"
+        )
+    return f"{stored}. {kept}"
 
 
 def _store_one(

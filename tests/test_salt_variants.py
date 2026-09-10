@@ -519,3 +519,59 @@ def test_a_real_correction_is_never_suppressed_as_a_restatement():
 
     assert "## Earlier readings" in page
     assert "5Omcg daily" in page
+
+
+def test_the_timeline_shows_one_drug_and_links_to_the_entity_it_was_filed_under():
+    """A salt-named row must not read as a second medication.
+
+    Found by rendering the interface against the demo vault. The timeline row
+    for a ``PERINDOPRIL ARGININE`` label printed ``perindopril-arginine`` — the
+    normalised slug, which is neither the label's wording nor the entity's name
+    — directly above a row for ``Perindopril``. Two lines, two apparent drugs,
+    and the first of them linked to a page that does not exist, because an
+    aliased entity deliberately gets no stub.
+
+    The alias table exists to stop exactly that doubling in the medication list;
+    it has to hold on the timeline too, which is the screen a clinician actually
+    scans. Where the label's own wording is disclosed is the entity page, which
+    is what the settled decision says and where there is room for the sentence.
+    """
+    events = [
+        ingested(DEVICE, "a3f91c", ts=on_day(1)),
+        *_script("med:perindopril-arginine", "5mg daily", "a3f91c", 2,
+                 name="Perindopril Arginine"),
+        *_script("med:perindopril", "5mg daily", "a3f91c", 3, name="Perindopril"),
+    ]
+    result = _project(events)
+
+    rows = [row for row in result.rows if row.subject_id]
+    assert rows, "no claim rows were built"
+
+    # Every row points at an entity that exists, so every link resolves.
+    for row in rows:
+        assert row.subject_id in result.entities, (
+            f"a timeline row is filed under {row.subject_id}, which has no page"
+        )
+
+    # And the salt spelling is not presented as a second drug.
+    med_rows = [row for row in rows if row.subject_id == "med:perindopril"]
+    assert len(med_rows) == 2, "the two readings did not land on one entity"
+    for row in med_rows:
+        assert "perindopril-arginine" not in row.text
+        assert row.text.startswith("Perindopril —")
+
+
+def test_the_label_wording_is_still_disclosed_on_the_entity_page():
+    """Moving the timeline to the base name must not lose the disclosure."""
+    events = [
+        ingested(DEVICE, "a3f91c", ts=on_day(1)),
+        *_script("med:levothyroxine-sodium", "50mcg daily", "a3f91c", 2,
+                 name="Levothyroxine Sodium"),
+    ]
+    result = _project(events)
+    page = _page(result, "med:levothyroxine")
+
+    # Frontmatter is the machine-readable canonical state, so the disclosure
+    # lives there whether or not the body has a sentence's worth of context.
+    assert "also_labelled: [Levothyroxine Sodium]" in page
+    assert "id: med:levothyroxine" in page

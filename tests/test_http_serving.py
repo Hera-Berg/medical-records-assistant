@@ -85,9 +85,9 @@ def test_a_vault_with_no_endpoint_still_serves(client):
     assert response.status_code == 202
 
 
-def test_an_unbuilt_spa_explains_itself(client, monkeypatch):
+def test_an_unbuilt_spa_explains_itself(client, monkeypatch, tmp_path):
     """A 404 at the root of an app that started fine is the least useful answer."""
-    monkeypatch.setattr(static, "static_dir", lambda: static.static_dir() / "absent")
+    monkeypatch.setattr(static, "static_dir", lambda: tmp_path / "never-built")
     response = client.get("/")
     assert response.status_code == 503
     assert "has not been built" in response.text
@@ -114,6 +114,71 @@ def test_build_info_says_which_frontend_commit_the_bundle_came_from(client):
     """A committed build can drift from its source. That has to be detectable."""
     body = client.get("/api/build").json()
     assert set(body) >= {"present", "commit", "built", "source"}
+    # The build is committed, so it is present in a checkout and says where it
+    # came from. A bundle that could not name its commit would make "is this
+    # interface current" unanswerable from a running server.
+    if body["present"]:
+        assert body["commit"], "the bundle does not say which commit built it"
+
+
+def test_the_built_interface_is_committed_to_the_repository():
+    """`pip install -e .` then `health-agent serve` must work with no node.
+
+    The project is meant to be self-hosted by someone who has Python and
+    nothing else, so the build is a committed product artefact rather than a
+    step in the install instructions. This is the test that keeps it that way:
+    if it fails, someone changed the frontend without committing the rebuilt
+    bundle, and a fresh clone would start a server with no page at `/`.
+    """
+    directory = static.static_dir()
+    assert (directory / "index.html").is_file(), (
+        "the built interface is missing. Run `npm --prefix frontend ci && "
+        "npm --prefix frontend run build` and commit the result — a user "
+        "installing this has Python and nothing else."
+    )
+    assert any(directory.glob("assets/*.js")), "the bundle has no script"
+    assert (directory / static.BUILD_INFO_FILENAME).is_file(), (
+        "the bundle does not record which commit built it, so a stale build "
+        "could not be identified from a running server"
+    )
+
+
+def test_the_spa_is_served_with_a_policy_that_blocks_outbound_calls(client):
+    """Invariant 3, enforced in the browser rather than trusted to the bundler.
+
+    ``connect-src 'self'`` is what stops a compromised dependency posting the
+    record somewhere. No telemetry, no analytics, no CDN — and no way for a
+    future dependency to add one without this failing.
+    """
+    response = client.get("/")
+    if response.status_code == 503:
+        pytest.skip("the interface has not been built in this checkout")
+    policy = response.headers["content-security-policy"]
+    assert "connect-src 'self'" in policy
+    assert "default-src 'self'" in policy
+    assert "object-src 'none'" in policy
+    assert "frame-ancestors 'none'" in policy
+
+
+def test_the_built_bundle_reaches_for_nothing_on_the_network(client):
+    """No webfont, no CDN, no source-map host in what actually ships."""
+    response = client.get("/")
+    if response.status_code == 503:
+        pytest.skip("the interface has not been built in this checkout")
+
+    directory = static.static_dir()
+    for path in sorted(directory.rglob("*")):
+        if path.suffix not in (".js", ".css", ".html"):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for marker in (
+            "fonts.googleapis.com",
+            "fonts.gstatic.com",
+            "cdn.jsdelivr.net",
+            "cdnjs.cloudflare.com",
+            "unpkg.com",
+        ):
+            assert marker not in text, f"{path.name} reaches {marker}"
 
 
 def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app):

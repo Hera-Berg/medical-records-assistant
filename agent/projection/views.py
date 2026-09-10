@@ -39,6 +39,15 @@ class MedicationRow:
     stop_reported: str | None
     stop_reported_tier: str | None
     sources: tuple[str, ...]
+    #: Every distinct dose a source states, when they disagree. Empty otherwise.
+    #:
+    #: A conflicted slot has no winner, so ``dose`` above is ``None`` — and a
+    #: medication list that renders that as a blank is telling a reader the dose
+    #: is unknown when in fact two documents state it and disagree. That is the
+    #: silent pick rule 3 forbids, arrived at by omission instead of by choosing.
+    #: Both readings travel with the row so the list can show both, as the
+    #: entity page does.
+    dose_readings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +63,7 @@ class MedicationRow:
             "stop_reported": self.stop_reported,
             "stop_reported_tier": self.stop_reported_tier,
             "sources": list(self.sources),
+            "dose_readings": list(self.dose_readings),
         }
 
 
@@ -72,6 +82,16 @@ def current_medications(entities: Mapping[str, Entity]) -> tuple[MedicationRow, 
             if dose_slot is not None and dose_slot.winner is not None
             else None
         )
+        readings: tuple[str, ...] = ()
+        if dose_slot is not None and dose_slot.is_conflicted:
+            # Ordered by the claim's own sort key, not by value, so the list
+            # reads the same on every machine and does not imply a ranking
+            # between two readings the projection declined to rank.
+            seen: list[str] = []
+            for claim in dose_slot.readings:
+                if claim.value.literal not in seen:
+                    seen.append(claim.value.literal)
+            readings = tuple(seen)
         rows.append(
             MedicationRow(
                 id=entity.id,
@@ -92,6 +112,7 @@ def current_medications(entities: Mapping[str, Entity]) -> tuple[MedicationRow, 
                     entity.stop_report.tier if entity.stop_report is not None else None
                 ),
                 sources=entity.sources,
+                dose_readings=readings,
             )
         )
     return tuple(rows)

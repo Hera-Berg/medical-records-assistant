@@ -53,7 +53,8 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     for item in review:
         by_tier[item.consequence] = by_tier.get(item.consequence, 0) + 1
 
-    problems = _problems(state, snapshot, endpoint, blocked)
+    device = _device(vault)
+    problems = _problems(state, snapshot, endpoint, blocked, device)
 
     return {
         "ok": not problems,
@@ -62,7 +63,7 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
             "writable": vault_mod.is_writable(vault.root),
             "sync_profile": vault.profile.value,
             "demo": vault.is_demo,
-            "device": _device(vault),
+            "device": device,
         },
         "endpoint": endpoint.to_dict(),
         "queue": {
@@ -113,18 +114,29 @@ def _device(vault) -> dict[str, Any]:
     }
 
 
-def _problems(state: RecordState, snapshot, endpoint, blocked: int) -> list[str]:
+def _problems(
+    state: RecordState, snapshot, endpoint, blocked: int, device: dict[str, Any]
+) -> list[str]:
     """Things a person has to act on. Not a list of everything imperfect.
 
     An unreachable box is not a problem: captures queue and drain by themselves,
-    which is the design. A rejected key is, and so is a vault that cannot be
-    written to.
+    which is the design. A rejected key is, and so is anything that stops a
+    capture landing.
     """
     problems: list[str] = []
     if not vault_mod.is_writable(state.vault.root):
         problems.append(
             f"the vault at {state.vault.root} is not writable, so nothing can be "
             f"captured into it"
+        )
+    if not device["appendable"]:
+        # A vault whose directory is writable but whose device identity is
+        # missing or cloned accepts nothing: every capture fails at the append.
+        # Reporting `ok` here would mean finding out in the waiting room, which
+        # is the moment this route exists to spare.
+        problems.append(
+            device["reason"] or "this machine has no usable device identity, so "
+            "nothing can be added to the record"
         )
     if endpoint.state == endpoint_state.UNAUTHORISED or blocked:
         problems.append(endpoint_state.MESSAGES["key-rejected"])
