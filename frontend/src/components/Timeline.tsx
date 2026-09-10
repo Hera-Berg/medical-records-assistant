@@ -184,6 +184,22 @@ export function Timeline({
                       ) : (
                         entry.row.text
                       )}
+                      {/* What happens to this document next. Every artefact row
+                          says it, including "read, and you have decided about
+                          all of it" — a row that goes quiet is indistinguishable
+                          from one nothing has looked at. */}
+                      {entry.row.reading ? (
+                        <span
+                          className={
+                            "mt-0.5 block " +
+                            (entry.row.reading.awaiting > 0
+                              ? "text-[color:var(--color-ink)]"
+                              : "text-[color:var(--color-muted)]")
+                          }
+                        >
+                          {entry.row.reading.text}
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       <Cite citation={entry.row.citation} navigate={navigate} />

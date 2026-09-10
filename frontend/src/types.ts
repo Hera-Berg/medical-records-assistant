@@ -154,6 +154,8 @@ export interface TimelineRow {
   heading: string;
   month: string;
   citation: Citation;
+  /** Present on artefact rows only. A claim is not waiting to be read. */
+  reading: Reading | null;
 }
 
 export interface MedicationRow {
@@ -269,6 +271,27 @@ export interface Transcript {
   supersedes: string | null;
 }
 
+/**
+ * Where an artefact has got to, and what happens to it next.
+ *
+ * `text` is what a screen shows and may carry a live reason — "the computer
+ * that reads your files is asleep". `recorded_text` is the shorter sentence
+ * written into `wiki/`, which cannot mention the queue: the queue is a
+ * disposable cache and a generated file that named it would stop rebuilding to
+ * the same bytes. Both are carried so the two can be seen to agree.
+ */
+export interface Reading {
+  state: "not-read" | "transcribed" | "read" | "nothing-found" | "unreadable";
+  text: string;
+  recorded_text: string;
+  claims: number;
+  awaiting: number;
+  finished: boolean;
+  /** True where nothing in this build will read it further. Phase 6: transcripts. */
+  deferred: boolean;
+  job?: string | null;
+}
+
 /** Where an artefact has got to in the queue. Null once nothing is tracking it. */
 export interface JobState {
   state: string;
@@ -297,6 +320,7 @@ export interface ArtifactMeta {
   transcript: Transcript | null;
   is_recording: boolean;
   job: JobState | null;
+  reading: Reading;
 }
 
 /** One storage-profile option, with what choosing it would actually change. */

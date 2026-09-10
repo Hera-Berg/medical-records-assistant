@@ -30,7 +30,9 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ...ingest import mime as mime_mod
 from ...ingest import sidecar as sidecar_mod
-from .. import lookup, serialise, serving
+from ...projection import reading as projection_reading
+from ...projection.reading import index as reading_mod_index
+from .. import lookup, reading as live_reading, serialise, serving
 from ..deps import get_index, get_state
 from ..index import Index
 from ..lookup import ArtifactAmbiguous, ArtifactNotFound
@@ -138,11 +140,25 @@ def artifact_meta(
     # Where this artefact has got to in the queue. Reported so a screen can say
     # "being typed up" and "could not be typed up — ffmpeg is not installed" as
     # different things, rather than showing an empty transcript for both.
-    job = state.queue().for_artifact(short)
+    queue = state.queue()
+    job = queue.for_artifact(short)
     extra["job"] = (
         {"state": job.state, "reason": job.reason, "attempts": job.attempts}
         if job is not None
         else None
+    )
+    # And what happens to it next, in a sentence. The same sentence the timeline
+    # row carries and — minus the live reason — the same one written into the
+    # wiki, so a document does not describe its own state three different ways
+    # in three places.
+    readings = reading_mod_index(
+        snapshot.events, snapshot.artifacts, snapshot.projection.artifacts
+    )
+    extra["reading"] = live_reading.describe(
+        readings.get(short) or projection_reading.Reading(short),
+        queue,
+        state.endpoint,
+        located.artifact.mime,
     )
     return serialise.artifact_summary(located.artifact, extra)
 

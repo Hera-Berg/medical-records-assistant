@@ -92,6 +92,8 @@ export function Artifact({
 
       {meta.is_recording ? <Spoken meta={meta} /> : null}
 
+      <WhatNext meta={meta} />
+
       <Heading>What the record knows about this file</Heading>
       <dl className="grid grid-cols-[14rem_1fr] gap-x-4 gap-y-1">
         <Row label="Added to the record" value={longStamp(meta.ingested_ts)} />
@@ -126,6 +128,58 @@ export function Artifact({
 }
 
 /**
+ * What happens to this document next.
+ *
+ * The one section that has to be here whatever state the artefact is in, and
+ * the reason it exists is that the silence was being read as completion:
+ * a document sitting in a queue behind nine others, or a transcript nothing in
+ * this build will read for medications, both looked exactly like a document
+ * that had been dealt with.
+ *
+ * The sentence is the server's, not this screen's. The same words appear on the
+ * timeline row, and — minus the part about the queue, which is a cache and
+ * cannot be written down — in `wiki/`. One document describing its own state
+ * three different ways in three places is how a reader stops trusting any of
+ * them.
+ */
+function WhatNext({ meta }: { meta: ArtifactMeta }) {
+  const reading = meta.reading;
+  if (!reading) return null;
+  const wanted = reading.awaiting > 0 || reading.deferred;
+  return (
+    <>
+      <Heading>What happens to this next</Heading>
+      <p className={"mt-1 " + (wanted ? "" : "text-[color:var(--color-muted)]")}>
+        {reading.text}
+      </p>
+      {/* The short sentence above is what the timeline has room for. This is
+          the page someone opened deliberately to find out more, so the
+          reassurance that belongs with each state lives here. */}
+      {reading.deferred ? (
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          Your medication list has not changed because of this. The recording and
+          what it says are both kept, and both can be quoted. Reading a transcript
+          for medications, doses and allergies is the next piece of work; when it
+          arrives this recording will be read then, and nothing needs saying again.
+        </p>
+      ) : null}
+      {reading.state === "not-read" ? (
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          It is stored in your folder either way, and nothing is lost while it
+          waits.
+        </p>
+      ) : null}
+      {reading.awaiting > 0 ? (
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          Nothing from it has been added to your record yet. A medication, a dose or
+          an allergy never is without you tapping to say so.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * What a recording said, and when in it each word was said.
  *
  * The player is directly above this, so a segment's timestamp is something a
@@ -142,21 +196,9 @@ export function Artifact({
 function Spoken({ meta }: { meta: ArtifactMeta }) {
   const transcript = meta.transcript;
 
-  if (!transcript) {
-    const failed =
-      meta.job &&
-      (meta.job.state === "unreadable" || meta.job.state === "needs-attention");
-    return (
-      <>
-        <Heading>What was said</Heading>
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          {failed
-            ? `This has not been written down: ${meta.job?.reason ?? "the speech model did not run"}. The recording itself is safe and is not affected.`
-            : "This has not been written down yet. It is done on this computer and needs no internet connection."}
-        </p>
-      </>
-    );
-  }
+  // Nothing here when there is no transcript: the section below says why, and
+  // an empty "What was said" above an explanation reads as a failed heading.
+  if (!transcript) return null;
 
   const jump = (seconds: number) => {
     const player = document.querySelector("audio, video") as HTMLMediaElement | null;

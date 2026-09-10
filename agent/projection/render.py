@@ -78,17 +78,30 @@ class Sentence:
 
     def body(self) -> str:
         """The prose, terminated, with no markers."""
-        text = self.text
-        terminal = text.rstrip(_CLOSERS)
-        if not terminal or terminal[-1] not in _SENTENCE_END:
-            text += "."
-        return text
+        return terminate(self.text)
 
     def markers(self, exclude: Container[str] = ()) -> str:
         return "".join(f"[^{key}]" for key in self.keys if key not in exclude)
 
     def render(self) -> str:
         return self.body() + self.markers()
+
+
+def terminate(text: str) -> str:
+    """*text* with a full stop, unless it already ends in one.
+
+    Looks *through* a closing quote for the terminator, so a sentence ending in
+    a quotation is not given a second stop outside it — ``changed.".`` is the
+    kind of thing a reader notices immediately and no assertion was ever going
+    to catch. Exported because two sentences are sometimes joined into one
+    bullet, and the first of them has to be finished before the second starts.
+    """
+    if not text:
+        return text
+    terminal = text.rstrip(_CLOSERS)
+    if not terminal or terminal[-1] not in _SENTENCE_END:
+        return text + "."
+    return text
 
 
 def _paragraph_line(sentences: Sequence[Sentence]) -> str:

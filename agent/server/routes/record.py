@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...projection import subjects
 from ...projection.timeline import by_month
-from .. import serialise
+from .. import reading as reading_mod, serialise
 from ..deps import get_index, get_state
 from ..index import Index, in_range
 from ..state import RecordState
@@ -53,6 +53,10 @@ def timeline(
     """
     snapshot = state.snapshot()
     rows = snapshot.projection.rows
+    # Computed once for the page rather than per row: the queue is one file
+    # read, and reading it forty times to render forty rows would put a stat
+    # storm on the screen someone opens most.
+    live = reading_mod.index(snapshot, state.queue(), state.endpoint)
 
     keys = None
     if index.ensure(snapshot):
@@ -76,7 +80,9 @@ def timeline(
         "total": len(selected),
         "offset": offset,
         "limit": limit,
-        "rows": [serialise.timeline_row(row, snapshot.citer) for row in window],
+        "rows": [
+            serialise.timeline_row(row, snapshot.citer, live) for row in window
+        ],
         "months": sorted(by_month(selected), reverse=True),
         "as_of": snapshot.built_ts,
     }

@@ -18,7 +18,7 @@ from . import dates, entities as entities_mod, reconcile, timeline as timeline_m
 from .citations import Citation, Citer
 from .entities import Entity
 from .reconcile import Slot
-from .render import Document, Sentence
+from .render import Document, Sentence, terminate
 
 #: Frontmatter keys the page writes itself. A predicate sharing one of these
 #: names is rendered in the body only: the dedicated field is the normalised,
@@ -678,7 +678,20 @@ def timeline_page(month: str, rows: Sequence[timeline_mod.Row], citer: Citer) ->
             document.heading(row.heading, level=2)
             current_heading = row.heading
         citation = citer.cite(row.cite, row.cite_description)
-        document.bullet(Sentence(f"**{row.marker}** — {row.text}", [citation]))
+        # The second sentence says where the artefact has got to, and it is
+        # written into the file rather than only onto a screen: someone reading
+        # the folder in five years has to be able to tell a document that was
+        # read from one that was merely filed. It says *what*, never *why* — the
+        # reason lives in a queue that is a disposable cache, and putting it
+        # here would break the byte-identical rebuild the moment that cache is
+        # deleted. See agent/projection/reading.py.
+        line = f"**{row.marker}** — {row.text}"
+        if row.reading_text:
+            # The first sentence is finished before the second begins. A
+            # transcript that ends in a closing quote leaves the two running
+            # together otherwise: `"...tablets changed." Transcripts aren't`.
+            line = f"{terminate(line)} {row.reading_text}"
+        document.bullet(Sentence(line, [citation]))
     return document.render()
 
 

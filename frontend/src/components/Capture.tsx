@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import * as outbox from "../outbox";
 import type { Outgoing } from "../outbox";
+import { Link } from "../router";
 import type { ArtifactMeta, CaptureResult } from "../types";
 import { Recorder } from "./Recorder";
 
@@ -223,9 +224,11 @@ export function DropOverlay() {
 export function CapturePanel({
   capture,
   onCaptured,
+  navigate,
 }: {
   capture: ReturnType<typeof useCapture>;
   onCaptured: () => void;
+  navigate: (to: string) => void;
 }) {
   const [text, setText] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -287,7 +290,7 @@ export function CapturePanel({
             came back from the microphone belongs beside the microphone; two
             sections further down it reads as being about something else. */}
         {recordings.map((result) => (
-          <Transcribing key={result.short} short={result.short!} />
+          <Transcribing key={result.short} short={result.short!} navigate={navigate} />
         ))}
       </div>
 
@@ -324,14 +327,26 @@ export function CapturePanel({
 }
 
 /**
- * What became of a recording that was just sent.
+ * What became of a recording that was just sent, and what happens to it next.
  *
- * Three states, kept apart because they call for different things from the
- * person reading: it is being typed up, here is what it said, or it could not
- * be typed up and here is why. A blank where a transcript should be is the one
- * outcome that says none of those.
+ * The second half is the point. The first version of this went quiet the moment
+ * a transcript arrived — the words appeared and nothing said what would become
+ * of them, which reads as either "done" or "broken" depending on the reader,
+ * and is neither. Nothing in this build reads a transcript for medications, and
+ * a record that does not say so has quietly let someone believe they just told
+ * it about a dose change.
+ *
+ * The sentence comes from the server, so it is the same sentence the timeline
+ * row and the artefact page show and — minus the live reason — the same one
+ * written into `wiki/`.
  */
-function Transcribing({ short }: { short: string }) {
+function Transcribing({
+  short,
+  navigate,
+}: {
+  short: string;
+  navigate: (to: string) => void;
+}) {
   const [meta, setMeta] = useState<ArtifactMeta | null>(null);
   const [gaveUp, setGaveUp] = useState(false);
 
@@ -344,10 +359,14 @@ function Transcribing({ short }: { short: string }) {
         .then((result) => {
           if (!live) return;
           setMeta(result);
+          // Stop asking once the answer cannot change without something else
+          // happening: a transcript arrived, or the job is terminal.
           const settled =
             result.transcript !== null ||
-            (result.job !== null && result.job.state === "unreadable") ||
-            (result.job !== null && result.job.state === "needs-attention");
+            (result.job !== null &&
+              ["unreadable", "needs-attention", "blocked-auth"].includes(
+                result.job.state,
+              ));
           if (settled) window.clearInterval(timer);
           else if (Date.now() - began > TRANSCRIPT_GIVE_UP_MS) {
             setGaveUp(true);
@@ -367,43 +386,49 @@ function Transcribing({ short }: { short: string }) {
   if (!meta) return null;
 
   const transcript = meta.transcript;
-  const failed =
-    meta.job && (meta.job.state === "unreadable" || meta.job.state === "needs-attention");
 
   return (
     <div className="mt-6 border-t border-[color:var(--color-rule)] pt-4">
       <h2 className="text-lg font-semibold">What you just said</h2>
+
       {transcript ? (
         <>
-          <p className="mt-1">{transcript.text || "There was no speech in that recording."}</p>
-          <p className="mt-1 text-[color:var(--color-muted)]">
-            Written down on this computer. The recording itself is kept and is not
-            replaced by this.{" "}
-            {transcript.dropped > 0
-              ? `${transcript.dropped} part${transcript.dropped === 1 ? "" : "s"} of it were
-                 left out because they were not speech.`
-              : null}
+          <p className="mt-1">
+            {transcript.text || "There was no speech in that recording."}
           </p>
+          {transcript.dropped > 0 ? (
+            <p className="mt-1 text-[color:var(--color-muted)]">
+              {transcript.dropped} part{transcript.dropped === 1 ? "" : "s"} of it{" "}
+              {transcript.dropped === 1 ? "was" : "were"} left out because{" "}
+              {transcript.dropped === 1 ? "it was" : "they were"} not speech.
+            </p>
+          ) : null}
         </>
-      ) : failed ? (
-        <p className="mt-1 text-[color:var(--color-warn)]">
-          This could not be written down: {meta.job?.reason ?? "the speech model did not run"}.
-          The recording itself is safe in your folder.
-        </p>
-      ) : gaveUp ? (
+      ) : null}
+
+      {/* Always. Whether the words are here yet or not, the record says what
+          happens to them — the state this component exists to stop being
+          silent about. */}
+      <p className="mt-1">{gaveUp ? STILL_GOING : meta.reading.text}</p>
+
+      {meta.reading.deferred ? (
         <p className="mt-1 text-[color:var(--color-muted)]">
-          Still being written down. It is safe in your folder; this page has stopped
-          checking, and the timeline will show it when it is done.
+          Your medication list has not changed. The recording and these words are both
+          kept, and this page will read them for medications when that is built —
+          you will not need to say it again.{" "}
+          <Link to={`/artifact/${short}`} navigate={navigate}>
+            See this recording on its own page
+          </Link>
+          .
         </p>
-      ) : (
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          Being written down on this computer. This takes a few seconds and does not
-          need the internet.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }
+
+const STILL_GOING =
+  "Still being written down. It is safe in your folder; this page has stopped " +
+  "checking, and the timeline will show it when it is done.";
 
 export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCapture> }) {
   if (capture.pending.length === 0 && capture.recent.length === 0) return null;

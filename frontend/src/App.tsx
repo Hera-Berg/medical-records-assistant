@@ -123,7 +123,9 @@ export function App() {
       />
     );
   } else if (first === "add") {
-    screen = <CapturePanel capture={capture} onCaptured={refresh} />;
+    screen = (
+      <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} />
+    );
   } else if (first === "settings") {
     screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
   } else {

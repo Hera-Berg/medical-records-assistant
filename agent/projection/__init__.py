@@ -139,7 +139,11 @@ def project(events: Iterable[Event], as_of: datetime | str | None = None) -> Pro
     citer = citations_mod.Citer(artifacts, events)
 
     names = {subject_id: entity.name for subject_id, entity in entities.items()}
-    rows = timeline.build(events, reconciliation, names)
+    # The artefact index is passed in rather than rebuilt: the timeline needs it
+    # to know which rows are recordings, and indexing the log twice for one
+    # answer is the kind of thing that is cheap until a lifetime record makes it
+    # not.
+    rows = timeline.build(events, reconciliation, names, artifacts)
 
     files: dict[str, bytes] = {}
     for subject_id in sorted(entities):

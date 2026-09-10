@@ -188,7 +188,9 @@ def review_item(item: ReviewItem, citer: Citer) -> dict[str, Any]:
     }
 
 
-def timeline_row(row: Row, citer: Citer) -> dict[str, Any]:
+def timeline_row(
+    row: Row, citer: Citer, live: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """One timeline line, saying which of the four dates placed it.
 
     ``date_kind`` and its label travel together so the client cannot render a
@@ -207,6 +209,12 @@ def timeline_row(row: Row, citer: Citer) -> dict[str, Any]:
         "heading": row.heading,
         "month": row.month,
         "citation": citation(citer, row.cite, row.cite_description),
+        # Present on artefact rows, null on the rest. `text` here carries the
+        # live reason — "the box is asleep" — while the same row in wiki/ says
+        # only "Not read yet": the reason comes from a queue that is a cache,
+        # and a file that recorded it would be asserting for ever that a Mac was
+        # asleep one afternoon.
+        "reading": (live or {}).get(row.cite) if row.reading else None,
     }
 
 

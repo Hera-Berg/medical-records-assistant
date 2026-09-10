@@ -38,6 +38,12 @@ ORIGIN = "http://127.0.0.1:7777"
 DESKTOP = {"width": 1100, "height": 900}
 PHONE = {"width": 390, "height": 844}
 
+#: What the page says once a transcript has landed. It is the phase 6 deferral
+#: rather than anything about the transcript itself, because that sentence is
+#: the one thing shown in every finished state — including a recording that
+#: turned out to hold no speech.
+TYPED_UP = "Transcripts aren\u2019t read for medications yet."
+
 #: Chromium's fake microphone plays a file instead of capturing silence, which
 #: is what makes a real transcript come back at the end of a real recording.
 FAKE_AUDIO = [
@@ -213,13 +219,13 @@ def main() -> int:
                     shoot(page, out, "06-being-written-down")
                     caught = True
                     break
-                if page.get_by_text("Written down on this computer").count():
+                if page.get_by_text(TYPED_UP).count():
                     break
                 page.wait_for_timeout(80)
             if not caught:
                 print("  (the waiting state passed too quickly to photograph)")
 
-            page.wait_for_selector("text=Written down on this computer", timeout=180000)
+            page.wait_for_selector(f"text={TYPED_UP}", timeout=180000)
             shoot(page, out, "06b-typed-up")
 
             page.goto(f"{args.origin}/")

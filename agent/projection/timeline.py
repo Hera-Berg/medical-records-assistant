@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, parse_ts_or_none
-from . import citations, dates
+from . import citations, dates, reading as reading_mod
 from .claims import Claim
 from .dates import FuzzyDate
 from .reconcile import Reconciliation
@@ -75,6 +75,12 @@ class Row:
     #: as "Your correction" on the medication page and as "Note recorded" on the
     #: timeline is one act of the user's wearing two names.
     cite_description: str = "Note recorded"
+    #: For an artefact row: where that artefact has got to, and the sentence
+    #: saying so. Empty on every other row — a claim is not waiting to be read,
+    #: it has been read. See :mod:`agent.projection.reading` for why the
+    #: sentence stops short of saying *why* something is still waiting.
+    reading: str = ""
+    reading_text: str = ""
 
     @property
     def month(self) -> str:
@@ -179,9 +185,13 @@ def build(
     events: Iterable[Event],
     reconciliation: Reconciliation,
     entity_names: Mapping[str, str],
+    artifacts: Mapping[str, Any] | None = None,
 ) -> tuple[Row, ...]:
     """Every timeline row, from artefacts, notes and the claims that were admitted."""
     rows: list[Row] = []
+    events = list(events)
+    known = artifacts if artifacts is not None else citations.index_artifacts(events)
+    readings = reading_mod.index(events, known, reconciliation.artifacts)
 
     admitted: dict[str, Claim] = {}
     # Which entity each claim was actually filed under. A salt variant is
@@ -218,6 +228,7 @@ def build(
                 continue
             noun = citations.artifact_noun(mime, _capture_source(event))
             said = spoken.get(short, "").strip()
+            state = readings.get(short) or reading_mod.Reading(short)
             rows.append(
                 Row(
                     date=placed[0],
@@ -235,6 +246,14 @@ def build(
                     cite=short,
                     event_id=event.id,
                     sort_key=event.sort_key,
+                    reading=state.state,
+                    # Always said, including when the answer is "read, and you
+                    # have decided about all of it". A row that goes quiet is
+                    # indistinguishable from one nothing has looked at, and the
+                    # folder has to be readable with the app gone: "this
+                    # photograph was read and two things came out of it" is not
+                    # recoverable from silence.
+                    reading_text=state.sentence(),
                 )
             )
         elif event.type == "note.recorded":
