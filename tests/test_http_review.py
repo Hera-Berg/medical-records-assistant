@@ -340,3 +340,62 @@ def test_a_withdrawal_can_be_confirmed_again(vault, client):
 
     assert _find(client, "problem:migraine") is None
     assert client.get("/api/wiki/problem:migraine").status_code == 200
+
+
+# --- every kind has somewhere to go ----------------------------------------
+
+
+def test_every_review_kind_the_projection_can_raise_can_be_rendered():
+    """A queue item no screen accounts for is a user act with nowhere to be seen.
+
+    The projection is where review kinds are invented, and it is a long way from
+    the screen that draws them. This is the wire between the two: add a kind
+    there without deciding what may be done to it here, and this fails rather
+    than the item quietly arriving in an inbox that has no buttons for it.
+
+    ``merge-proposed`` is deliberately present with no actions. Nothing emits it
+    — fuzzy semantic merging stays off, and the salt table handles the
+    deterministic case without a tap — but the queue counts it, the entity page
+    renders it, and the inbox lists it, so the day something does emit one it is
+    visible rather than dropped.
+    """
+    from agent.projection import entities as entities_mod
+    from agent.server import review as review_mod
+    from agent.server.routes import review as review_route
+
+    raised = {
+        reconcile.AWAITING,
+        reconcile.STOP_PROPOSED,
+        reconcile.DATEABLE,
+        reconcile.WITHDRAWN,
+        reconcile.MERGE_PROPOSED,
+        entities_mod.STOP_REPORTED,
+        "conflict",
+        "contradiction",
+    }
+
+    assert raised <= set(review_mod.BY_KIND)
+    assert raised <= review_route.RENDERED_KINDS
+    assert review_mod.BY_KIND[reconcile.MERGE_PROPOSED] == ()
+
+    # And no kind offers an action the route cannot carry out.
+    for kind, actions in review_mod.BY_KIND.items():
+        assert set(actions) <= review_mod.ACTIONS, kind
+
+
+def test_a_stop_is_never_reachable_through_the_generic_confirm(vault, client):
+    """Belt and braces on the one refusal that protects a medication.
+
+    Asserted against the table rather than through a request, because the table
+    is what a future kind would be added to: a stop kind that acquired
+    ``confirm`` would pass every behavioural test in this file by simply
+    working.
+    """
+    from agent.server import review as review_mod
+
+    assert review_mod.CONFIRM not in review_mod.BY_KIND[reconcile.STOP_PROPOSED]
+    assert review_mod.CONFIRM_STOP in review_mod.BY_KIND[reconcile.STOP_PROPOSED]
+    # And the reverse: nothing that is not a stop offers the stop action.
+    for kind, actions in review_mod.BY_KIND.items():
+        if kind != reconcile.STOP_PROPOSED:
+            assert review_mod.CONFIRM_STOP not in actions, kind
