@@ -24,7 +24,7 @@ to ``.agent/jobs.jsonl`` whether or not the endpoint answers.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -43,7 +43,15 @@ from ..ingest.mime import is_speech
 from ..llm import redaction
 from ..llm.client import Client, parse_json_content
 from ..projection import citations as citations_mod
-from . import crossverify, images, jobs as jobs_mod, prompts as prompts_mod, propose, text
+from . import (
+    crossverify,
+    images,
+    jobs as jobs_mod,
+    prompts as prompts_mod,
+    propose,
+    text,
+    transcripts as transcripts_mod,
+)
 from .schema import EXTRACTION_SCHEMA, SCHEMA_NAME
 from .validate import Extraction, merge, read as read_answer
 
@@ -64,6 +72,10 @@ READ_NOTHING = "nothing-clinical"
 READ_REFUSED = "output-refused"
 READ_UNREADABLE = "page-unreadable"
 READ_ALREADY = "already-read"
+#: A recording that has not been typed up yet. Not a failure of anything: the
+#: speech model runs locally and on its own schedule, and this reader has
+#: nothing to read until it has.
+READ_UNTRANSCRIBED = "not-typed-up"
 
 
 @dataclass(frozen=True)
@@ -178,6 +190,12 @@ class Extractor:
                 ),
             )
 
+        if is_speech(artifact.mime):
+            # A recording is read from its transcript, not from its bytes. The
+            # audio never goes over the wire: the local speech model already
+            # turned it into words, and words are what this model reads.
+            return self._run_transcript(short, artifact, log_events)
+
         path = self._path(artifact)
         if path is None or not path.exists():
             return Outcome(
@@ -280,6 +298,133 @@ class Extractor:
             reading=reading,
         )
 
+    def _run_transcript(
+        self,
+        short: str,
+        artifact: citations_mod.Artifact,
+        log_events: Sequence[Event],
+    ) -> Outcome:
+        """Read one recording's transcript as text.
+
+        Deferred out of phase 6 on purpose: capturing and typing up a voice note
+        must work with the box asleep, so the local half stops at the words.
+        Proposing a claim from them is this model reading text and needs the
+        tailnet, which is why it is here and not there.
+
+        Everything a recording says is ``patient-reported``. That is settled
+        three times over — the schema permits no other value, the validator caps
+        by mime, and :func:`agent.extract.transcripts.force_tier` holds anything
+        that still got through. Tier decides ranking, and a voice note that
+        outranked a prescription would quietly beat the script in the wiki.
+        """
+        transcript_event = transcripts_mod.latest(log_events).get(short)
+        if transcript_event is None:
+            return Outcome(
+                short,
+                jobs_mod.NEEDS_ATTENTION,
+                reading=READ_UNTRANSCRIBED,
+                reason=(
+                    f"{short} is a recording that has not been typed up yet. The "
+                    f"speech model runs on this machine and needs no box — run "
+                    f"`health-agent transcribe`, and this reads the words it produces"
+                ),
+            )
+
+        payload = transcripts_mod.transcript_payload(transcript_event) or {}
+        spoken = transcripts_mod.spoken_text(payload)
+        if not spoken:
+            # Silence, or forty seconds of a cough. Nothing was asked of the
+            # model, because there is nothing to ask about — and a hallucinated
+            # segment the speech runner already discarded must not be read back
+            # in here through some other field.
+            return Outcome(
+                short,
+                jobs_mod.DONE,
+                reading=READ_NOTHING,
+                reason=(
+                    "this recording holds no speech, so there was nothing to read "
+                    "and nothing was sent"
+                ),
+            )
+
+        settings = self.client.settings
+        prompt = transcripts_mod.build(spoken)
+        key = propose.Key(
+            artifact=short, prompt_hash=prompt.prompt_hash, model=settings.model
+        )
+        already = propose.completed_keys(log_events)
+        if key.tuple in already:
+            return Outcome(
+                short,
+                jobs_mod.DONE,
+                reading=READ_ALREADY,
+                reason=(
+                    f"these words have already been read by {settings.model} under "
+                    f"prompt {_short_hash(key.prompt_hash)}. Re-transcribing the "
+                    f"recording to different words would read them again; the same "
+                    f"words are the same work"
+                ),
+            )
+
+        completion = self.client.complete(
+            prompt.to_list(),
+            schema=transcripts_mod.TRANSCRIPT_SCHEMA,
+            schema_name=transcripts_mod.SCHEMA_NAME,
+        )
+        extraction = self._read_one(completion, artifact.mime)
+        held, tier_notes = transcripts_mod.force_tier(extraction.claims)
+        if tier_notes:
+            extraction = replace(
+                extraction,
+                claims=tuple(held),
+                notes=extraction.notes + tuple(dict.fromkeys(tier_notes)),
+            )
+
+        words = transcripts_mod.words_of(payload)
+        located = [transcripts_mod.locate(c.source_span, words) for c in extraction.claims]
+        spans = {
+            index: span.to_payload()
+            for index, span in enumerate(located)
+            if span is not None
+        }
+
+        log.info(
+            "read transcript %s: %d claims, %d located in the audio",
+            short,
+            len(extraction.claims),
+            len(spans),
+        )
+
+        proposal = propose.build(
+            device=self.vault.identity.id,
+            key=key,
+            completion=completion,
+            extraction=extraction,
+            prompts_used=[prompt],
+            artifact=artifact,
+            already=already,
+            seen_models=propose.observed_models(log_events),
+            audio_spans=spans,
+            extra={
+                "reader": "transcript",
+                # Which transcript these claims were read from. A better speech
+                # model will produce different words for the same recording, and
+                # "which reading of the audio did this come from" has to stay
+                # answerable across that.
+                "transcript_event": transcript_event.id,
+                "transcript": spoken,
+                "audio": transcripts_mod.describe(words, located),
+            },
+        )
+        return Outcome(
+            short,
+            jobs_mod.DONE if extraction.readable else jobs_mod.UNREADABLE,
+            events=proposal.events,
+            reason=extraction.unreadable_reason,
+            notes=proposal.notes,
+            reading=_reading_of(extraction),
+        )
+
     def _read_one(self, completion, mime: str) -> Extraction:
         """Parse and validate one page's answer. Never repairs, never raises."""
         try:
@@ -359,12 +504,14 @@ def drain(
     wanted = set(only) if only is not None else None
     outcomes: list[Outcome] = []
     appended = 0
-    # One queue, two readers. A recording belongs to the speech drain, which
-    # runs locally and does not need the box, so it is passed over here rather
-    # than reaching the model and coming back as "this is a recording". Skipped
-    # silently, and *not* marked on the job: the other drain still has to pick
-    # it up.
-    artifacts = citations_mod.index_artifacts(list(vault.read().events))
+    # One queue, two readers, and a recording passes through both. Until the
+    # speech model has typed it up there is nothing here to read, so it is
+    # passed over silently and *not* marked on the job — the other drain still
+    # has to pick it up. Once a transcript exists the recording is ordinary work
+    # for this reader, which reads the words rather than the audio.
+    log_events = list(vault.read().events)
+    artifacts = citations_mod.index_artifacts(log_events)
+    transcribed = set(transcripts_mod.latest(log_events))
 
     if queue.is_parked:
         return DrainReport(
@@ -379,7 +526,7 @@ def drain(
         if wanted is not None and job.artifact not in wanted:
             continue
         found = artifacts.get(job.artifact)
-        if found is not None and is_speech(found.mime):
+        if found is not None and is_speech(found.mime) and job.artifact not in transcribed:
             continue
         if limit is not None and len(outcomes) >= limit:
             break
@@ -396,7 +543,7 @@ def drain(
                 artifacts=[
                     short
                     for short in artifacts
-                    if not is_speech(artifacts[short].mime)
+                    if not is_speech(artifacts[short].mime) or short in transcribed
                 ],
             )
             return DrainReport(
@@ -517,7 +664,12 @@ def explain_idle(
     # unread here however many times this runs, so saying "1 artefact has no
     # extraction" about one would send someone to debug the endpoint over a
     # voice note that is waiting for a local model.
-    recordings = [short for short in unread if is_speech(artifacts[short].mime)]
+    typed_up = set(transcripts_mod.latest(list(vault.read().events)))
+    recordings = [
+        short
+        for short in unread
+        if is_speech(artifacts[short].mime) and short not in typed_up
+    ]
     if recordings:
         verb = "is a recording" if len(recordings) == 1 else "are recordings"
         note = (

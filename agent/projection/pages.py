@@ -409,11 +409,11 @@ def _dateable_paragraphs(document: Document, entity: Entity, citer: Citer) -> No
 def _merge_paragraphs(document: Document, entity: Entity, citer: Citer) -> None:
     """Merges proposed against this entity, waiting on a decision.
 
-    Nothing emits :data:`reconcile.MERGE_PROPOSED` yet — a brand-name proposer
-    is phase 7 work, and salt variants are handled by the table without a tap.
-    The branch is here so the page already accounts for the kind: a review item
-    the queue counts and no page renders is a user act with nowhere to be seen,
-    which is the failure rule 3 exists to stop.
+    Nothing emits :data:`reconcile.MERGE_PROPOSED` — salt variants are handled
+    by the table without a tap, and fuzzy semantic merging stays off. The branch
+    is here so the page already accounts for the kind: a review item the queue
+    counts and no page renders is a user act with nowhere to be seen, which is
+    the failure rule 3 exists to stop.
 
     Like a pending change, it states that a decision is waiting and not what the
     decision would do. A merge is an assertion that two entries are one thing,

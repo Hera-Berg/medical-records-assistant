@@ -18,7 +18,9 @@ the next request that wants it.
 Re-extraction (``--reextract`` in ``MODELS.md``, with its diff report of claims
 changed, appeared and vanished) is not here. It re-runs the model over every
 artefact and presents anything touching a confirmed or corrected claim for
-review — which needs the review inbox, and that is phase 7.
+review. The inbox it would present them in now exists; the diff report and the
+re-run do not, and this route deliberately stays a replay of the log rather than
+growing a second meaning.
 """
 
 from __future__ import annotations

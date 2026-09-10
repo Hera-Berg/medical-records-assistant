@@ -88,8 +88,14 @@ def test_an_artefact_nothing_has_read_says_so(vault, recording):
     assert _row_for(vault, recording.short).reading_text == "Not read yet."
 
 
-def test_a_transcript_says_that_nothing_reads_it_for_medications_yet(vault, recording):
-    """The phase 6 deferral, stated where someone who just spoke will read it."""
+def test_a_transcript_says_it_is_still_waiting_to_be_read(vault, recording):
+    """Said where someone who has just spoken into their record will read it.
+
+    Typing up happens on this machine and reading the words needs the box, so
+    this state can last as long as the box is asleep. Someone who has just
+    dictated a dose change would otherwise assume it is already on their
+    medication list.
+    """
     transcriber = speech_mod.Transcriber(
         vault, speech=_speaking("I stopped the sertraline around Easter.")
     )
@@ -100,7 +106,7 @@ def test_a_transcript_says_that_nothing_reads_it_for_medications_yet(vault, reco
 
     assert state.state == reading_mod.TRANSCRIBED
     assert not state.is_finished
-    assert state.sentence() == "Transcripts aren’t read for medications yet."
+    assert state.sentence() == "Typed up — waiting to be read for medications."
 
 
 def test_a_recording_with_no_speech_says_that_instead(vault, recording):
@@ -164,7 +170,7 @@ def test_a_decided_artefact_still_accounts_for_itself(vault):
 
 
 def test_the_sentence_is_terminated_once_after_a_quoted_transcript(vault, recording):
-    """`changed." Transcripts aren't` — two sentences running into each other."""
+    """`changed." Typed up` — two sentences running into each other."""
     for event in speech_mod.Transcriber(
         vault, speech=_speaking("The tablets changed.")
     ).run(recording.short).events:
@@ -174,7 +180,7 @@ def test_the_sentence_is_terminated_once_after_a_quoted_transcript(vault, record
     page = projection.files["wiki/timeline/2026-09.md"].decode("utf-8")
 
     assert "changed.”." not in page
-    assert "changed.” Transcripts" in page
+    assert "changed.” Typed up" in page
 
 
 # --- the line between the two layers ----------------------------------------

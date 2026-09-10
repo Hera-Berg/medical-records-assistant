@@ -11,8 +11,10 @@ the tailnet. Everything that could fail here fails locally and says so.
 
 **It emits no claims.** A transcript is evidence. Reading `40mg daily` out of it
 is the vision-language model's job — it reads text as well as it reads a
-photograph — and that needs the box. See the package docstring: that is phase
-7's, not this one's.
+photograph — and that needs the box, which this half of the pipeline exists to
+do without. What it does instead, once a recording has words in it, is put the
+recording back on the queue for :mod:`agent.extract.transcripts` to read when
+the box is reachable.
 
 Idempotency reuses :class:`agent.extract.propose.Key` unchanged, so
 ``completed_keys`` covers speech without knowing anything about it. The key is
@@ -31,6 +33,7 @@ from typing import Any, Iterable, Sequence
 from ..events import envelope
 from ..events.envelope import Event
 from ..extract import jobs as jobs_mod
+from ..extract import transcripts as transcripts_mod
 from ..extract.propose import EXTRACTION_COMPLETED, Key, completed_keys
 from ..ingest.mime import SPEECH_PREFIXES, is_speech
 from ..projection import citations as citations_mod
@@ -76,24 +79,11 @@ class Outcome:
 def transcript_events(events: Iterable[Event]) -> dict[str, Event]:
     """The newest transcript for each artefact, from the log.
 
-    Newest wins because a forced re-transcription appends a second event with
-    the same key, and the later read is the one the record shows. The earlier
-    one stays in the log — "what did the first read say" has to remain
-    answerable, or a re-transcription becomes unverifiable.
+    One scan, shared with the reader that turns transcripts into claims: two
+    copies would be two ideas of which transcript is current, and the two
+    readers would disagree about what a re-transcription superseded.
     """
-    latest: dict[str, Event] = {}
-    for event in events:
-        if event.type != EXTRACTION_COMPLETED:
-            continue
-        if "transcript" not in event.payload:
-            continue
-        artifact = event.payload.get("artifact")
-        if not isinstance(artifact, str) or not artifact:
-            continue
-        current = latest.get(artifact)
-        if current is None or event.sort_key > current.sort_key:
-            latest[artifact] = event
-    return latest
+    return transcripts_mod.latest(events)
 
 
 def build_event(
@@ -321,6 +311,14 @@ def drain(vault, transcriber: Transcriber, queue: jobs_mod.Queue, moment=None) -
             appended += 1
         if outcome.state == jobs_mod.DONE:
             queue.finished(job, key=transcriber.key_for(job.artifact).as_dict())
+            if outcome.reading == READ_TRANSCRIBED:
+                # Typed up, and now ordinary work for the reader that proposes
+                # claims — which needs the box, so it goes back on the queue
+                # rather than running here. A recording with no speech in it is
+                # deliberately not re-queued: there is nothing to read, and a
+                # job that can only ever come back "nothing found" is inbox debt
+                # in the queue instead of the inbox.
+                queue.add(job.artifact)
         else:
             # `unreadable` rather than a retry: a missing library or a file that
             # will not decode does not become decodable by being tried again in

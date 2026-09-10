@@ -19,9 +19,12 @@ drug name is an unmatched entity, which becomes a duplicate page in the wiki.
 What this package does **not** do is propose claims. A transcript is evidence,
 stored verbatim and cited by the second; turning one into
 ``med:atorvastatin dose 40mg daily`` needs the vision-language model reading it
-as text, which needs the box, which would put a network dependency back into the
-one capture path that must survive its absence. That is phase 7's, and phase 7's
-scope note says so.
+as text, which needs the box, and putting that here would put a network
+dependency back into the one capture path that must survive its absence. That
+reader lives in :mod:`agent.extract.transcripts`, and a recording reaches it by
+being queued again once these words exist — so a voice note recorded on a plane
+becomes claims when the laptop is next on the tailnet, with nothing to remember
+to run.
 
 Four rules this package holds, each from ``MODELS.md``:
 

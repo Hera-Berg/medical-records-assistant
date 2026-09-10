@@ -2,11 +2,11 @@
 
 A record that shows a document and says nothing else about it reads as finished.
 Most of the time it is not: the artefact is queued behind nine others, or the
-box is asleep, or — for a recording — nothing in this build will ever read it
-for medications, because proposing a claim from a transcript is phase 7's. Each
-of those is a normal state and none of them is a failure, but a screen that
-stays silent about them turns "waiting" into "broken" in the reader's head, and
-turns "deferred" into "done".
+box is asleep, or — for a recording — it has been typed up on this machine and
+is waiting for the box to read those words for medications. Each of those is a
+normal state and none of them is a failure, but a screen that stays silent about
+them turns "waiting" into "broken" in the reader's head, and turns "still to
+come" into "done".
 
 So every artefact carries a sentence saying where it has got to.
 
@@ -21,7 +21,7 @@ moment someone empties that folder.
 The split is therefore:
 
 * **Here**, from events: has anything read this, what did it find, and is it a
-  recording whose transcript nothing will read yet. Rendered into ``wiki/``.
+  recording that has been typed up but not yet read. Rendered into ``wiki/``.
 * **In** :mod:`agent.server.reading`, from the live queue and the endpoint: *why*
   something not yet read is not yet read. Shown on screen, never written down.
 
@@ -41,8 +41,9 @@ EXTRACTION_COMPLETED = "extraction.completed"
 
 #: Nothing has read this artefact.
 NOT_READ = "not-read"
-#: A recording that has been typed up. The transcript is evidence and is cited;
-#: nothing reads it for medications yet.
+#: A recording that has been typed up but not yet read for medications. The
+#: transcript is evidence and is cited; the reader that proposes claims from it
+#: runs on the box, so this is where a recording waits when the box is asleep.
 TRANSCRIBED = "transcribed"
 #: Read, and it stated something the record tracks.
 READ = "read"
@@ -74,9 +75,9 @@ class Reading:
     def is_finished(self) -> bool:
         """Whether there is nothing left for this artefact or its owner to do.
 
-        Deliberately false for :data:`TRANSCRIBED`: a deferral is not a
-        conclusion, and a recording that will be read differently in a later
-        version must not look settled now.
+        Deliberately false for :data:`TRANSCRIBED`: the words are in the record
+        but nothing has read them for medications yet, and a recording waiting
+        on the box must not look settled.
         """
         if self.state == NOT_READ:
             return False
@@ -102,10 +103,11 @@ class Reading:
         if self.state == TRANSCRIBED:
             if not self.spoke:
                 return "No speech was found in it."
-            # The phase 6 deferral, said plainly rather than left as silence.
-            # Someone who has just spoken a medication change into their record
-            # will otherwise assume it is now in their medication list.
-            return "Transcripts aren’t read for medications yet."
+            # Said plainly rather than left as silence. Someone who has just
+            # spoken a medication change into their record will otherwise assume
+            # it is already in their medication list — and this state can last a
+            # while, because reading the words needs the box.
+            return "Typed up — waiting to be read for medications."
         if self.state == UNREADABLE:
             return f"Could not be read — {self.reason}" if self.reason else (
                 "Could not be read."

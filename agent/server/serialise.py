@@ -23,8 +23,10 @@ original has vanished is unverifiable.
 **A pending high-consequence value is not sent.** The entity page states that a
 proposed change is waiting and cites its source, without printing the proposed
 value beside the current one, because a value printed next to the current one
-gets read as current. The API mirrors that. The proposed values belong to the
-review inbox, which is phase 7, where the diff is the point of the screen.
+gets read as current. The API mirrors that. The one exception is
+:func:`inbox_item`, which serves the review inbox: there the diff *is* the
+screen, and a queue that asked for a tap without showing what it agrees to would
+be asking someone to sign an unread page.
 
 Values are rendered as the source wrote them. ``Value.literal`` is what goes on
 screen; ``Value.key`` travels with it only so the interface can tell agreement

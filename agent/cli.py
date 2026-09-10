@@ -698,9 +698,20 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
             print(line, file=out)
         return EXIT_OK if report.ok else EXIT_PROBLEMS
 
-    fixtures = corpus.for_phase(4)
+    # Every fixture, recordings included. Their claims were deferred through
+    # phases 6 and 7 while `--speech` scored only their transcripts; the reader
+    # that proposes claims from a transcript exists now, so the hand-written
+    # expected claims on the two voice fixtures are finally compared against
+    # something.
+    fixtures = corpus.for_phase(7)
+    transcriber = speech_mod.Transcriber(vault)
     with session.open_client(vault) as client:
-        report = evaluate_mod.run_corpus(client, fixtures, locale=vault.config.locale)
+        report = evaluate_mod.run_corpus(
+            client,
+            fixtures,
+            locale=vault.config.locale,
+            hotwords=transcriber.hotwords(),
+        )
 
     if args.json:
         json.dump(report.to_dict(), out, indent=2, sort_keys=True)
@@ -709,15 +720,10 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
 
     for line in report.describe():
         print(line, file=out)
-    deferred = [f.name for f in corpus.FIXTURES if f.phase > 4]
+    deferred = [f.name for f in corpus.FIXTURES if f.phase > 7]
     if deferred:
-        # Their audio is real and their transcripts are scored by `eval
-        # --speech`. What is deferred is their *claims*: proposing one from a
-        # transcript is this model reading it as text, and that is phase 7.
         print(
-            f"\nnot run   {', '.join(deferred)} — these are recordings. "
-            f"`health-agent eval --speech` scores their transcripts; proposing "
-            f"claims from a transcript is phase 7",
+            f"\nnot run   {', '.join(deferred)} — no reader for these yet",
             file=out,
         )
     return EXIT_OK if report.ok else EXIT_PROBLEMS

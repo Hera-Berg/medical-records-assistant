@@ -64,11 +64,15 @@ DATEABLE = "dateable"
 
 #: Two entities that may be the same thing — "Panadol" and "paracetamol".
 #:
-#: **Nothing emits this yet.** The salt table handles the deterministic case
-#: without a tap (see `.drugs`), and a brand-name proposer needs an inbox to
-#: render proposals in, which is phase 7. The kind exists now so that phase 7
-#: has somewhere to put one and so the queue, the page and the sort order
-#: already account for it — a review kind added at the same time as its producer
+#: **Nothing emits this.** The salt table handles the deterministic case without
+#: a tap (see `.drugs`), and fuzzy semantic merging stays off — ``MODELS.md``
+#: requires a code-system match or an exact normalised string before the model
+#: is consulted at all, so a brand-name proposer is a piece of work with a
+#: vocabulary behind it rather than a screen.
+#:
+#: The kind exists so that everything downstream already accounts for it: the
+#: queue counts it, the entity page renders it, the inbox lists it and its
+#: actions are enumerated. A review kind added at the same time as its producer
 #: is a review kind nothing downstream was ever checked against.
 MERGE_PROPOSED = "merge-proposed"
 

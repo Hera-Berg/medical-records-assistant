@@ -228,7 +228,10 @@ def test_a_recording_is_typed_up_with_no_endpoint_configured(vault):
     worker.run_once()
 
     assert _transcripts(vault) == ["The headaches have been better."]
-    assert state.queue().for_artifact(recorded.short).state == jobs_mod.DONE
+    # Typed up locally, and queued again for the reader that turns those words
+    # into claims. That second stage needs the box, which this vault has none
+    # of — so it waits, and the recording is safe and readable meanwhile.
+    assert state.queue().for_artifact(recorded.short).state == jobs_mod.QUEUED
     # And the endpoint is still reported honestly: nothing about speech running
     # says anything about the box.
     assert state.endpoint.state == endpoint_state.NOT_CONFIGURED

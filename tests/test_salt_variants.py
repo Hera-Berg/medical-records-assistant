@@ -422,7 +422,7 @@ def test_a_folded_item_is_still_one_line_on_the_entity_page():
 
 
 def test_nothing_emits_a_merge_proposal_yet():
-    """A brand-name proposer is phase 7. The salt table covers the
+    """A brand-name proposer is not built. The salt table covers the
     deterministic case without a tap, which is why this can wait."""
     events = [ingested(DEVICE, "a3f91c")]
     events += _script("med:panadol", "500mg as needed", "a3f91c", 4)

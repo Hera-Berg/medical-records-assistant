@@ -68,7 +68,10 @@ class Fixture:
     document_date: str | None = None
     readable: bool = True
     notes: str = ""
-    #: Phases whose readers this fixture needs. A voice note is phase 6's.
+    #: The earliest phase in which every reader this fixture needs exists. A
+    #: recording needs two: the local speech model that types it up (phase 6)
+    #: and the reader that proposes claims from those words (phase 7), so a
+    #: voice note only scores from 7.
     phase: int = 4
     conflicts_with: str | None = None
     #: Terms that must survive transcription, for a recording. Scored apart
@@ -443,10 +446,12 @@ FIXTURES: tuple[Fixture, ...] = (
             "here is the specific harm the whole system is built to avoid"
         ),
     ),
-    # Phase 6 renders these as real audio and scores the transcript. Their
-    # `expected` **claims** stay deferred: proposing a claim from a transcript
-    # is the vision model reading it as text, which needs the box, and phase 6
-    # is local by design. Phase 7 picks them up.
+    # These render as real audio and go through both readers: the local speech
+    # model types them up, then the box reads the words. Scoring the second
+    # stage against a hand-written transcript would test the reading prompt and
+    # nothing else — a drug name has to survive Whisper *and* the reading, since
+    # a name mangled in the first stage is an unmatched entity in the second and
+    # nothing downstream notices.
     Fixture(
         name="rambling-voice-note",
         mime="audio/webm",
@@ -463,7 +468,7 @@ FIXTURES: tuple[Fixture, ...] = (
             "Nguyen",
         ),
         requires=("espeak-ng", "ffmpeg"),
-        phase=6,
+        phase=7,
         notes=(
             "a vague date and two drug names; the date must stay a phrase. "
             "Unbiased, `small` hears 'search-reline' and 'at-or-vastatin' — "
@@ -479,7 +484,7 @@ FIXTURES: tuple[Fixture, ...] = (
         expected=(),
         transcript_expects=(),
         requires=("ffmpeg",),
-        phase=6,
+        phase=7,
         notes=(
             "expected output: nothing at all. Whisper hallucinates on silence — "
             "'Thank you for watching' — and a hallucinated segment must never "

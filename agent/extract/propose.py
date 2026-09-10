@@ -41,6 +41,18 @@ from .crossverify import Verification
 from .prompts import Prompt
 from .validate import Extraction, ReadClaim
 
+#: Payload fields every extraction event carries, whichever reader wrote it.
+#: A reader's own fields are merged around these rather than over them.
+_RESERVED = frozenset(
+    {
+        "key", "artifact", "raw_output", "model_reported", "sampling",
+        "stripped_reasoning", "latency_s", "usage", "prompt_version",
+        "prompt_hashes", "images", "deterministic_read", "artifact_kind",
+        "readable", "unreadable_reason", "document_date", "claims_proposed",
+        "rejected", "notes",
+    }
+)
+
 EXTRACTION_COMPLETED = "extraction.completed"
 CLAIM_PROPOSED = "claim.proposed"
 MODEL_OBSERVED = "model.identity.observed"
@@ -151,8 +163,15 @@ def extraction_event(
     image_notes: Sequence[Mapping[str, Any]] = (),
     deterministic: Mapping[str, Any] | None = None,
     ts: str | None = None,
+    extra: Mapping[str, Any] | None = None,
 ) -> Event:
-    """The model's answer, stored verbatim, with everything needed to re-derive it."""
+    """The model's answer, stored verbatim, with everything needed to re-derive it.
+
+    *extra* is how a reader records what is particular to it — which transcript
+    a recording was read from, how many of its claims could be located in the
+    audio. It is merged last so a reader cannot quietly redefine the fields
+    every extraction carries.
+    """
     return envelope.new(
         EXTRACTION_COMPLETED,
         device,
@@ -180,6 +199,11 @@ def extraction_event(
             "claims_proposed": len(extraction.claims),
             "rejected": extraction.describe_rejections(),
             "notes": list(extraction.notes),
+            **{
+                name: value
+                for name, value in dict(extra or {}).items()
+                if name not in _RESERVED
+            },
         },
     )
 
@@ -193,6 +217,7 @@ def claim_event(
     verification: Verification | None = None,
     model_rev: str | None = None,
     ts: str | None = None,
+    audio_span: Mapping[str, Any] | None = None,
 ) -> Event:
     """One ``claim.proposed``, with all four timestamps set honestly.
 
@@ -225,6 +250,12 @@ def claim_event(
     }
     if claim.dispense:
         payload["dispense"] = dict(claim.dispense)
+    if audio_span is not None:
+        # The seconds this was said in, when the span could be located in the
+        # transcript's word timings *exactly*. Absent otherwise: a citation
+        # pointing at the wrong four seconds is worse than the recording-level
+        # citation, which is always there and always true.
+        payload["audio_span"] = dict(audio_span)
     if verification is not None:
         payload["cross_check"] = verification.describe()
         if verification.is_contradicted:
@@ -296,6 +327,8 @@ def build(
     deterministic: Mapping[str, Any] | None = None,
     seen_models: set[str] | None = None,
     ts: str | None = None,
+    audio_spans: Mapping[int, Mapping[str, Any]] | None = None,
+    extra: Mapping[str, Any] | None = None,
 ) -> Proposal:
     """Assemble the events for one artefact, or decline because it is already done.
 
@@ -324,6 +357,7 @@ def build(
             image_notes=image_notes,
             deterministic=deterministic,
             ts=ts,
+            extra=extra,
         )
     ]
     if seen_models is not None and completion.model not in seen_models:
@@ -341,6 +375,7 @@ def build(
                 verification=verifications.get(index),
                 model_rev=completion.model,
                 ts=ts,
+                audio_span=(audio_spans or {}).get(index),
             )
         )
 

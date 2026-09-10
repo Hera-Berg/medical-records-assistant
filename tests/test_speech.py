@@ -447,6 +447,28 @@ def test_the_speech_drain_types_up_what_is_waiting(vault, recorded):
     assert [outcome.reading for outcome in report.outcomes] == [
         speech_mod.READ_TRANSCRIBED
     ]
+    # Typed up, and back on the queue for the reader that proposes claims from
+    # the words. A recording passes through both drains: the local one turns it
+    # into text with the box asleep, and the reading one needs the box, so the
+    # handover is a queued job rather than a call from inside this drain.
+    queued = jobs_mod.Queue.open(vault.root / ".agent").for_artifact(recorded.short)
+    assert queued.state == jobs_mod.QUEUED
+
+
+def test_a_silent_recording_is_not_handed_on_to_be_read(vault, recorded):
+    """Nothing was said, so there is nothing for the reader to read.
+
+    Re-queueing it would put a job on the queue that can only ever come back
+    "nothing found" — inbox debt moved into the work queue, where the user
+    cannot even see it to clear it.
+    """
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    extract_runner.enqueue_unread(vault, queue)
+    transcriber = speech_mod.Transcriber(vault, speech=FakeSpeech([]))
+
+    report = speech_mod.drain(vault, transcriber, queue)
+
+    assert [outcome.reading for outcome in report.outcomes] == [speech_mod.READ_NO_SPEECH]
     assert jobs_mod.Queue.open(vault.root / ".agent").for_artifact(
         recorded.short
     ).state == jobs_mod.DONE

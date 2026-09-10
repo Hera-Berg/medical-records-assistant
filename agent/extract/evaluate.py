@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from fractions import Fraction
+from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from ..projection import drugs, subjects, values
@@ -262,16 +263,29 @@ def compare_tiers(remote: Report, fallback: Report) -> list[str]:
 # --- running the corpus ----------------------------------------------------
 
 
-def run_corpus(client, fixtures, locale: str = "en") -> Report:
+def run_corpus(
+    client,
+    fixtures,
+    locale: str = "en",
+    hotwords: Sequence[str] = (),
+    workdir: Path | None = None,
+) -> Report:
     """Read every fixture with *client* and score the result.
 
     Needs the box, so this is never part of the ordinary test suite. It is a
     gate on a model or prompt change — the moment when minutes and a warm GPU
     are worth spending, and the moment a silent recall regression would
     otherwise be accepted.
+
+    Recordings go through both readers, in the order a real capture does: the
+    local speech model types them up, and the box reads the words. Their claims
+    were deferred through phases 6 and 7 with nothing scoring them, which is the
+    condition a golden corpus exists to prevent — two fixtures carrying
+    hand-written expected claims that no run ever compared against.
     """
     from . import images as images_mod  # noqa: PLC0415 - avoids an import cycle
     from . import prompts as prompts_mod
+    from . import transcripts as transcripts_mod
     from .schema import EXTRACTION_SCHEMA, SCHEMA_NAME
     from .validate import merge, read as read_answer
     from ..llm.client import parse_json_content
@@ -282,6 +296,18 @@ def run_corpus(client, fixtures, locale: str = "en") -> Report:
     for fixture in fixtures:
         try:
             data = fixture.bytes()
+            if fixture.mime.startswith("audio/"):
+                results.append(
+                    _score_recording(
+                        client,
+                        fixture,
+                        data,
+                        locale=locale,
+                        hotwords=hotwords,
+                        workdir=workdir,
+                    )
+                )
+                continue
             if fixture.mime == "application/pdf":
                 document = images_mod.prepare_pdf(data, client.settings.long_edge)
             else:
@@ -319,3 +345,60 @@ def run_corpus(client, fixtures, locale: str = "en") -> Report:
         except HealthAgentError as exc:
             results.append(score(fixture, [], error=str(exc)))
     return report(results, model=model)
+
+
+def _score_recording(
+    client,
+    fixture,
+    data: bytes,
+    locale: str,
+    hotwords: Sequence[str],
+    workdir: Path | None,
+) -> FixtureResult:
+    """Type a recording up locally, then read the words with the box.
+
+    Both stages, deliberately. Scoring the transcript prompt against a
+    hand-written transcript would test the prompt and nothing else; what has to
+    hold is that a drug name survives Whisper *and* the reading that follows it,
+    because a name mangled in the first stage is an unmatched entity in the
+    second and there is nothing downstream to notice.
+    """
+    import tempfile  # noqa: PLC0415 - only needed here
+
+    from ..asr import transcribe as transcribe_mod  # noqa: PLC0415
+    from ..errors import HealthAgentError  # noqa: PLC0415
+    from ..llm.client import parse_json_content  # noqa: PLC0415
+    from . import transcripts as transcripts_mod  # noqa: PLC0415
+    from .validate import Extraction, read as read_answer  # noqa: PLC0415
+
+    with tempfile.TemporaryDirectory(prefix="health-agent-eval-audio-") as scratch:
+        audio = Path(workdir or scratch) / f"{fixture.name}.webm"
+        audio.parent.mkdir(parents=True, exist_ok=True)
+        audio.write_bytes(data)
+        transcript = transcribe_mod.transcribe(
+            audio,
+            language=locale,
+            hotwords=tuple(hotwords),
+        )
+
+    if not transcript.is_available:
+        return score(fixture, [], readable=False, error=transcript.unavailable)
+    if not transcript.text.strip():
+        # Silence and a cough. No speech, nothing asked of the box, no claims —
+        # which for that fixture is the expected result rather than a failure.
+        return score(fixture, [], readable=False, error=None)
+
+    prompt = transcripts_mod.build(transcript.text)
+    completion = client.complete(
+        prompt.to_list(),
+        schema=transcripts_mod.TRANSCRIPT_SCHEMA,
+        schema_name=transcripts_mod.SCHEMA_NAME,
+    )
+    try:
+        payload = parse_json_content(completion.content)
+    except HealthAgentError:
+        return score(fixture, [], readable=False, error="not JSON")
+
+    extraction = read_answer(payload, mime=fixture.mime, locale=locale)
+    held, _notes = transcripts_mod.force_tier(extraction.claims)
+    return score(fixture, held, readable=extraction.readable)
