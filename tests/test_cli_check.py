@@ -189,7 +189,10 @@ def test_a_synced_profile_warns_about_shared_storage(vault_root, identity):
     )
     code, report = run_json("--vault", str(vault_root), "check")
     assert code == EXIT_OK
-    assert any("unrevocable" in note for note in report["notes"])
+    # The substance, not the wording: the account reads everything, and a share
+    # cannot be taken back. Phrased for the person reading it, not for a log.
+    assert any("cannot reliably be taken back" in note for note in report["notes"])
+    assert any("Dropbox" in note for note in report["notes"])
 
 
 def test_a_command_is_required():

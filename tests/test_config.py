@@ -116,4 +116,8 @@ def test_only_local_skips_readback_verification():
 
 def test_only_local_has_no_setup_warning():
     assert SyncProfile.LOCAL.setup_warning is None
-    assert "unrevocable" in SyncProfile.DROPBOX.setup_warning
+    warning = SyncProfile.DROPBOX.setup_warning
+    # Both halves of the warning, because either alone is misleading: what the
+    # account can see, and that a share of it cannot be taken back.
+    assert "read all of it" in warning
+    assert "cannot reliably be taken back" in warning
