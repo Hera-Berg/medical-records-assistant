@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import config as config_mod
 from ..events.envelope import Event, format_ts
 from ..events.log import LogRead
 from ..extract import jobs as jobs_mod
@@ -169,6 +170,19 @@ class RecordState:
             as_of=moment,
             built_ts=format_ts(moment),
         )
+
+    def reload_config(self) -> None:
+        """Re-read ``config.toml`` after it was changed on disk.
+
+        The profile it carries decides how the log is appended and how the scan
+        reports forks, so a change to it invalidates the cached projection as
+        surely as an appended event does.
+        """
+        with self.lock:
+            self.vault.config = config_mod.load(
+                self.vault.root / config_mod.CONFIG_FILENAME
+            )
+            self._snapshot = None
 
     # -- the work queue ----------------------------------------------------
 

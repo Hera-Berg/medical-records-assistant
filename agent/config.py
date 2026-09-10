@@ -13,6 +13,7 @@ things that genuinely differ between them.
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -106,14 +107,60 @@ class SyncProfile(Enum):
         return self in (SyncProfile.GDRIVE, SyncProfile.NEXTCLOUD, SyncProfile.OTHER)
 
     @property
+    def label(self) -> str:
+        """The option as a person would say it, not as the file spells it."""
+        return {
+            SyncProfile.LOCAL: "A folder on this computer",
+            SyncProfile.DROPBOX: "Synced by Dropbox",
+            SyncProfile.GDRIVE: "Synced by Google Drive",
+            SyncProfile.NEXTCLOUD: "Synced by Nextcloud",
+            SyncProfile.OTHER: "Synced by another client",
+        }[self]
+
+    @property
+    def effects(self) -> tuple[str, ...]:
+        """What choosing this actually changes, in sentences.
+
+        Written out rather than asserted, because the honest summary of this
+        setting is that it changes very little: an interface that says "this
+        matters" without saying how invites the reader to assume it moves files.
+        """
+        forks = {
+            SyncProfile.DROPBOX: "files named \u201cconflicted copy\u201d",
+            SyncProfile.GDRIVE: "files named \u201c(1)\u201d inside events/",
+            SyncProfile.NEXTCLOUD: "files named \u201c_conflict-\u2026\u201d and \u201cconflicted copy\u201d",
+        }.get(self, "every kind of forked file this app knows about")
+        effects = [f"Watches for {forks} and asks you to merge them."]
+        if self.verify_readback:
+            effects.append(
+                "Reads back each new entry in the log after writing it, because a "
+                "virtual drive can report a write as finished before it is."
+            )
+        else:
+            effects.append("Trusts the filesystem that a write has landed.")
+        if self.may_have_placeholders:
+            effects.append(
+                "Expects files that are listed but not downloaded, and refuses to "
+                "write to one rather than filling it in with the wrong contents."
+            )
+        return tuple(effects)
+
+    @property
     def setup_warning(self) -> str | None:
         if self is SyncProfile.LOCAL:
             return None
+        service = {
+            SyncProfile.DROPBOX: "Dropbox",
+            SyncProfile.GDRIVE: "Google Drive",
+            SyncProfile.NEXTCLOUD: "Nextcloud",
+        }.get(self, "your sync client")
         return (
-            f"vault is on {self.value}: anyone with access to that account can read "
-            f"the whole record, and folder shares are effectively unrevocable. Never "
-            f"put a credential in config.toml, and prefer a signed export over "
-            f"sharing live storage."
+            f"Your whole record is in {service}. Anyone who can get into that "
+            f"account can read all of it \u2014 every document, every note, the "
+            f"lot \u2014 and a shared folder link cannot reliably be taken back "
+            f"once it is out. Never put a password or key in config.toml: that "
+            f"file is inside the folder, so it syncs too. To show the record to "
+            f"someone, send them a summary you have generated, not the folder."
         )
 
 
@@ -237,3 +284,184 @@ def load(path: Path) -> Config:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
     return parse(data, path)
+
+
+# --- writing the one key this program is allowed to write ------------------
+#
+# ``check --fix`` never writes ``config.toml``, on the grounds that a config
+# this program invented is a config nobody has read. That rule is about the app
+# *inventing* settings. This is the opposite: the owner of the record choosing
+# one value deliberately, in an interface that tells them exactly what it means
+# before they choose it. So exactly one key may be written, and it is written by
+# rewriting one line rather than by re-serialising the file.
+#
+# Re-serialising would be the obvious implementation and it would be wrong. This
+# file is hand-written and hand-read: it carries comments explaining what a key
+# is for, the endpoint URL with the note that it must resolve to 100.x, and the
+# warning about never putting a key in it. A round-trip through ``tomllib`` and
+# a writer would silently delete every one of those, and the person who opens
+# the file in five years would find a machine's version of their own config.
+
+#: The assignment, as it appears in a file. The value is a TOML basic or literal
+#: string; anything else never got past :func:`load`.
+_SYNC_PROFILE_LINE = re.compile(
+    r"^(?P<lead>\s*sync_profile\s*=\s*)"
+    r"(?P<value>\"[^\"]*\"|'[^']*')"
+    r"(?P<rest>\s*(?:#.*)?)$"
+)
+_ANY_SYNC_PROFILE = re.compile(r"^\s*sync_profile\s*=")
+_TABLE_HEADER = re.compile(r"^\s*\[")
+
+#: Every conflict pattern, regardless of the configured profile. A profile that
+#: is wrong is one of the reasons a fork exists, so narrowing the patterns by it
+#: would disable the guard exactly when it is needed — the same reasoning that
+#: makes the shard filename grammar, not the profile, decide what the merged
+#: event view contains.
+_ALL_CONFLICT_PATTERNS = (_DROPBOX_CONFLICT, _NEXTCLOUD_CONFLICT, _NUMBERED_COPY)
+
+
+def conflict_forks(path: Path) -> list[Path]:
+    """Sync-client forks of *path* sitting beside it.
+
+    Dropbox writes ``config (Elwood's conflicted copy 2026-09-08).toml``, Google
+    Drive writes ``config (1).toml``, Nextcloud writes
+    ``config_conflict-20260908-141500.toml``. All three mean the same thing: two
+    machines have disagreed about this file and the client has given up merging.
+    """
+    stem = path.name.split(".")[0].lower()
+    found: list[Path] = []
+    try:
+        siblings = sorted(path.parent.iterdir())
+    except OSError:
+        return []
+    for sibling in siblings:
+        if sibling.name == path.name:
+            continue
+        if not sibling.name.lower().startswith(stem):
+            continue
+        try:
+            if not sibling.is_file():
+                continue
+        except OSError:
+            continue
+        if any(pattern.search(sibling.name) for pattern in _ALL_CONFLICT_PATTERNS):
+            found.append(sibling)
+    return found
+
+
+def _rewrite_sync_profile(text: str, profile: SyncProfile) -> str:
+    """Return *text* with ``sync_profile`` set to *profile*, changing nothing else.
+
+    Only the top-level assignment is touched — anything after the first table
+    header belongs to that table, and a ``sync_profile`` key inside one is a
+    different key with the same name.
+    """
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(newline)
+
+    limit = len(lines)
+    for index, line in enumerate(lines):
+        if _TABLE_HEADER.match(line):
+            limit = index
+            break
+
+    assignment = f'sync_profile = "{profile.value}"'
+
+    for index in range(limit):
+        if not _ANY_SYNC_PROFILE.match(lines[index]):
+            continue
+        match = _SYNC_PROFILE_LINE.match(lines[index])
+        if match:
+            # The trailing comment is the one explaining what the options are.
+            # It is the reason this is a line rewrite rather than a file rewrite.
+            lines[index] = (
+                f'{match.group("lead")}"{profile.value}"{match.group("rest")}'
+            )
+        else:
+            lines[index] = assignment
+        return newline.join(lines)
+
+    # Absent. Put it at the end of the top-level keys, before the first table,
+    # rather than at the very top where it would sit above the file's own
+    # explanatory header comment.
+    insert_at = limit
+    while insert_at > 0 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    lines.insert(insert_at, assignment)
+    if insert_at + 1 < len(lines) and _TABLE_HEADER.match(lines[insert_at + 1]):
+        lines.insert(insert_at + 1, "")
+    return newline.join(lines)
+
+
+def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
+    """Write ``sync_profile`` into an existing ``config.toml``. Returns the reload.
+
+    Three guards, in order, because each one protects against a different way
+    of losing the file:
+
+    1. **A sync fork beside it is a refusal.** Writing into a file the sync
+       client is actively forking is how the whole config goes missing: two
+       writers already disagree about its contents, and a third write means the
+       client resolves that disagreement against bytes nobody chose.
+    2. **The write is atomic.** A temporary file in the same directory, then
+       ``os.replace``. A crash mid-write leaves the old file intact rather than
+       a truncated one the server will not start from.
+    3. **The result is re-read and validated, and restored if it fails.** The
+       rewrite is a regex over a hand-edited file; if it produced something
+       ``load`` rejects, the original bytes go back and the caller is told.
+    """
+    if not path.exists():
+        raise ConfigError(
+            f"no {CONFIG_FILENAME} at {path} to change. This program does not "
+            f"invent one: create it first, with the template from `health-agent "
+            f"check`."
+        )
+
+    forks = conflict_forks(path)
+    if forks:
+        names = ", ".join(sorted(fork.name for fork in forks))
+        raise ConfigError(
+            f"{path.name} was not changed: a sync client has forked it and left "
+            f"{names} beside it. Two machines have already disagreed about this "
+            f"file, and writing a third version into it is how the whole "
+            f"configuration goes missing. Merge the fork by hand, delete it, and "
+            f"try again."
+        )
+
+    try:
+        original = path.read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+
+    try:
+        text = original.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{path} is not valid UTF-8: {exc}") from exc
+
+    updated = _rewrite_sync_profile(text, profile)
+    if updated == text:
+        # Already says this. Nothing is written — an unchanged file keeps its
+        # mtime, which is one less thing for the sync client to think about.
+        return load(path)
+
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(updated.encode("utf-8"))
+        os.replace(temporary, path)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise ConfigError(f"cannot write {path}: {exc}") from exc
+
+    try:
+        config = load(path)
+    except ConfigError:
+        path.write_bytes(original)
+        raise
+    if config.sync_profile is not profile:
+        path.write_bytes(original)
+        raise ConfigError(
+            f"{path} was left unchanged: writing sync_profile = "
+            f"{profile.value!r} produced a file that reads back as "
+            f"{config.sync_profile.value!r}. Set it by hand."
+        )
+    return config

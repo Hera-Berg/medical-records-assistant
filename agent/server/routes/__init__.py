@@ -8,6 +8,14 @@ hold, next to the code that holds them.
 
 from __future__ import annotations
 
-from . import artifact, capture, health, rebuild, record
+from . import artifact, capture, files, health, rebuild, record, settings
 
-__all__ = ["artifact", "capture", "health", "rebuild", "record"]
+__all__ = [
+    "artifact",
+    "capture",
+    "files",
+    "health",
+    "rebuild",
+    "record",
+    "settings",
+]
