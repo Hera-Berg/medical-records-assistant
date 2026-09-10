@@ -30,6 +30,7 @@ import { Link, useRoute } from "./router";
 import type { Health } from "./types";
 import { Artifact } from "./components/Artifact";
 import { Attention } from "./components/Attention";
+import { Boundary } from "./components/Boundary";
 import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./components/Capture";
 import { Entity } from "./components/Entity";
 import { Files } from "./components/Files";
@@ -191,7 +192,16 @@ export function App() {
 
           <Attention health={health} error={healthError} />
 
-          <main className="panel">{screen}</main>
+          {/*
+            Per screen, and reset by the route: a screen that cannot draw itself
+            must not blank the rail, the heading and every other screen with it.
+            The built bundle is served from disk while the server holds its own
+            version in memory, so "the page is newer than the program answering
+            it" is an ordinary state here, not a rare one.
+          */}
+          <main className="panel">
+            <Boundary resetKey={route.path}>{screen}</Boundary>
+          </main>
 
           <footer className="mt-5 text-[color:var(--color-muted)] no-print">
             Everything here is a file in{" "}

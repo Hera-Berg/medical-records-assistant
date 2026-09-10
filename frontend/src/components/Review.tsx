@@ -91,7 +91,16 @@ export function Review({
     };
   }, [version]);
 
-  const items = queue ? TIERS.flatMap((tier) => queue.tiers[tier] ?? []) : [];
+  const items = queue ? TIERS.flatMap((tier) => queue.tiers?.[tier] ?? []) : [];
+
+  /*
+    An answer from a server older than this page. The bundle is committed and
+    served from disk, so a process that has been running since before an update
+    serves this screen while answering in the shape it knew — no `actions`, no
+    `id`, nothing to act on. Saying so is better than drawing a queue whose
+    buttons cannot work, and far better than reading a field that is not there.
+  */
+  const stale = queue !== null && (queue.actionable !== true || items.some((item) => !item.id));
 
   const decide = useCallback(
     async (
@@ -135,6 +144,17 @@ export function Review({
 
   if (error && !queue) return <Empty>Could not read the review list: {error}</Empty>;
   if (!queue) return <Empty>Reading what is waiting…</Empty>;
+
+  if (stale) {
+    return (
+      <Empty>
+        This screen is newer than the program answering it, so the {items.length}{" "}
+        {items.length === 1 ? "thing" : "things"} waiting cannot be shown here yet.
+        Nothing is lost. Stop the server and start it again with{" "}
+        <code className="font-mono">health-agent serve</code>, then reload this page.
+      </Empty>
+    );
+  }
 
   return (
     <section>
@@ -185,7 +205,7 @@ export function Review({
           </p>
 
           {TIERS.map((tier) => {
-            const rows = queue.tiers[tier] ?? [];
+            const rows = queue.tiers?.[tier] ?? [];
             if (rows.length === 0) return null;
             const heading = TIER_HEADINGS[tier] ?? { title: tier, blurb: "" };
             return (
@@ -212,7 +232,7 @@ export function Review({
         </>
       )}
 
-      <Anomalies anomalies={queue.anomalies} />
+      <Anomalies anomalies={queue.anomalies ?? { count: 0, items: [] }} />
     </section>
   );
 }
@@ -276,9 +296,9 @@ function Item({
           them here printed "Photograph  Photograph" under two readings that
           came from different photographs.
         */}
-        {item.readings.length > 1
+        {(item.readings ?? []).length > 1
           ? null
-          : item.citations.map((citation) => (
+          : (item.citations ?? []).map((citation) => (
               <Cite key={citation.key} citation={citation} navigate={navigate} />
             ))}
         <Thumbnail item={item} />
@@ -342,16 +362,16 @@ function Body({
     );
   }
 
-  if (item.readings.length > 1) {
+  if ((item.readings ?? []).length > 1) {
     return (
       <div className="mt-1">
         <p>
-          {item.readings.length === 2 ? "Two" : item.readings.length} documents of equal
+          {(item.readings ?? []).length === 2 ? "Two" : (item.readings ?? []).length} documents of equal
           standing disagree, and neither has been chosen. Correct it to say what is right,
           or reject the reading that is wrong — rejecting the item as a whole would take
           out both, along with the evidence that they disagreed.
         </p>
-        {item.readings.map((reading) => (
+        {(item.readings ?? []).map((reading) => (
           <p key={reading.event_id} className="mt-1 flex flex-wrap items-center gap-2">
             <span className="font-semibold">{reading.value.literal}</span>
             <TierMark tier={reading.evidence_tier} />
@@ -432,7 +452,7 @@ function Diff({ item }: { item: InboxItem }) {
           question is *when* — so "confirming adds this document as a source"
           described an action the row does not have.
         */}
-        {unchanged && item.actions.includes("confirm") ? (
+        {unchanged && (item.actions ?? []).includes("confirm") ? (
           <span className="ml-2 font-normal text-[color:var(--color-muted)]">
             the same as what is recorded — confirming adds this document as a source
           </span>
@@ -499,8 +519,8 @@ function DateNote({ item }: { item: InboxItem }) {
  * built to keep level, and the readings each link their own document anyway.
  */
 function Thumbnail({ item }: { item: InboxItem }) {
-  if (item.readings.length > 1 || item.sources_folded > 1) return null;
-  const artifact = item.citations.find((citation) => citation.artifact)?.artifact;
+  if ((item.readings ?? []).length > 1 || item.sources_folded > 1) return null;
+  const artifact = (item.citations ?? []).find((citation) => citation.artifact)?.artifact;
   if (!artifact) return null;
   return (
     <a href={`/artifact/${artifact}`} className="shrink-0">
@@ -534,7 +554,7 @@ function Actions({
   onCorrect: () => void;
   decide: (item: InboxItem, action: string, body?: any) => void;
 }) {
-  if (item.actions.length === 0) {
+  if ((item.actions ?? []).length === 0) {
     return (
       <p className="mt-2 text-[color:var(--color-muted)]">
         There is nothing to decide here yet — this is shown so it is not lost.
@@ -544,11 +564,11 @@ function Actions({
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {item.dateable ? <DateActions item={item} decide={decide} busy={busy} /> : null}
-      {item.actions.map((action) => {
+      {(item.actions ?? []).map((action) => {
         if (action === "date") return null;
         // A conflict's rejections are attached to their readings above: one
         // button here could not say which reading it meant.
-        if (action === "reject" && item.readings.length > 1) return null;
+        if (action === "reject" && (item.readings ?? []).length > 1) return null;
         if (action === "correct") {
           return (
             <button key={action} type="button" className="btn" onClick={onCorrect} disabled={busy}>
@@ -755,13 +775,13 @@ function useKeyboard({
         setCursor((current) => Math.min(current + 1, items.length - 1));
       } else if (event.key === "k") {
         setCursor((current) => Math.max(current - 1, 0));
-      } else if (event.key === "y" && item?.actions.includes("confirm")) {
+      } else if (event.key === "y" && item?.actions?.includes("confirm")) {
         decide(item, "confirm");
-      } else if (event.key === "n" && item?.actions.includes("reject")) {
+      } else if (event.key === "n" && item?.actions?.includes("reject")) {
         // Not offered on a conflict either: rejecting there has to name which
         // reading is wrong, and a keystroke cannot say which.
-        if (item.readings.length <= 1) decide(item, "reject");
-      } else if (event.key === "c" && item?.actions.includes("correct")) {
+        if ((item.readings ?? []).length <= 1) decide(item, "reject");
+      } else if (event.key === "c" && item?.actions?.includes("correct")) {
         // Opens the field; it does not submit anything. Typing a correction is
         // the deliberate act, and this only saves reaching for the mouse first.
         onCorrect(item.id);
