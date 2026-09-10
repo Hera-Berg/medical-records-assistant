@@ -1,21 +1,31 @@
 @import "tailwindcss";
 
 /*
- * A medical record, not a dashboard.
+ * A medical record, not a dashboard — read by someone who is not technical.
  *
- * The constraints, all of which have a reason and none of which is taste:
+ * The look is calm and roomy: an off-white ground, white panels with a hairline
+ * rule, one deep green accent, plain English on every label. What it is not is
+ * decorated. The constraints below all have a reason and none of them is taste.
  *
- * TWO SIZES, TWO WEIGHTS. Density comes from tight leading and small margins,
- * never from small text — this is read at arm's length in bad clinic lighting,
- * and hierarchy bought by shrinking things is hierarchy that disappears first.
+ * TWO WEIGHTS, THREE SIZES. Regular and semibold; body, section heading, page
+ * title. Density comes from tight leading and small margins, never from small
+ * text — this is read at arm's length in bad clinic lighting, and hierarchy
+ * bought by shrinking things is hierarchy that disappears first. The page title
+ * is the only size added for the redesign, and it is a size *up*: nothing on
+ * this page is smaller than it was.
  *
  * COLOUR CARRIES NO MEANING ALONE. Every evidence tier, conflict and staleness
- * state has a text label as well as a colour. The two readers who must both
- * succeed are a colour-blind user and a sheet of paper: the consultation
- * summary is designed to be printed and handed to a clinician, so anything
- * encoded only in hue is gone exactly when it matters most.
+ * state has a word as well as a hue, and the words are the ones a patient would
+ * use — "Prescription", not "RX". The two readers who must both succeed are a
+ * colour-blind user and a sheet of paper: the consultation summary is designed
+ * to be printed and handed to a clinician, so anything encoded only in hue is
+ * gone exactly when it matters most.
  *
  * NO ANIMATION. Nothing may delay reading.
+ *
+ * NO SHADOWS, NO GRADIENTS. Panels are separated by a rule and a change of
+ * ground, which is what a printer can reproduce. Softness comes from space and
+ * corner radius, both of which survive being printed in black and white.
  *
  * SYSTEM FONTS ONLY. A webfont is a network call, and this record makes none.
  */
@@ -28,21 +38,36 @@
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
     monospace;
 
-  /* The whole scale. Adding a third is how a document turns into a dashboard. */
   --text-base: 0.9375rem; /* 15px */
-  --text-base--line-height: 1.35;
-  --text-lg: 1.1875rem; /* 19px */
-  --text-lg--line-height: 1.2;
+  --text-base--line-height: 1.45;
+  --text-lg: 1.1875rem; /* 19px — section headings */
+  --text-lg--line-height: 1.25;
+  --text-xl: 1.5rem; /* 24px — the page title, and nothing else */
+  --text-xl--line-height: 1.2;
 
-  --color-ink: #111111;
-  --color-muted: #565656;
+  --color-ink: #14181a;
+  --color-muted: #5c6360;
   --color-paper: #ffffff;
-  --color-shade: #f4f4f2;
-  --color-rule: #cfcfcb;
-  --color-rule-strong: #8f8f8a;
-  --color-link: #00449e;
+  --color-ground: #f4f5f2;
+  --color-shade: #f0f1ed;
+  --color-rule: #e0e2dc;
+  --color-rule-strong: #b6bab2;
+  --color-link: #14458c;
 
-  /* Tier hues. Always accompanied by the tier's own label — see TierMark. */
+  /* One accent, used for the app's own furniture — never to mark a fact. */
+  --color-accent: #14523c;
+  --color-accent-soft: #e7efea;
+  --color-sidebar: #0f231b;
+  --color-sidebar-ink: #e7ece8;
+  --color-sidebar-muted: #9bb0a4;
+
+  /* Attention, and the softer ground each sits on. Always with a sentence. */
+  --color-alarm: #7f1d1d;
+  --color-alarm-soft: #fbeceb;
+  --color-warn: #6b4a06;
+  --color-warn-soft: #fbf3e2;
+
+  /* Tier hues. Always accompanied by the tier's own word — see TierMark. */
   --color-tier-rx: #14532d;
   --color-tier-lab: #1e3a8a;
   --color-tier-dev: #4a2d7a;
@@ -50,6 +75,8 @@
   --color-tier-inf: #6b1d1d;
   --color-tier-file: #3f3f46;
 }
+
+@layer base {
 
 :root {
   color-scheme: light;
@@ -61,11 +88,11 @@ html {
 
 body {
   margin: 0;
-  background: var(--color-paper);
+  background: var(--color-ground);
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  line-height: 1.35;
+  line-height: 1.45;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -85,10 +112,94 @@ a {
 
 a:focus-visible,
 button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--color-link);
-  outline-offset: 1px;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
+
+}
+
+/* ---------------------------------------------------------------- furniture */
+
+@layer components {
+
+/* A section of the page. A rule and a change of ground, never a drop shadow:
+   the record is printed, and a shadow prints as nothing or as grey mud. */
+.panel {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.panel + .panel {
+  margin-top: 1rem;
+}
+
+/* A word on a tinted ground: evidence tier, status, filter. The word is the
+   meaning; the tint only makes it findable a second time. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  white-space: nowrap;
+}
+
+.btn {
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 0.5rem;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--color-ink);
+}
+
+.btn-primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-paper);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+}
+
+/* Ordered after `.btn-primary` and setting the same three properties, so a
+   disabled primary button stops looking like a live one. Half a green button
+   with grey text reads as "broken", not as "nothing to save yet". */
+.btn[disabled] {
+  border-color: var(--color-rule);
+  background: var(--color-shade);
+  color: var(--color-muted);
+  font-weight: 400;
+  cursor: default;
+}
+
+.field {
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 0.5rem;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+}
+
+}
+
+/* ------------------------------------------------------------------- tables */
+
+@layer base {
 
 table {
   border-collapse: collapse;
@@ -99,17 +210,34 @@ th {
   text-align: left;
   font-weight: 600;
   white-space: nowrap;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-rule-strong);
 }
 
 th,
 td {
-  padding: 0.25rem 0.75rem 0.25rem 0;
+  padding: 0.45rem 0.9rem 0.45rem 0;
   vertical-align: top;
   border-bottom: 1px solid var(--color-rule);
 }
 
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 tbody tr:hover {
   background: var(--color-shade);
+}
+
+}
+
+@layer components {
+
+/* A table wider than the screen scrolls inside its own box. The alternative is
+   a page that pans sideways, which on a phone hides the left-hand column — the
+   evidence tier — behind a gesture nobody makes. */
+.table-wrap {
+  overflow-x: auto;
 }
 
 /* The uncertainty band. A date the record is not sure about is drawn as a span
@@ -124,12 +252,24 @@ tbody tr:hover {
   border-bottom: 1px solid var(--color-rule-strong);
 }
 
+}
+
+/* -------------------------------------------------------------------- print */
+
+/* The sheet handed to a clinician. No app furniture, no ground, black on white:
+   the record has to read as a document the moment it leaves the screen. */
 @media print {
   body {
+    background: #fff;
     color: #000;
   }
   .no-print {
     display: none !important;
+  }
+  .panel {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
   }
   a {
     color: #000;
@@ -137,5 +277,11 @@ tbody tr:hover {
   }
   tbody tr:hover {
     background: transparent;
+  }
+  /* The scroll box is a screen affordance. On paper it clips the right-hand
+     columns and prints its own scrollbar — found by rendering the record to
+     PDF, which is how this page actually reaches a clinician. */
+  .table-wrap {
+    overflow: visible;
   }
 }

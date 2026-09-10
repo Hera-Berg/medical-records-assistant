@@ -1,5 +1,5 @@
 /**
- * The screen the user opens most. Dense, reverse-chronological, scannable.
+ * The screen the user opens most. Reverse-chronological, grouped by month.
  *
  * Every row says three things before its text: what kind of evidence it rests
  * on, when it happened, and **which** of the four timestamps that "when" is.
@@ -8,14 +8,20 @@
  * downloads folder, and nothing about the page would reveal it.
  *
  * A table, not a feed of cards: this is list-shaped data and a card grid makes
- * it slower to scan while taking more room.
+ * it slower to scan while taking more room. The month headings are the one
+ * concession to browsing rather than scanning — twenty-five rows of dates in
+ * one column is a wall, and a reader looking for "that letter in August" is
+ * looking for the month first.
+ *
+ * The filters say what they filter in words. They were `RX LAB DEV PT INF
+ * FILE`, which is a legend to learn before you can narrow your own record.
  */
 
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
-import type { Timeline as TimelineData, Tier } from "../types";
-import { ALL_TIERS, Cite, DateCell, Empty, TierMark, tierLabel } from "./marks";
+import type { Timeline as TimelineData, TimelineRow, Tier } from "../types";
+import { ALL_TIERS, Cite, DateCell, Empty, MONTHS, TierMark, tierLabel } from "./marks";
 
 export function Timeline({
   navigate,
@@ -49,46 +55,63 @@ export function Timeline({
       current.includes(tier) ? current.filter((t) => t !== tier) : [...current, tier],
     );
 
+  const filtered = Boolean(from || to || tiers.length > 0);
+
   return (
     <section>
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-[color:var(--color-rule)] pb-1 no-print">
-        <label>
-          <span className="text-[color:var(--color-muted)]">from </span>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="border border-[color:var(--color-rule-strong)] px-1"
-          />
-        </label>
-        <label>
-          <span className="text-[color:var(--color-muted)]">to </span>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="border border-[color:var(--color-rule-strong)] px-1"
-          />
-        </label>
-        <span className="flex flex-wrap items-baseline gap-1">
-          {ALL_TIERS.map((tier) => (
-            <button
-              key={tier}
-              type="button"
-              onClick={() => toggleTier(tier)}
-              aria-pressed={tiers.includes(tier)}
-              title={tier}
-              className={`border px-1 font-mono ${
-                tiers.includes(tier)
-                  ? "border-[color:var(--color-ink)] bg-[color:var(--color-ink)] text-[color:var(--color-paper)] font-semibold"
-                  : "border-[color:var(--color-rule-strong)]"
-              }`}
-            >
-              {tierLabel(tier)}
-            </button>
-          ))}
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[color:var(--color-rule)] pb-3 no-print">
+        <span className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2">
+            <span className="text-[color:var(--color-muted)]">From</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="field"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-[color:var(--color-muted)]">to</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="field"
+            />
+          </label>
         </span>
-        {(from || to || tiers.length > 0) && (
+
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-[color:var(--color-muted)]">Show</span>
+          {ALL_TIERS.map((tier) => {
+            const on = tiers.includes(tier);
+            return (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => toggleTier(tier)}
+                aria-pressed={on}
+                className={`chip cursor-pointer ${on ? "font-semibold" : ""}`}
+                style={
+                  on
+                    ? {
+                        borderColor: "var(--color-accent)",
+                        background: "var(--color-accent)",
+                        color: "var(--color-paper)",
+                      }
+                    : {
+                        borderColor: "var(--color-rule-strong)",
+                        background: "var(--color-paper)",
+                      }
+                }
+              >
+                {tierLabel(tier)}
+              </button>
+            );
+          })}
+        </span>
+
+        {filtered ? (
           <button
             type="button"
             onClick={() => {
@@ -96,14 +119,15 @@ export function Timeline({
               setTo("");
               setTiers([]);
             }}
-            className="border border-[color:var(--color-rule-strong)] px-2"
+            className="btn"
           >
-            Clear
+            Show everything
           </button>
-        )}
+        ) : null}
+
         {subject ? (
           <Link to="/" navigate={navigate} className="ml-auto">
-            showing {subject} only — show everything
+            showing one entry only — show the whole record
           </Link>
         ) : null}
       </div>
@@ -112,7 +136,7 @@ export function Timeline({
 
       {data && data.rows.length === 0 ? (
         <Empty>
-          {data.total === 0 && !from && !to && tiers.length === 0
+          {data.total === 0 && !filtered
             ? "Nothing in the record yet. Drop a file anywhere on this page, or paste one."
             : "Nothing in the record matches those filters."}
         </Empty>
@@ -120,46 +144,86 @@ export function Timeline({
 
       {data && data.rows.length > 0 ? (
         <>
-          <p className="py-1 text-[color:var(--color-muted)]">
+          <p className="pb-2 text-[color:var(--color-muted)]">
             {data.total} {data.total === 1 ? "entry" : "entries"}
             {data.rows.length < data.total ? `, showing ${data.rows.length}` : ""}
           </p>
-          <table>
+          <div className="table-wrap"><table>
             <thead>
               <tr>
-                <th className="w-14">Tier</th>
+                <th className="w-32">Where from</th>
                 <th className="w-56">When</th>
                 <th>What</th>
-                <th className="w-24">Source</th>
+                <th className="w-40">The document</th>
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((row) => (
-                <tr key={row.event_id}>
-                  <td>
-                    <TierMark tier={row.marker} />
-                  </td>
-                  <td>
-                    <DateCell date={row.date} kind={row.date_label} />
-                  </td>
-                  <td>
-                    {row.subject_id ? (
-                      <Link to={`/record/${row.subject_id}`} navigate={navigate}>
-                        {row.text}
-                      </Link>
-                    ) : (
-                      row.text
-                    )}
-                  </td>
-                  <td>
-                    <Cite citation={row.citation} navigate={navigate} />
-                  </td>
-                </tr>
-              ))}
+              {withMonths(data.rows).map((entry) =>
+                entry.kind === "month" ? (
+                  <tr key={`month-${entry.month}`}>
+                    <th
+                      colSpan={4}
+                      className="pt-4 text-lg font-semibold text-[color:var(--color-ink)]"
+                    >
+                      {monthName(entry.month)}
+                    </th>
+                  </tr>
+                ) : (
+                  <tr key={entry.row.event_id}>
+                    <td>
+                      <TierMark tier={entry.row.marker} />
+                    </td>
+                    <td>
+                      <DateCell date={entry.row.date} kind={entry.row.date_label} />
+                    </td>
+                    <td>
+                      {entry.row.subject_id ? (
+                        <Link to={`/record/${entry.row.subject_id}`} navigate={navigate}>
+                          {entry.row.text}
+                        </Link>
+                      ) : (
+                        entry.row.text
+                      )}
+                    </td>
+                    <td>
+                      <Cite citation={entry.row.citation} navigate={navigate} />
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
-          </table>
+          </table></div>
         </>
       ) : null}
     </section>
   );
+}
+
+type Entry = { kind: "month"; month: string } | { kind: "row"; row: TimelineRow };
+
+/**
+ * Month headings, inserted where the month changes.
+ *
+ * Driven by the row's own `month`, which the server derives from the same date
+ * it renders in the row. Deriving it here from the rendered string would be a
+ * second parser that disagrees with the first one on exactly the rows that are
+ * hardest to read — the uncertain ones, whose rendered date is a band.
+ */
+function withMonths(rows: TimelineRow[]): Entry[] {
+  const out: Entry[] = [];
+  let seen: string | null = null;
+  for (const row of rows) {
+    if (row.month !== seen) {
+      seen = row.month;
+      out.push({ kind: "month", month: row.month });
+    }
+    out.push({ kind: "row", row });
+  }
+  return out;
+}
+
+function monthName(month: string): string {
+  const [year, index] = month.split("-");
+  const name = MONTHS[Number(index) - 1];
+  return name ? `${name} ${year}` : month;
 }

@@ -64,13 +64,27 @@ of them was visible from a passing test suite.
 These are not style preferences. Each has a reason, and they are enforced by
 review rather than by a linter.
 
-- **Two type sizes and two weights.** Density comes from tight leading and small
-  margins, never from small text: this is read at arm's length in bad clinic
-  lighting, and hierarchy bought by shrinking things disappears first.
+- **Three type sizes and two weights.** Body, section heading, page title;
+  regular and semibold. Density comes from tight leading and small margins,
+  never from small text: this is read at arm's length in bad clinic lighting,
+  and hierarchy bought by shrinking things disappears first. The page title is
+  the only size that has ever been added, and it was added *upwards* — nothing
+  on the page is smaller than it was.
 - **Colour carries no meaning on its own.** Every evidence tier, conflict and
   staleness state has a label as well as a hue. A colour-blind reader and a
   sheet of paper must both work — the consultation summary exists to be printed
   and handed to a clinician.
+- **The label is the word the patient would use.** "Prescription", not `RX`;
+  "Needs confirming", not `STALE`; "6 August 2026", not `2026-08-06`; the kind
+  of document a citation points at, not its six-character hash. The identifiers
+  are the record's filing system and they belong in the folder, on the CLI and
+  on an entity's own detail page — not in the columns someone reads to find out
+  what they are taking. A status word that needs a legend is a status word the
+  owner of the record cannot use.
+- **No shadows and no gradients.** A panel is a hairline rule and a change of
+  ground. Softness comes from space and corner radius, both of which a printer
+  can reproduce; a drop shadow prints as nothing or as grey mud, and this page
+  is printed.
 - **No animation.** Nothing may delay reading.
 - **Tables for anything list-shaped.** A card grid is slower to scan and takes
   more room.

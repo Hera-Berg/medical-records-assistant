@@ -21,17 +21,44 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
-import type { Claim, EntityDetail } from "../types";
-import { Cite, DateCell, Empty, Heading, StatusMark, TierMark } from "./marks";
+import type { PageHeader } from "../App";
+import type { Claim, EntityDetail, ReviewItem } from "../types";
+import { Cite, DateCell, Empty, Heading, longDate, StatusMark, TierMark } from "./marks";
+
+/**
+ * A predicate, in the reader's words.
+ *
+ * The left column of the facts table used to print the schema's own key —
+ * `dose`, `started`, `reaction` — which is fine for four of them and reads as
+ * a database dump for the rest. Anything not in this table falls through to the
+ * predicate itself rather than being prettified by a rule: an invented English
+ * phrase for a predicate nobody has looked at is a worse failure than a word
+ * that looks technical, because it might not mean what it says.
+ */
+const PREDICATE_WORDS: Record<string, string> = {
+  dose: "Dose",
+  status: "Status",
+  started: "Started",
+  name: "Name",
+  reaction: "Reaction",
+  role: "Role",
+  contact: "Contact",
+};
+
+function predicateWord(predicate: string): string {
+  return PREDICATE_WORDS[predicate] ?? predicate;
+}
 
 export function Entity({
   id,
   navigate,
   version,
+  setHeader,
 }: {
   id: string;
   navigate: (to: string) => void;
   version: number;
+  setHeader: (header: PageHeader) => void;
 }) {
   const [data, setData] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,17 +76,28 @@ export function Entity({
     };
   }, [id, version]);
 
+  /*
+    The page's own name, once it is known. The shell showed "One entry in your
+    record" until this resolved, which is vague and true; replacing it with the
+    entity's name is the whole reason a screen is allowed to set its heading.
+  */
+  useEffect(() => {
+    if (!data) return;
+    setHeader({
+      title: data.name,
+      subtitle: "Everything your record holds about this, and the documents behind it.",
+      badge: <StatusMark status={data.status} />,
+    });
+  }, [data, setHeader]);
+
   if (error) return <Empty>{error}</Empty>;
   if (!data) return <Empty>Reading…</Empty>;
 
   return (
     <article>
-      <div className="flex flex-wrap items-baseline gap-3 border-b border-[color:var(--color-rule-strong)] pb-1">
-        <h1 className="text-lg font-semibold">{data.name}</h1>
-        <StatusMark status={data.status} />
-        <span className="font-mono text-[color:var(--color-muted)]">{data.id}</span>
-        <Link to={`/timeline/${data.id}`} navigate={navigate} className="ml-auto no-print">
-          timeline for this entity
+      <div className="flex flex-wrap items-baseline gap-3 no-print">
+        <Link to={`/timeline/${data.id}`} navigate={navigate} className="ml-auto">
+          show only this on the timeline
         </Link>
       </div>
 
@@ -73,20 +111,34 @@ export function Entity({
         </p>
       ) : null}
 
-      <dl className="mt-2 grid grid-cols-[10rem_1fr] gap-x-4">
-        <Fact label="Started" value={data.started} />
+      <dl className="grid grid-cols-[12rem_1fr] gap-x-4 gap-y-1">
+        <Fact label="Started" value={longDate(data.started)} />
         <Fact
           label="Last confirmed"
           value={
             data.last_confirmed && data.stale && data.last_confirmed_ago
-              ? `${data.last_confirmed} — ${data.last_confirmed_ago}`
-              : data.last_confirmed
+              ? `${longDate(data.last_confirmed)} — ${data.last_confirmed_ago}`
+              : longDate(data.last_confirmed)
           }
         />
-        <Fact label="Expected to run out" value={data.expected_exhaustion} />
-        <Fact label="Evidence tier" value={data.evidence_tier} />
-        <Fact label="Sources" value={data.sources.join(", ") || null} mono />
-        <Fact label="File" value={data.path} mono />
+        <Fact label="Expected to run out" value={longDate(data.expected_exhaustion)} />
+        {data.evidence_tier ? (
+          <>
+            <dt className="text-[color:var(--color-muted)]">Where it came from</dt>
+            <dd>
+              <TierMark tier={data.evidence_tier} />
+            </dd>
+          </>
+        ) : null}
+        <Fact
+          label="Documents behind it"
+          value={
+            data.sources.length > 0
+              ? `${data.sources.length} ${data.sources.length === 1 ? "document" : "documents"}`
+              : null
+          }
+        />
+        <Fact label="Its file in your folder" value={data.path} mono />
       </dl>
 
       {/*
@@ -119,28 +171,28 @@ export function Entity({
         </>
       ) : null}
 
-      <Heading>What the record holds</Heading>
+      <Heading>What your record says</Heading>
       {data.slots.length === 0 ? (
         <Empty>Nothing has been confirmed about this yet.</Empty>
       ) : (
-        <table>
+        <div className="table-wrap"><table>
           <thead>
             <tr>
               <th className="w-40">Fact</th>
-              <th>Value</th>
-              <th className="w-14">Tier</th>
+              <th>What the record says</th>
+              <th className="w-32">Where from</th>
               <th className="w-56">When</th>
-              <th className="w-24">Source</th>
+              <th className="w-40">The document</th>
             </tr>
           </thead>
           <tbody>
             {data.slots.map((slot) => (
               <tr key={slot.predicate}>
-                <td className="font-semibold">{slot.predicate}</td>
+                <td className="font-semibold">{predicateWord(slot.predicate)}</td>
                 <td>
                   {slot.conflicted ? (
                     <span>
-                      <span className="font-semibold text-[color:var(--color-tier-inf)]">
+                      <span className="font-semibold text-[color:var(--color-alarm)]">
                         Two sources disagree.
                       </span>{" "}
                       Neither has been picked for you.
@@ -206,7 +258,7 @@ export function Entity({
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       <EarlierReadings data={data} navigate={navigate} />
@@ -245,11 +297,13 @@ export function Entity({
 
       {data.review.length > 0 ? (
         <>
-          <Heading>Needs review</Heading>
+          <Heading>Waiting for you</Heading>
           <ul>
             {data.review.map((item, index) => (
               <li key={`${item.kind}-${index}`}>
-                {item.summary}
+                <span className="font-semibold">{predicateWord(item.predicate)}</span>
+                {" — "}
+                {reviewSentence(item)}
                 {item.citations.length > 0 ? (
                   <>
                     {" — "}
@@ -288,8 +342,8 @@ export function Entity({
 
       {data.markdown ? (
         <details className="mt-5 no-print">
-          <summary className="cursor-pointer border-b border-[color:var(--color-rule-strong)] pb-0.5 text-lg font-semibold">
-            The file itself
+          <summary className="cursor-pointer border-b border-[color:var(--color-rule)] pb-1 text-lg font-semibold">
+            The file in your folder
           </summary>
           <p className="mt-1 text-[color:var(--color-muted)]">
             <code className="font-mono">{data.path}</code> — regenerated from the event
@@ -302,6 +356,22 @@ export function Entity({
       ) : null}
     </article>
   );
+}
+
+/**
+ * A review item's sentence, without the slug it opens with.
+ *
+ * The projection writes `med:atorvastatin dose: 2 sources … disagree`, which is
+ * right for a log line and wrong on the entity's own page: the reader is
+ * looking at Atorvastatin, and `med:atorvastatin dose:` is the internal filing
+ * key repeated back at them. The prefix is stripped only when it matches
+ * exactly — a summary in some other shape is printed whole rather than trimmed
+ * by guesswork, because the one thing worse than a slug is a sentence with its
+ * first clause silently removed.
+ */
+function reviewSentence(item: ReviewItem): string {
+  const prefix = `${item.subject_id} ${item.predicate}: `;
+  return item.summary.startsWith(prefix) ? item.summary.slice(prefix.length) : item.summary;
 }
 
 /**
@@ -326,20 +396,20 @@ function EarlierReadings({
   return (
     <>
       <Heading>Earlier readings</Heading>
-      <table>
+      <div className="table-wrap"><table>
         <thead>
           <tr>
             <th className="w-40">Fact</th>
             <th>Read as</th>
-            <th className="w-14">Tier</th>
+            <th className="w-32">Where from</th>
             <th>Replaced by</th>
-            <th className="w-24">Source</th>
+            <th className="w-40">The document</th>
           </tr>
         </thead>
         <tbody>
           {earlier.map(({ slot, claim }) => (
             <tr key={claim.event_id}>
-              <td className="font-semibold">{slot.predicate}</td>
+              <td className="font-semibold">{predicateWord(slot.predicate)}</td>
               <td>{claim.value.literal}</td>
               <td>
                 <TierMark tier={claim.evidence_tier} />
@@ -360,7 +430,7 @@ function EarlierReadings({
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </>
   );
 }
@@ -393,7 +463,7 @@ function When({ claim }: { claim: Claim }) {
       : "recorded";
   return (
     <span className="whitespace-nowrap">
-      {fallback.slice(0, 10)}{" "}
+      {longDate(fallback.slice(0, 10))}{" "}
       <span className="text-[color:var(--color-muted)]">{label}</span>
     </span>
   );

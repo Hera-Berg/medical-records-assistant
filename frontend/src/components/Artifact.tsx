@@ -13,10 +13,30 @@
 
 import { useEffect, useState } from "react";
 import { api, artifactUrl } from "../api";
+import type { PageHeader } from "../App";
 import type { ArtifactMeta } from "../types";
-import { Empty, Heading } from "./marks";
+import { Empty, Heading, longStamp } from "./marks";
 
-export function Artifact({ short, version }: { short: string; version: number }) {
+/** What a stored file is, said as the person who added it would say it. */
+function kindOf(mime: string): string {
+  const [kind, sub] = mime.split("/");
+  if (kind === "image") return "Photograph or image";
+  if (kind === "audio") return "Audio recording";
+  if (kind === "video") return "Video";
+  if (sub === "pdf") return "PDF document";
+  if (kind === "text") return "Text file";
+  return "File";
+}
+
+export function Artifact({
+  short,
+  version,
+  setHeader,
+}: {
+  short: string;
+  version: number;
+  setHeader: (header: PageHeader) => void;
+}) {
   const [meta, setMeta] = useState<ArtifactMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,13 +53,21 @@ export function Artifact({ short, version }: { short: string; version: number })
     };
   }, [short, version]);
 
+  useEffect(() => {
+    if (!meta) return;
+    setHeader({
+      title: kindOf(meta.mime),
+      subtitle:
+        "The original, exactly as it arrived. Every citation in your record ends here.",
+    });
+  }, [meta, setHeader]);
+
   if (error) return <Empty>{error}</Empty>;
   if (!meta) return <Empty>Reading…</Empty>;
 
   return (
     <article>
-      <div className="flex flex-wrap items-baseline gap-3 border-b border-[color:var(--color-rule-strong)] pb-1">
-        <h1 className="text-lg font-semibold">Artefact {meta.short}</h1>
+      <div className="flex flex-wrap items-baseline gap-3">
         <span className="text-[color:var(--color-muted)]">{meta.mime}</span>
         {meta.reseen_count > 0 ? (
           <span className="text-[color:var(--color-muted)]">
@@ -48,7 +76,7 @@ export function Artifact({ short, version }: { short: string; version: number })
           </span>
         ) : null}
         <a href={artifactUrl(meta.short)} className="ml-auto no-print">
-          open the original
+          open the original file
         </a>
       </div>
 
@@ -62,22 +90,22 @@ export function Artifact({ short, version }: { short: string; version: number })
         <Preview meta={meta} />
       )}
 
-      <Heading>What the record knows</Heading>
-      <dl className="grid grid-cols-[14rem_1fr] gap-x-4">
-        <Row label="Added to the record" value={meta.ingested_ts} />
+      <Heading>What the record knows about this file</Heading>
+      <dl className="grid grid-cols-[14rem_1fr] gap-x-4 gap-y-1">
+        <Row label="Added to the record" value={longStamp(meta.ingested_ts)} />
         <Row
           label="Taken or recorded"
-          value={meta.captured_ts}
+          value={longStamp(meta.captured_ts)}
           absent="not known — a file picked from disk does not say when it was made"
         />
         <Row
           label="Document dated"
-          value={meta.artifact_ts}
+          value={longStamp(meta.artifact_ts)}
           absent="not known — this needs the document to be read"
         />
-        <Row label="Where it came from" value={meta.source} />
-        <Row label="File" value={meta.path} mono />
-        <Row label="Full hash" value={meta.digest} mono />
+        <Row label="How it was added" value={meta.source} />
+        <Row label="Its file in your folder" value={meta.path} mono />
+        <Row label="Fingerprint of the bytes" value={meta.digest} mono />
         <Row
           label="Size"
           value={meta.bytes != null ? `${meta.bytes.toLocaleString()} bytes` : null}
@@ -107,10 +135,16 @@ function Preview({ meta }: { meta: ArtifactMeta }) {
   }
   if (kind === "image") {
     return (
+      /*
+        Capped, not shown at full size. A 12-megapixel photograph of a script
+        renders four screens tall and pushes the four timestamps below the fold
+        — on the one page whose job is to let someone check a citation in a
+        second. The original is one click away and is never altered.
+      */
       <img
         src={url}
-        alt={`Artefact ${meta.short}`}
-        className="mt-2 max-w-full border border-[color:var(--color-rule)]"
+        alt={`The stored file ${meta.short}`}
+        className="mt-3 max-h-[34rem] w-auto max-w-full rounded-lg border border-[color:var(--color-rule)] object-contain"
       />
     );
   }

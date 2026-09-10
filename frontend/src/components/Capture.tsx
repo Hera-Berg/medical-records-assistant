@@ -174,8 +174,8 @@ export function useWindowCapture(enqueue: (files: File[], source: Pending["sourc
 
 export function DropOverlay() {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center border-4 border-[color:var(--color-ink)] bg-[color:var(--color-paper)]/90">
-      <p className="text-lg font-semibold">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-paper)]/92">
+      <p className="rounded-xl border-2 border-dashed border-[color:var(--color-accent)] px-8 py-6 text-lg font-semibold text-[color:var(--color-accent)]">
         Drop it anywhere. It is stored first and read later.
       </p>
     </div>
@@ -207,15 +207,13 @@ export function CapturePanel({
 
   return (
     <section className="no-print">
-      <h1 className="border-b border-[color:var(--color-rule-strong)] pb-0.5 text-lg font-semibold">
-        Add to the record
-      </h1>
+      <h2 className="text-lg font-semibold">A file</h2>
       <p className="mt-1">
-        Drop a file anywhere on this page, paste one, or pick one below. Nothing asks
-        what kind of document it is — that is worked out afterwards.
+        Drop it anywhere on this page, paste it, or pick it below. A photograph of a
+        script, a pathology PDF, a specialist letter, a recording.
       </p>
 
-      <div className="mt-2 flex flex-wrap items-baseline gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <input
           ref={fileInput}
           type="file"
@@ -230,40 +228,40 @@ export function CapturePanel({
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          className="border border-[color:var(--color-ink)] px-3 py-1 font-semibold"
+          className="btn btn-primary"
         >
-          Choose files
+          Choose a file
         </button>
         <span className="text-[color:var(--color-muted)]">
-          Photographs of scripts, pathology PDFs, specialist letters.
+          The original is kept exactly as it is and never altered.
         </span>
       </div>
 
-      <h2 className="mt-5 border-b border-[color:var(--color-rule-strong)] pb-0.5 text-lg font-semibold">
-        Write a note
+      <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
+        Or a note in your own words
       </h2>
       <p className="mt-1 text-[color:var(--color-muted)]">
-        Recorded as patient-reported, dated when you write it. Voice notes arrive in
-        phase 6.
+        Filed as something you said, dated the moment you write it. Speaking a note
+        instead of typing it is coming.
       </p>
       <textarea
         value={text}
         onChange={(event) => setText(event.target.value)}
         rows={3}
         placeholder="Headaches started around Easter."
-        className="mt-1 w-full border border-[color:var(--color-rule-strong)] p-2"
+        className="field mt-2 w-full p-2"
       />
-      <div className="flex items-baseline gap-3">
+      <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
           onClick={submitNote}
           disabled={!text.trim()}
-          className="border border-[color:var(--color-ink)] px-3 py-1 font-semibold disabled:border-[color:var(--color-rule)] disabled:text-[color:var(--color-muted)]"
+          className="btn btn-primary"
         >
-          Record note
+          Save this note
         </button>
         {noteError ? (
-          <span className="text-[color:var(--color-tier-inf)]">{noteError}</span>
+          <span className="text-[color:var(--color-alarm)]">{noteError}</span>
         ) : null}
       </div>
 
@@ -276,23 +274,21 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
   if (capture.pending.length === 0 && capture.recent.length === 0) return null;
 
   return (
-    <div className="mt-5">
-      <h2 className="border-b border-[color:var(--color-rule-strong)] pb-0.5 text-lg font-semibold">
-        Just added
-      </h2>
+    <div className="mt-8 border-t border-[color:var(--color-rule)] pt-6">
+      <h2 className="text-lg font-semibold">Just added</h2>
       {capture.note ? (
         <p className="mt-1 text-[color:var(--color-muted)]">{capture.note}</p>
       ) : null}
 
       {capture.pending.length > 0 ? (
-        <table className="mt-1">
+        <div className="table-wrap"><table className="mt-1">
           <tbody>
             {capture.pending.map((item) => (
               <tr key={item.id}>
                 <td>{item.files.map((file) => file.name).join(", ")}</td>
                 <td>
                   {item.error ? (
-                    <span className="text-[color:var(--color-tier-inf)]">
+                    <span className="text-[color:var(--color-alarm)]">
                       not sent — {item.error}
                     </span>
                   ) : (
@@ -307,14 +303,14 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
                       <button
                         type="button"
                         onClick={() => capture.retry(item.id)}
-                        className="border border-[color:var(--color-rule-strong)] px-2"
+                        className="btn"
                       >
-                        Retry
+                        Try again
                       </button>{" "}
                       <button
                         type="button"
                         onClick={() => capture.dismiss(item.id)}
-                        className="border border-[color:var(--color-rule-strong)] px-2"
+                        className="btn"
                       >
                         Dismiss
                       </button>
@@ -324,16 +320,15 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       ) : null}
 
       {capture.recent.length > 0 ? (
-        <table className="mt-1">
+        <div className="table-wrap"><table className="mt-1">
           <thead>
             <tr>
               <th>File</th>
-              <th className="w-32">Result</th>
-              <th className="w-24">Hash</th>
+              <th className="w-40">What happened to it</th>
             </tr>
           </thead>
           <tbody>
@@ -342,22 +337,19 @@ export function CaptureStatus({ capture }: { capture: ReturnType<typeof useCaptu
                 <td>{result.filename}</td>
                 <td>
                   {result.status === "failed" ? (
-                    <span className="text-[color:var(--color-tier-inf)]">
-                      {result.error}
-                    </span>
+                    <span className="text-[color:var(--color-alarm)]">{result.error}</span>
                   ) : result.status === "reseen" ? (
                     <span title="Identical content was already in the record. Not stored twice.">
-                      already had it
+                      already in your record
                     </span>
                   ) : (
-                    "stored"
+                    "stored in your folder"
                   )}
                 </td>
-                <td className="font-mono">{result.short ?? "—"}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       ) : null}
     </div>
   );
