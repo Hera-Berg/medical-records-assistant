@@ -133,11 +133,33 @@ def _run(argv, vault):
 # --- probe -----------------------------------------------------------------
 
 
-def _vision_handler(sees_image=True, model=MODEL):
+def _is_grammar_probe(body):
+    """The tiny schema-constrained request the probe sends before vision."""
+    fmt = body.get("response_format") or {}
+    return fmt.get("json_schema", {}).get("name") == "grammar_probe"
+
+
+def _grammar_answer(model=MODEL, content='{"word": "ready"}', finish="stop"):
+    return {
+        "id": "g1",
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": finish,
+            }
+        ],
+    }
+
+
+def _vision_handler(sees_image=True, model=MODEL, grammar=None):
     def handler(request):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": MODEL}]})
         body = json.loads(request.content)
+        if _is_grammar_probe(body):
+            return httpx.Response(200, json=grammar or _grammar_answer(model=model))
         looks_like_probe = any(
             part.get("type") == "image_url"
             for message in body["messages"]
@@ -238,6 +260,87 @@ def test_probe_json_carries_no_credential(monkeypatch, configured):
     assert report["auth"] == "ok"
     assert KEY not in output
     assert set(report) == {"state", "auth", "model_reported", "checks", "notes"}
+
+
+def test_probe_checks_that_the_schema_is_actually_applied(monkeypatch, configured):
+    """Vision was probed and grammar was not, which is the other half of it.
+
+    A server that takes ``response_format`` without applying it answers text
+    prompts perfectly and fails every extraction with a parse error — and the
+    parse error points at the schema, so the only way to find out used to be a
+    ninety-second job on a prescription photo.
+    """
+    _patch_client(monkeypatch, _vision_handler())
+    code, output = _run(["probe"], configured)
+
+    assert code == 0
+    assert "ok    grammar: a schema-constrained request came back as the schema" in output
+
+
+@pytest.mark.parametrize(
+    "grammar, expected",
+    [
+        (
+            _grammar_answer(content="Sure! Here is the JSON you asked for:"),
+            "not JSON",
+        ),
+        (
+            _grammar_answer(content='{"answer": "ready"}'),
+            "not the schema it was given",
+        ),
+        (
+            _grammar_answer(content="Let me think about what the user", finish="length"),
+            "still answering at 64 tokens for a one-field object",
+        ),
+    ],
+    ids=["prose", "wrong-shape", "never-stopped"],
+)
+def test_grammar_probe_catches_an_unconstrained_server(
+    monkeypatch, configured, grammar, expected
+):
+    _patch_client(monkeypatch, _vision_handler(grammar=grammar))
+    code, output = _run(["probe"], configured)
+
+    assert code == 1
+    assert "endpoint  grammar-not-enforced" in output
+    assert expected in output
+
+
+def test_probe_does_not_call_a_sleeping_box_a_grammar_problem(monkeypatch, configured):
+    """The box going to sleep between two checks is not a server setting."""
+    calls = {"n": 0}
+
+    def dozes_off(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": MODEL}]})
+        calls["n"] += 1
+        raise httpx.ConnectError("Connection refused", request=request)
+
+    _patch_client(monkeypatch, dozes_off)
+    code, output = _run(["probe"], configured)
+
+    assert code == 1
+    assert "endpoint  unreachable" in output
+    assert "grammar-not-enforced" not in output
+
+
+def test_probe_reports_grammar_before_it_spends_a_vision_request(monkeypatch, configured):
+    """Cheaper, and a box that ignores the schema explains the rest besides."""
+    order = []
+
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": MODEL}]})
+        body = json.loads(request.content)
+        order.append("grammar" if _is_grammar_probe(body) else "vision")
+        if _is_grammar_probe(body):
+            return httpx.Response(200, json=_grammar_answer(content="not json at all"))
+        return httpx.Response(200, json=_answer(content=probe_mod.PROBE_TEXT))
+
+    _patch_client(monkeypatch, handler)
+    _run(["probe"], configured)
+
+    assert order == ["grammar"], "stopped before paying for a vision request"
 
 
 def test_probe_catches_a_model_the_box_does_not_offer(monkeypatch, configured):

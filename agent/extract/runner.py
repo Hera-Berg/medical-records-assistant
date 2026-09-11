@@ -36,14 +36,16 @@ from ..errors import (
     ExtractionError,
     InferenceError,
     ModelIdentityMismatch,
+    OutputTruncated,
     RateLimited,
 )
 from ..events.envelope import Event
 from ..ingest.mime import is_speech
 from ..llm import redaction
-from ..llm.client import Client, parse_json_content
+from ..llm.client import Client, Completion, parse_completion
 from ..projection import citations as citations_mod
 from . import (
+    budget as budget_mod,
     crossverify,
     images,
     jobs as jobs_mod,
@@ -71,6 +73,11 @@ READ_CLAIMS = "claims"
 READ_NOTHING = "nothing-clinical"
 READ_REFUSED = "output-refused"
 READ_UNREADABLE = "page-unreadable"
+#: The answer was cut off at a token ceiling with nowhere left to raise it. Not
+#: a page the model could not read and not an answer it got wrong: an answer it
+#: never finished. Its own outcome because the next action is different again —
+#: more room, or a person, rather than a retake or a server setting.
+READ_TRUNCATED = "output-truncated"
 READ_ALREADY = "already-read"
 #: A recording that has not been typed up yet. Not a failure of anything: the
 #: speech model runs locally and on its own schedule, and this reader has
@@ -116,11 +123,14 @@ class Outcome:
             detail = f"output rejected: {detail}"
         elif self.reading == READ_UNREADABLE:
             detail = f"the model could not read it — review manually: {detail}"
+        elif self.reading == READ_TRUNCATED:
+            detail = f"ran out of room — review manually: {detail}"
         label = {
             READ_CLAIMS: "read",
             READ_NOTHING: "read",
             READ_REFUSED: "read",
             READ_UNREADABLE: "read",
+            READ_TRUNCATED: "read",
             READ_ALREADY: "skipped",
         }.get(self.reading or "", self.state)
         return f"{label:<9} {self.artifact}  {detail}".rstrip()
@@ -140,10 +150,13 @@ def _short_hash(value: str) -> str:
 def _reading_of(extraction: Extraction) -> str:
     """Which ``READ_*`` outcome one merged extraction is.
 
-    Four cases, and the reason they are not collapsed is that each sends the
+    Five cases, and the reason they are not collapsed is that each sends the
     reader somewhere different: nothing to do, a server or prompt to fix, a
-    photograph to retake, or claims to review.
+    photograph to retake, a page with more on it than one answer can hold, or
+    claims to review.
     """
+    if extraction.truncated:
+        return READ_TRUNCATED
     if not extraction.readable:
         return READ_REFUSED if extraction.refused else READ_UNREADABLE
     if extraction.claims:
@@ -152,6 +165,20 @@ def _reading_of(extraction: Extraction) -> str:
     # rejected — a subject that resolves to nothing, a value that failed the
     # schema — or the page genuinely says nothing the record tracks.
     return READ_REFUSED if extraction.rejections else READ_NOTHING
+
+
+def _state_of(extraction: Extraction) -> str:
+    """What the queue should do about one merged extraction.
+
+    ``needs-attention`` for a cut-off answer rather than ``unreadable``: nothing
+    was wrong with the artefact, and calling it unreadable would tell the owner
+    to retake a photograph that is perfectly legible. It is terminal all the
+    same — retrying it unchanged asks the same question and gets the same
+    truncated answer.
+    """
+    if extraction.truncated:
+        return jobs_mod.NEEDS_ATTENTION
+    return jobs_mod.DONE if extraction.readable else jobs_mod.UNREADABLE
 
 
 class Extractor:
@@ -245,14 +272,15 @@ class Extractor:
         deterministic = text.read(path, artifact.mime)
 
         answers: list[Extraction] = []
+        budget_notes: list[str] = []
         completion = None
         for page, prompt in zip(document.pages, page_prompts):
-            completion = self.client.complete(
-                prompt.to_list(),
-                schema=EXTRACTION_SCHEMA,
-                schema_name=SCHEMA_NAME,
+            where = f"page {page.page}" if len(document.pages) > 1 else None
+            completion, raised = self._ask(
+                prompt.to_list(), EXTRACTION_SCHEMA, SCHEMA_NAME, where=where
             )
-            answers.append(self._read_one(completion, artifact.mime))
+            budget_notes.extend(raised)
+            answers.append(self._read_one(completion, artifact.mime, where=where))
             log.info(
                 "read %s page %s: %d claims, ~%d vision tokens",
                 short,
@@ -262,6 +290,10 @@ class Extractor:
             )
 
         extraction = merge(answers)
+        if budget_notes:
+            extraction = replace(
+                extraction, notes=extraction.notes + tuple(dict.fromkeys(budget_notes))
+            )
         verifications = crossverify.verify_all(extraction.claims, deterministic)
         proposal = propose.build(
             device=self.vault.identity.id,
@@ -276,7 +308,7 @@ class Extractor:
             deterministic=deterministic.describe(),
             seen_models=propose.observed_models(log_events),
         )
-        state = jobs_mod.DONE if extraction.readable else jobs_mod.UNREADABLE
+        state = _state_of(extraction)
         reading = _reading_of(extraction)
         reason = extraction.unreadable_reason
         if reading == READ_REFUSED and reason is None:
@@ -366,12 +398,14 @@ class Extractor:
                 ),
             )
 
-        completion = self.client.complete(
+        completion, raised = self._ask(
             prompt.to_list(),
-            schema=transcripts_mod.TRANSCRIPT_SCHEMA,
-            schema_name=transcripts_mod.SCHEMA_NAME,
+            transcripts_mod.TRANSCRIPT_SCHEMA,
+            transcripts_mod.SCHEMA_NAME,
         )
         extraction = self._read_one(completion, artifact.mime)
+        if raised:
+            extraction = replace(extraction, notes=extraction.notes + tuple(raised))
         held, tier_notes = transcripts_mod.force_tier(extraction.claims)
         if tier_notes:
             extraction = replace(
@@ -418,17 +452,82 @@ class Extractor:
         )
         return Outcome(
             short,
-            jobs_mod.DONE if extraction.readable else jobs_mod.UNREADABLE,
+            _state_of(extraction),
             events=proposal.events,
             reason=extraction.unreadable_reason,
             notes=proposal.notes,
             reading=_reading_of(extraction),
         )
 
-    def _read_one(self, completion, mime: str) -> Extraction:
+    def _ask(
+        self,
+        messages: list[dict[str, Any]],
+        schema: Any,
+        schema_name: str,
+        where: str | None = None,
+    ) -> tuple[Completion, tuple[str, ...]]:
+        """Ask once, and again with more room if the box says it ran out.
+
+        The ladder is in :mod:`agent.extract.budget`; what belongs here is why
+        the loop is shaped this way. It advances only on the server's own
+        ``finish_reason``, never on a guess about how long an answer should be,
+        so an ordinary page costs exactly one call and a four-table pathology
+        report costs one more. It stops at the top of the ladder or at the edge
+        of ``ctx``, whichever comes first, because the same prompt at temperature
+        zero produces the same cut-off answer and looping would only spend the
+        box's time.
+
+        The raise is returned as a note rather than left in the log alone: "this
+        page needed two calls" is provenance, and the extraction event records
+        the ceiling it finally answered under.
+        """
+        ceiling = budget_mod.START
+        notes: list[str] = []
+        prefix = f"{where}: " if where else ""
+        while True:
+            completion = self.client.complete(
+                messages, schema=schema, schema_name=schema_name, max_tokens=ceiling
+            )
+            if not completion.truncated:
+                return completion, tuple(notes)
+            ctx = self.client.settings.ctx
+            nxt = budget_mod.next_budget(ceiling, ctx, completion.prompt_tokens)
+            if nxt is None:
+                return completion, tuple(notes)
+            log.info(
+                "answer cut off at %d tokens%s; asking again with %d",
+                ceiling,
+                f" ({where})" if where else "",
+                nxt,
+            )
+            notes.append(prefix + budget_mod.describe_raise(ceiling, nxt))
+            ceiling = nxt
+
+    def _read_one(self, completion, mime: str, where: str | None = None) -> Extraction:
         """Parse and validate one page's answer. Never repairs, never raises."""
         try:
-            payload = parse_json_content(completion.content)
+            payload = parse_completion(completion)
+        except OutputTruncated as exc:
+            # Separated from every other refusal on purpose. The answer is not
+            # wrong, it is unfinished, and the fix is room rather than a server
+            # setting — the generic message would send someone to read about
+            # guided decoding while the token cap sat there unexamined.
+            prefix = f"{where}: " if where else ""
+            return Extraction(
+                readable=False,
+                refused=True,
+                truncated=True,
+                unreadable_reason=(
+                    prefix
+                    + str(exc)
+                    + " "
+                    + budget_mod.describe_exhausted(
+                        completion.max_tokens or budget_mod.START,
+                        self.client.settings.ctx,
+                        completion.prompt_tokens,
+                    )
+                ),
+            )
         except InferenceError as exc:
             # The raw output is still recorded by the caller. An answer that is
             # not JSON is a refusal, not a crash — and not a page the model could

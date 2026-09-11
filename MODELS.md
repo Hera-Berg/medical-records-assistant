@@ -53,6 +53,15 @@ ignores every prescription photo, which reads as "the model is bad at OCR".
 The same probe covers the llama.cpp offline path, where the equivalent trap is loading the weights
 without the separate `mmproj` projector file.
 
+**Probe guided grammar at startup too, for the same reason.** Some servers apply schema-constrained
+decoding only through their own toggle and accept `response_format` without acting on it. The effect
+is every extraction failing on a parse error that points at the schema, which is the wrong place to
+look. Send one tiny schema-constrained request — a single-field object — and assert three things: it
+parses, it is the shape it was given, and `finish_reason` is `stop` rather than `length`. The tiny
+ceiling is part of the check: a one-field object cannot run past sixty-four tokens unless nothing is
+constraining it. This runs before the vision probe, because it is cheaper and because a server that
+ignores the schema explains a good deal else besides.
+
 ### Runtime
 
 The client speaks only OpenAI-compatible `/v1/chat/completions` against a configured base URL. That
@@ -272,6 +281,34 @@ non-thinking recommendation of `presence_penalty=1.5` is actively harmful here �
 design, and penalising repeated tokens fights the grammar. Pin low temperature, no presence penalty,
 and record the sampling parameters in the `extraction.completed` event alongside the prompt hash.
 
+**`finish_reason: "length"` is its own failure, never "malformed output".** They arrive at the
+parser looking identical — JSON that will not load — and they want opposite investigations. "The
+model ran out of room" is a ceiling to raise; "the model produced invalid output" is this server's
+guided decoding to check. Reporting the first as the second sends someone to read documentation
+about grammar settings while a token cap sits there unexamined. Carry `finish_reason` on every
+completion, check it **before** anything parses the content — a server can stop mid-array and leave
+something structurally valid but short, and the claims it dropped are the ones nobody would notice
+were missing — and record it on the `extraction.completed` event.
+
+**The output ceiling is raised on evidence, not guessed and not configured.** A prescription yields
+three claims; a pathology report yields four result tables and a comment, and one fixed number
+cannot be right for both. So the first request gets an ordinary budget, and a cut-off answer is
+asked again with more room: double each time, stop at a hard ceiling, and clamp every step to what
+`ctx` can still hold given the prompt tokens the server itself reported. There is no `max_tokens`
+config key — the person who would have to find and raise it is exactly the person who does not yet
+know that a token cap is what they are looking at.
+
+A page that still overruns at the top of the ladder is **reported, never half-read**. One page per
+prompt is already the rule and sectioning a single page would destroy per-page citation granularity
+for two half-answers nothing reconciles, so the artefact parks as `needs-attention` naming which
+limit was hit and what makes room — a larger `ctx`, or a smaller `max_pixels` so the image costs
+fewer tokens. **No claims are proposed from an artefact any page of which was cut off**, including
+from the pages that fit: filing those would put a partial list of results in the record wearing the
+same frontmatter as a complete one. The raw output of every page is still recorded verbatim. And a
+truncated read is the one extraction that does not settle its idempotency key — the model never
+finished answering, it proposed nothing that could be duplicated, and `ctx` and the image budget are
+both outside the key, so `--artifact` genuinely re-reads it after either is changed.
+
 **The model never does arithmetic or date math.** It extracts literal strings — `"30 tablets"`,
 `"twice daily"`, `"since around Easter"`, `"1 repeat"` — and Python parses them deterministically.
 Every quantity in the wiki must be traceable to a literal span the model copied, not a number it
@@ -399,7 +436,7 @@ report. If 4B recall on medications, doses or allergies falls below 9B on any fi
 becomes a required review case at the fallback tier — the answer is to route it to a human, never to
 quietly accept the worse result because the box was unreachable.
 
-Three tests belong here rather than in the fixture corpus:
+Five tests belong here rather than in the fixture corpus:
 
 - `test_endpoint_guard_rejects_public_host` — a public hostname or a commercial API base URL fails at
   startup, and fails again on a host that re-resolves publicly mid-session.
@@ -407,6 +444,13 @@ Three tests belong here rather than in the fixture corpus:
   succeeds, the artefact lands in `raw/`, the job persists, and it drains on reconnect.
 - `test_retry_is_idempotent` — a job retried three times across a restart produces exactly one
   `claim.proposed` per claim.
+- `test_truncated_output_is_not_reported_as_malformed` — a `finish_reason: "length"` answer says the
+  model ran out of room and says nothing about grammar settings. Beside it: the ceiling is raised and
+  the page asked again, an ordinary page still costs one call, and a page that overruns the top of
+  the ladder proposes nothing and parks naming the limit it hit.
+- `test_grammar_probe_catches_an_unconstrained_server` — prose, JSON of the wrong shape, and an
+  answer that never stops each fail the startup probe as a grammar problem. Beside it: a box that
+  goes to sleep mid-probe is still reported as unreachable.
 
 And four on credentials, which are cheap and catch the failures that matter most:
 

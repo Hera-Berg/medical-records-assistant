@@ -14,6 +14,7 @@ byte-identical rebuild, which every other guarantee in the project depends on.
 from __future__ import annotations
 
 from . import (
+    budget,
     crossverify,
     dates,
     evaluate,
@@ -30,6 +31,7 @@ from . import (
 )
 
 __all__ = [
+    "budget",
     "crossverify",
     "dates",
     "evaluate",

@@ -96,6 +96,13 @@ class Extraction:
     #: reports them with the same word sends the user looking in the wrong
     #: place, which is what "0 claims proposed" used to do for both.
     refused: bool = False
+    #: Whether the answer was cut off at a token ceiling rather than finished.
+    #: Narrower than ``refused`` and reported separately, because the fix is a
+    #: different one: "the model ran out of room" is a cap to raise, while a
+    #: refused answer is a server setting or a prompt to look at. Sending
+    #: someone to check grammar settings when a token cap was the whole story
+    #: costs an evening.
+    truncated: bool = False
     document_date: dict[str, Any] | None = None
     claims: tuple[ReadClaim, ...] = ()
     rejections: tuple[Rejection, ...] = ()
@@ -331,6 +338,22 @@ def merge(extractions: Sequence[Extraction]) -> Extraction:
     """
     if not extractions:
         return Extraction(readable=False, unreadable_reason="there were no pages to read")
+    cut_off = [item for item in extractions if item.truncated]
+    if cut_off:
+        # One page cut off makes the whole artefact unread, even where other
+        # pages answered in full. Filing the pages that fit would put a partial
+        # list of results in the record wearing the same frontmatter as a
+        # complete one, and nothing downstream could tell the difference. The
+        # raw output of every page is still recorded; none of it becomes a claim.
+        return Extraction(
+            artifact_kind=extractions[0].artifact_kind,
+            readable=False,
+            refused=True,
+            truncated=True,
+            unreadable_reason=cut_off[0].unreadable_reason,
+            rejections=tuple(r for item in extractions for r in item.rejections),
+            notes=tuple(note for item in extractions for note in item.notes),
+        )
     readable = [item for item in extractions if item.readable]
     if not readable:
         return Extraction(

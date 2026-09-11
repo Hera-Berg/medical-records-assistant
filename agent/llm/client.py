@@ -22,6 +22,12 @@ swapped under the client without it noticing, which would silently corrupt
 provenance; a disagreement stops rather than proceeding, and never updates the
 config to match.
 
+**Running out of room is not the same as answering badly.** ``finish_reason``
+is carried on every completion and checked before anything parses the content. A
+cut-off answer is reported as a cut-off answer — a cap to raise — rather than as
+invalid JSON, which is a server's grammar setting to check. The two look
+identical at the parser and want opposite investigations.
+
 **Grammar-constrained decoding is not optional.** Without it these models narrate
 a plan before answering, that narration lands in ``content``, and every
 schema-validated extraction fails. A stray ``<think>`` block is still stripped
@@ -45,6 +51,7 @@ from ..errors import (
     EndpointUnreachable,
     InferenceError,
     ModelIdentityMismatch,
+    OutputTruncated,
     RateLimited,
 )
 from . import credentials as credentials_mod
@@ -55,6 +62,24 @@ log = logging.getLogger("agent.llm")
 
 CHAT_PATH = "/chat/completions"
 MODELS_PATH = "/models"
+
+#: Room for one page's answer, before anything asks for more. Enough for a
+#: prescription several times over; not enough for a pathology report with four
+#: result tables, which is why :mod:`agent.extract.budget` raises it when the
+#: server says an answer was cut off rather than finished.
+DEFAULT_MAX_TOKENS = 2048
+
+#: One field, one word. Small enough that a server honouring the schema cannot
+#: overrun a tiny ceiling, which is what makes the ceiling itself a signal: an
+#: answer still going after 64 tokens is an answer nothing is constraining.
+GRAMMAR_PROBE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"word": {"type": "string"}},
+    "required": ["word"],
+    "additionalProperties": False,
+}
+GRAMMAR_PROBE_NAME = "grammar_probe"
+GRAMMAR_PROBE_TOKENS = 64
 
 #: A reasoning trace that reached ``content`` because no parser was configured.
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
@@ -80,6 +105,21 @@ class Completion:
     #: is one server-config change away from failing differently.
     stripped_reasoning: bool = False
     sampling: Mapping[str, Any] = field(default_factory=dict)
+    #: What the server said stopped it: ``stop``, ``length``, or whatever else
+    #: it uses. Recorded on the extraction event, and checked before the content
+    #: is parsed.
+    finish_reason: str | None = None
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the answer was cut off at the token ceiling rather than ended."""
+        return self.finish_reason == "length"
+
+    @property
+    def max_tokens(self) -> int | None:
+        """The ceiling this answer was given, for the message that reports it."""
+        value = self.sampling.get("max_tokens")
+        return value if isinstance(value, int) else None
 
     @property
     def usage(self) -> dict[str, Any]:
@@ -247,7 +287,7 @@ class Client:
         messages: Sequence[Mapping[str, Any]],
         schema: Mapping[str, Any] | None = None,
         schema_name: str = "extraction",
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> Completion:
         """One chat completion, grammar-constrained when *schema* is given."""
         settings = self.settings
@@ -285,7 +325,7 @@ class Client:
             payload = self._retry_without_thinking_toggle(body, exc)
         latency = time.monotonic() - started
 
-        content, stripped = _content_of(payload)
+        content, stripped, finish_reason = _content_of(payload)
         reported = payload.get("model")
         self._check_identity(reported)
         return Completion(
@@ -295,6 +335,7 @@ class Client:
             latency_s=latency,
             stripped_reasoning=stripped,
             sampling=sampling,
+            finish_reason=finish_reason,
         )
 
     def _retry_without_thinking_toggle(
@@ -375,19 +416,48 @@ class Client:
         )
         return expected.lower() in answer.content.lower()
 
+    def probe_grammar(self) -> Completion:
+        """Ask for one tiny schema-constrained object, and hand back the answer.
 
-def _content_of(payload: Mapping[str, Any]) -> tuple[str, bool]:
+        The assertions live in :mod:`agent.extract.probe`, which has the words
+        for what each failure means. What matters here is that the request is
+        *shaped like an extraction* — ``response_format`` with a strict schema —
+        because the thing being checked is whether this server honours that at
+        all, or only its own guided-decoding toggle. A server that ignores the
+        field answers text prompts perfectly and fails every real extraction,
+        and until this probe existed that failure was only ever discovered by a
+        ninety-second job on a prescription photo.
+        """
+        return self.complete(
+            [
+                {
+                    "role": "user",
+                    "content": (
+                        "Reply with JSON only, matching the schema you have been "
+                        "given: the field `word` set to the string `ready`."
+                    ),
+                }
+            ],
+            schema=GRAMMAR_PROBE_SCHEMA,
+            schema_name=GRAMMAR_PROBE_NAME,
+            max_tokens=GRAMMAR_PROBE_TOKENS,
+        )
+
+
+def _content_of(payload: Mapping[str, Any]) -> tuple[str, bool, str | None]:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         raise InferenceError("the inference box returned no choices")
-    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = choice.get("message")
     if not isinstance(message, dict):
         raise InferenceError("the inference box returned a choice with no message")
     content = message.get("content")
     if not isinstance(content, str):
         raise InferenceError("the inference box returned a message with no text")
+    finish = choice.get("finish_reason")
     cleaned = _THINK.sub("", content).strip()
-    return cleaned, cleaned != content.strip()
+    return cleaned, cleaned != content.strip(), finish if isinstance(finish, str) else None
 
 
 def _body_excerpt(response: httpx.Response, limit: int = 400) -> str:
@@ -397,6 +467,32 @@ def _body_excerpt(response: httpx.Response, limit: int = 400) -> str:
         return "<unreadable body>"
     text = " ".join(text.split())
     return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def parse_completion(completion: Completion) -> Any:
+    """The JSON a completion carries — refusing a truncated one before parsing it.
+
+    The order is the point. A cut-off answer sometimes parses: a server can stop
+    mid-array and leave something structurally valid but short, and the claims
+    it dropped are the ones nobody would ever notice were missing. So the
+    ceiling is checked first, and the content is not read at all.
+
+    The raw output is still recorded by the caller either way. Nothing is thrown
+    away; nothing is made a claim of.
+    """
+    if completion.truncated:
+        ceiling = completion.max_tokens
+        room = f" at the {ceiling}-token ceiling" if ceiling else ""
+        raise OutputTruncated(
+            f"the box stopped{room} with the answer unfinished (finish_reason "
+            f"'length'), so the JSON is cut off mid-object. That is a token cap, "
+            f"not a grammar problem — nothing needs changing on the server. The "
+            f"raw output is recorded exactly as it came back; no claim is made "
+            f"from it, because a truncated answer is a partial list, and a "
+            f"silently short list of medications is the one failure this record "
+            f"exists to prevent."
+        )
+    return parse_json_content(completion.content)
 
 
 def parse_json_content(content: str) -> Any:

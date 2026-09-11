@@ -91,10 +91,21 @@ def completed_keys(events: Iterable[Event]) -> set[tuple[str, str, str]]:
     because an extraction that legitimately produced no claims — a page that
     states nothing, a page nobody could read — is still done, and re-running it
     every time the queue drained would be an infinite retry of a settled answer.
+
+    A **truncated** extraction is the exception, and the word "settled" is why.
+    An answer cut off at a token ceiling is not an answer the model finished
+    giving, and the conditions that produced it — ``models.vlm.ctx``, the image
+    budget, the box's own limits — are all outside the key, so re-reading the
+    artefact after changing one of them genuinely re-reads it. It proposed no
+    claims, so nothing is duplicated by asking again. Nothing re-queues it on its
+    own either: the job parks as ``needs-attention`` and only ``--artifact``
+    re-opens it.
     """
     keys: set[tuple[str, str, str]] = set()
     for event in events:
         if event.type != EXTRACTION_COMPLETED:
+            continue
+        if event.payload.get("truncated") is True:
             continue
         recorded = event.payload.get("key")
         if isinstance(recorded, dict):
@@ -186,6 +197,11 @@ def extraction_event(
             "model_reported": completion.model,
             "sampling": dict(completion.sampling),
             "stripped_reasoning": completion.stripped_reasoning,
+            # What stopped the model, and whether that was the token ceiling.
+            # Kept because "why did this artefact propose nothing" is a question
+            # asked months later, from the log, with no server to ask.
+            "finish_reason": completion.finish_reason,
+            "truncated": completion.truncated,
             "latency_s": round(completion.latency_s, 3),
             "usage": completion.usage,
             "prompt_version": prompts_used[0].version if prompts_used else None,
@@ -380,7 +396,13 @@ def build(
         )
 
     notes = list(extraction.notes)
-    if not extraction.readable:
+    if extraction.truncated:
+        notes.append(
+            f"artefact {key.artifact} was cut off before the answer ended, so "
+            f"nothing was proposed from it — review manually: "
+            f"{extraction.unreadable_reason}"
+        )
+    elif not extraction.readable:
         notes.append(
             f"artefact {key.artifact} could not be read — review manually: "
             f"{extraction.unreadable_reason}"

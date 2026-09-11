@@ -10,6 +10,19 @@ first failure. That ordering is the same one the client enforces: the address is
 verified before a credential is read, so a probe against a public host never
 touches the key either.
 
+Two checks earn their place beyond reachability, and they fail in ways nothing
+else catches.
+
+The **grammar check** sends one tiny schema-constrained request and asserts three
+things about the answer: that it parses, that it is the shape it was given, and
+that ``finish_reason`` is ``stop`` rather than ``length``. Some servers apply
+guided decoding only through their own toggle and ignore ``response_format``
+entirely; the effect is an unconstrained answer that fails every extraction with
+a parse error, and until this check existed the only way to discover it was a
+ninety-second job on a prescription photo. The ceiling is deliberately tiny, so
+an answer that runs past it is itself the signal: a one-field object cannot
+overrun sixty-four tokens unless nothing is constraining it.
+
 The **vision check is the one that earns its place**. Support for ``image_url``
 content parts is less uniform across MLX servers than across llama.cpp —
 ``mlx_lm.server`` is text-only and will answer every text prompt perfectly while
@@ -48,11 +61,18 @@ from .images import DESKEW_NOTE
 #: enough that a model cannot produce it by guessing what a prescription says.
 PROBE_TEXT = "ZQ7 VERIFY 42"
 
+#: What the grammar probe asks the model to put in its one field.
+GRAMMAR_WORD = "ready"
+
 WORKING = "working"
 UNREACHABLE = "unreachable"
 UNAUTHORISED = "unauthorised"
 MISCONFIGURED = "misconfigured"
 BLIND = "vision-not-working"
+#: The server answers, but does not constrain decoding to the schema it was
+#: given. Its own state for the same reason ``BLIND`` is: every extraction fails
+#: and the message it fails with points at the wrong thing.
+UNCONSTRAINED = "grammar-not-enforced"
 
 
 def probe_image() -> bytes:
@@ -101,6 +121,54 @@ class ProbeReport:
             ],
             "notes": list(self.notes),
         }
+
+
+def _check_grammar(answer) -> Check:
+    """What one tiny schema-constrained answer proves.
+
+    Each failure gets its own sentence because each sends the reader somewhere
+    different: a cut-off answer to the token ceiling, an unparseable one to the
+    server's guided-decoding setting, and a well-formed answer of the wrong
+    shape to whether the schema crossed the wire at all.
+    """
+    from ..llm.client import GRAMMAR_PROBE_TOKENS, parse_json_content  # noqa: PLC0415
+
+    if answer.truncated:
+        return Check(
+            "grammar",
+            False,
+            f"the box was still answering at {GRAMMAR_PROBE_TOKENS} tokens for a "
+            f"one-field object, which it could not be if the schema were being "
+            f"applied. Most likely response_format is ignored and the reply is "
+            f"prose — or a reasoning trace — rather than JSON. Turn on this "
+            f"server's guided-grammar option, and set a reasoning parser or "
+            f"disable thinking",
+        )
+    try:
+        payload = parse_json_content(answer.content)
+    except InferenceError:
+        return Check(
+            "grammar",
+            False,
+            "the box answered a schema-constrained request with something that is "
+            "not JSON. It accepts response_format without applying it, so every "
+            "extraction would fail this way. Turn on guided grammar on the server",
+        )
+    if not isinstance(payload, dict) or not isinstance(payload.get("word"), str):
+        return Check(
+            "grammar",
+            False,
+            "the box answered with JSON that is not the schema it was given — the "
+            "one required field is missing. Decoding is not being constrained, so "
+            "claim extraction would produce valid JSON of the wrong shape, which "
+            "the validator rejects one claim at a time",
+        )
+    return Check(
+        "grammar",
+        True,
+        f"a schema-constrained request came back as the schema, and finished "
+        f"({answer.finish_reason or 'no finish_reason reported'})",
+    )
 
 
 def run(client, skip_vision: bool = False) -> ProbeReport:
@@ -165,10 +233,36 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
         return ProbeReport(MISCONFIGURED, tuple(checks), auth="ok", notes=tuple(notes))
     checks.append(Check("model", True, f"{settings.model} is available"))
 
+    # 4. Guided decoding is actually applied. Cheap, text-only, and it comes
+    #    before vision because a server that ignores the schema explains a great
+    #    deal else besides, and costs one small request to find out about.
+    #
+    #    The box going to sleep between two checks is not a grammar failure, so
+    #    the states that mean something else keep their own names here.
+    try:
+        answered = client.probe_grammar()
+    except AuthRejected as exc:
+        checks.append(Check("authentication", False, redaction.scrub(str(exc))))
+        return ProbeReport(UNAUTHORISED, tuple(checks), auth="failed", notes=tuple(notes))
+    except EndpointUnreachable as exc:
+        checks.append(Check("reachability", False, redaction.scrub(str(exc))))
+        return ProbeReport(UNREACHABLE, tuple(checks), auth="ok", notes=tuple(notes))
+    except ModelIdentityMismatch as exc:
+        checks.append(Check("model identity", False, redaction.scrub(str(exc))))
+        return ProbeReport(MISCONFIGURED, tuple(checks), auth="ok", notes=tuple(notes))
+    except InferenceError as exc:
+        checks.append(Check("grammar", False, redaction.scrub(str(exc))))
+        return ProbeReport(UNCONSTRAINED, tuple(checks), auth="ok", notes=tuple(notes))
+
+    grammar = _check_grammar(answered)
+    checks.append(grammar)
+    if not grammar.ok:
+        return ProbeReport(UNCONSTRAINED, tuple(checks), auth="ok", notes=tuple(notes))
+
     if skip_vision:
         return ProbeReport(WORKING, tuple(checks), auth="ok", notes=tuple(notes))
 
-    # 4. Vision actually works. The check this module exists for.
+    # 5. Vision actually works. The check this module exists for.
     import base64  # noqa: PLC0415 - only needed here
 
     encoded = base64.b64encode(probe_image()).decode("ascii")

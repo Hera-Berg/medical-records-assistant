@@ -130,6 +130,22 @@ class RateLimited(InferenceError):
     """
 
 
+class OutputTruncated(InferenceError):
+    """The answer stopped because it hit the token ceiling, not because it ended.
+
+    Its own class because it is a different problem with a different fix from
+    malformed output. "The model ran out of room" is a cap to raise; "the model
+    produced invalid output" is a server's grammar setting to check. They arrive
+    looking identical — both present as JSON that will not parse — and the
+    generic message sends someone to read server documentation about guided
+    decoding when the cap was the whole story.
+
+    A truncated answer is never parsed even when it happens to parse. It is a
+    *partial* list, and a silently short list of medications is precisely the
+    failure the eval harness's 100% recall rule exists to prevent.
+    """
+
+
 class ModelIdentityMismatch(InferenceError):
     """The server reported a different model than ``config.toml`` pins.
 

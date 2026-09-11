@@ -91,6 +91,11 @@ MESSAGES: dict[str, str] = {
         "so it is most likely discarding images. Every document would be "
         "silently ignored. Run `health-agent probe` for what to check."
     ),
+    "grammar-not-enforced": (
+        "The box answers, but it is not holding replies to the shape the record "
+        "asks for, so nothing it reads can be filed. Run `health-agent probe` "
+        "for what to change on the server."
+    ),
     "endpoint-unusable": (
         "The endpoint could not be used. Run `health-agent probe` for the "
         "detail, which is not shown here because it can quote what was sent."
@@ -145,6 +150,10 @@ _FROM_PROBE = {
     "unreachable": (UNREACHABLE, "asleep"),
     "unauthorised": (UNAUTHORISED, "key-rejected"),
     "vision-not-working": (BLIND, "vision-blind"),
+    # Misconfigured rather than a state of its own: unlike a blind box, which
+    # looks like a working one until someone reads the wiki, this fails every
+    # extraction loudly and immediately. It is a server setting to change.
+    "grammar-not-enforced": (MISCONFIGURED, "grammar-not-enforced"),
 }
 
 
@@ -177,6 +186,7 @@ def _misconfiguration_reason(report) -> str:
         else "credential-unreadable",
         "model": "model-mismatch",
         "model identity": "model-mismatch",
+        "grammar": "grammar-not-enforced",
     }.get(failed, "endpoint-unusable")
 
 

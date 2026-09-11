@@ -288,7 +288,8 @@ def run_corpus(
     from . import transcripts as transcripts_mod
     from .schema import EXTRACTION_SCHEMA, SCHEMA_NAME
     from .validate import merge, read as read_answer
-    from ..llm.client import parse_json_content
+    from ..errors import OutputTruncated
+    from ..llm.client import parse_completion
     from ..errors import HealthAgentError
 
     results: list[FixtureResult] = []
@@ -329,7 +330,22 @@ def run_corpus(
                     schema_name=SCHEMA_NAME,
                 )
                 try:
-                    payload = parse_json_content(completion.content)
+                    payload = parse_completion(completion)
+                except OutputTruncated:
+                    from .validate import Extraction
+
+                    # Scored as a miss, and named as the miss it is. A fixture
+                    # the box ran out of room on is a fixture whose recall is
+                    # zero, and calling that "not JSON" would send whoever reads
+                    # the report to the server's grammar settings.
+                    answers.append(
+                        Extraction(
+                            readable=False,
+                            truncated=True,
+                            unreadable_reason="cut off at the token ceiling",
+                        )
+                    )
+                    continue
                 except HealthAgentError:
                     from .validate import Extraction
 
@@ -367,7 +383,7 @@ def _score_recording(
 
     from ..asr import transcribe as transcribe_mod  # noqa: PLC0415
     from ..errors import HealthAgentError  # noqa: PLC0415
-    from ..llm.client import parse_json_content  # noqa: PLC0415
+    from ..llm.client import parse_completion  # noqa: PLC0415
     from . import transcripts as transcripts_mod  # noqa: PLC0415
     from .validate import Extraction, read as read_answer  # noqa: PLC0415
 
@@ -395,9 +411,12 @@ def _score_recording(
         schema_name=transcripts_mod.SCHEMA_NAME,
     )
     try:
-        payload = parse_json_content(completion.content)
-    except HealthAgentError:
-        return score(fixture, [], readable=False, error="not JSON")
+        payload = parse_completion(completion)
+    except HealthAgentError as exc:
+        # The message says which of the two it was — an unfinished answer or an
+        # invalid one — because a recall failure with the wrong cause attached
+        # is what makes a model swap get accepted on a bad report.
+        return score(fixture, [], readable=False, error=str(exc))
 
     extraction = read_answer(payload, mime=fixture.mime, locale=locale)
     held, _notes = transcripts_mod.force_tier(extraction.claims)
