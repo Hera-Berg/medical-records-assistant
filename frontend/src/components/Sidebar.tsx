@@ -108,6 +108,13 @@ export function Sidebar({
              ignore. */
           note={health && health.review.total > 0 ? String(health.review.total) : undefined}
         />
+        <Item
+          to="/summary"
+          label="For an appointment"
+          path={path}
+          navigate={navigate}
+          icon={<Sheet />}
+        />
         <Item to="/files" label="Files" path={path} navigate={navigate} icon={<Folder />} />
         <Item
           to="/add"
@@ -164,6 +171,17 @@ export function Sidebar({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+/** A sheet of paper, which is what this one actually produces. */
+function Sheet() {
+  return (
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17V3a.5.5 0 0 1 .5-.5Z" />
+      <path d="M12 2.5V6h3" />
+      <path d="M7.5 9.5h5M7.5 12.5h5" />
+    </svg>
   );
 }
 

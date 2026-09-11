@@ -256,6 +256,34 @@ def build(
                     reading_text=state.sentence(),
                 )
             )
+        elif event.type == "summary.generated":
+            # A prepared sheet is something the patient did, on a date, and it
+            # left a file in their folder. An event the log holds that no view
+            # shows is invisible state, and "what did I hand over, and when" is
+            # exactly the question a timeline exists to answer.
+            #
+            # Marked patient-reported because that is what it is: the patient
+            # prepared it. It is not a claim and it asserts nothing about their
+            # health, which is why the row says only that it happened.
+            parsed = _date_from_ts(event.ts)
+            if parsed is None:
+                continue
+            label = str(event.payload.get("label") or "").strip()
+            rows.append(
+                Row(
+                    date=parsed,
+                    date_kind=RECORDED,
+                    marker=MARKER_NOTE,
+                    text=(
+                        f"Prepared a summary to take to {label}"
+                        if label
+                        else "Prepared a summary"
+                    ),
+                    cite=f"ev-{event.id}",
+                    event_id=event.id,
+                    sort_key=event.sort_key,
+                )
+            )
         elif event.type == "note.recorded":
             parsed = _date_from_ts(event.ts)
             if parsed is None:

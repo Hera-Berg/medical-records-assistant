@@ -20,6 +20,9 @@ import type {
   Health,
   ReviewQueue,
   Settings,
+  Summary,
+  SummaryList,
+  SummaryResponse,
   Timeline,
   WikiIndex,
 } from "./types";
@@ -177,6 +180,33 @@ export const api = {
   },
 
   rebuild: () => request<Record<string, unknown>>("/api/rebuild", { method: "POST" }),
+
+  summaries: () => request<SummaryList>("/api/summary"),
+
+  summary: (id: string) =>
+    request<SummaryResponse>(`/api/summary/${encodeURIComponent(id)}`),
+
+  /**
+   * The sheet that would be prepared, without preparing it.
+   *
+   * Writes nothing and records nothing, so someone can read exactly what they
+   * are about to hand a clinician before an event and two files exist in their
+   * folder.
+   */
+  previewSummary: (body: { question?: string; label?: string; since?: string | null }) =>
+    request<Summary>("/api/summary/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  /** Prepare it for real: one event, and two files in `exports/`. */
+  prepareSummary: (body: { question?: string; label?: string; since?: string | null }) =>
+    request<Summary>("/api/summary", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   settings: () => request<Settings>("/api/settings"),
 

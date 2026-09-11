@@ -99,7 +99,7 @@ NOTE_MARGIN_MM = 1.2
 #: column widths in :data:`agent.summary.html.STYLE`.
 VALUE_CHARS = 40
 NOTE_CHARS = 48
-SOURCE_CHARS = 30
+SOURCE_CHARS = 33
 
 
 def _lines(text: str, per_line: int) -> int:
@@ -329,12 +329,24 @@ class Section:
 
     @property
     def omitted_note(self) -> str | None:
+        """What this section left out, in its own words.
+
+        Two wordings, because "further" is a lie when nothing at all fitted —
+        and a section that printed no rows and then said "nothing has changed"
+        would be worse than a lie: it would assert an absence over the top of 45
+        entries it had just dropped.
+        """
         if not self.omitted:
             return None
         thing = "entry" if self.omitted == 1 else "entries"
+        if self.lines:
+            return (
+                f"{self.omitted} further {thing} in this section are in my record "
+                f"and not on this page"
+            )
         return (
-            f"{self.omitted} further {thing} in this section are in my record and "
-            f"not on this page"
+            f"{self.omitted} {thing} in this section are in my record, and none of "
+            f"them fitted on this page"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -526,8 +538,5 @@ class Summary:
             "cited": list(self.cited),
             "sources": list(self.sources),
             "overflowed": self.overflowed,
+            "height_mm": round(self.height_mm, 1),
         }
-
-
-#: A section heading: its top margin, the line itself, the rule under it.
-HEADING_MM = 8.0

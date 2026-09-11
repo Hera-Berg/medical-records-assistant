@@ -7,10 +7,11 @@
  * record is the same action as dropping a file in, arriving through a different
  * input, and a tab of its own would imply a conversation.
  *
- * The review inbox is here; the consultation summary is phase 8. The inbox is
+ * The review inbox is here, and so is the consultation summary. The inbox is
  * the only screen that puts anything into the record, which is why it is the
  * one place a proposed value is shown at all — everywhere else a gated value
- * would be read as current.
+ * would be read as current. The summary screen writes too, but only a document:
+ * it records that a sheet was prepared and never changes a claim.
  *
  * There is also no assistant to ask. Answering questions about the record is
  * phase 10 and it arrives with retrieval, citation-per-sentence and a refusal
@@ -38,6 +39,7 @@ import { Record } from "./components/Record";
 import { Review } from "./components/Review";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
+import { SummaryScreen } from "./components/Summary";
 import { Timeline } from "./components/Timeline";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
@@ -128,6 +130,16 @@ export function App() {
   } else if (first === "add") {
     screen = (
       <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} />
+    );
+  } else if (first === "summary") {
+    screen = (
+      <SummaryScreen
+        id={tail ? decodeURIComponent(tail) : undefined}
+        version={version}
+        navigate={navigate}
+        onChanged={refresh}
+        setHeader={setHeader}
+      />
     );
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
@@ -254,6 +266,15 @@ function defaultHeader(segments: string[]): PageHeader {
       subtitle:
         "What has been read out of your documents and is waiting for you to say yes, no, or that it should say something else. Nothing important joins your record until you do.",
     };
+  }
+  if (first === "summary") {
+    return second
+      ? { title: "Your sheet for this appointment", subtitle: "Reading…" }
+      : {
+          title: "For an appointment",
+          subtitle:
+            "One page to take with you: what changed, what you take, what you are allergic to, and the question you came to ask. Every line says which of your documents it came from.",
+        };
   }
   if (first === "settings") {
     return {

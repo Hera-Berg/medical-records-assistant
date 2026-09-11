@@ -124,3 +124,31 @@ review rather than by a linter.
 - **System fonts only, and no network call the page was not asked to make.** A
   webfont is a network call. The content security policy on the served document
   enforces this in the browser rather than trusting the bundler config.
+
+## Measuring the consultation sheet
+
+The sheet has a hard one-page limit, and `agent/summary/budget.py` enforces it
+from an arithmetic model of the page. **That model cannot be derived; it has to
+be calibrated.** A table cell's line box is set by the strut of its own type, so
+a note in smaller text still costs a full line — the first version of the budget
+assumed otherwise and was wrong by a whole page.
+
+```
+health-agent serve --vault /path/to/vault &
+python frontend/tools/sheet.py --out /tmp/sheet --pdf
+```
+
+For every summary in the record it renders `/print/{id}` through a real browser,
+prints it to an A4 PDF, and reports the page count, the measured height against
+the budget's estimate, and the height of every section and every row. Re-run it
+after any change to `agent/summary/html.py`, and change the constants in
+`agent/summary/model.py` rather than the assertion.
+
+The model deliberately reads 10 to 15mm long, because it adds every margin where
+a browser collapses adjacent ones. That is the direction to be wrong in: an
+over-estimate costs a row, and an under-estimate is a sheet that says it fits on
+one page and does not.
+
+**Print one.** A PDF answers "does it fit"; only paper answers "is this a thing
+a person would read in a waiting room", and paper is how this document actually
+reaches a clinician.

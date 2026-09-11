@@ -479,3 +479,112 @@ export interface FileContent {
   bytes: number;
   shown: number;
 }
+
+/**
+ * The consultation sheet.
+ *
+ * Every field here is computed by the server. Nothing on this screen decides
+ * what appears on the sheet, in what order, or whether it fits on a page —
+ * that is all code in `agent/summary/`, and a second selection rule living in
+ * the browser is how the printed sheet and the screen would come to disagree
+ * about what the patient is taking.
+ */
+export interface SummarySource {
+  tier: Tier | null;
+  tier_word: string;
+  when: string | null;
+  /** "Prescription · 4 June 2026" — the citation as a clinician can use it. */
+  text: string;
+  artifact: string | null;
+  rel: string | null;
+  citation: Citation;
+}
+
+export interface SummaryLine {
+  label: string;
+  value: string;
+  value_text: string;
+  source_text: string;
+  note: string | null;
+  /** "Needs confirming", "Sources disagree", "Not confirmed by me". A word, always. */
+  state: string | null;
+  subject_id: string | null;
+  /** The other reading, where two sources disagree and neither was chosen. */
+  alternatives: string[];
+  claims: string[];
+  sources: SummarySource[];
+}
+
+export interface SummarySection {
+  key: string;
+  heading: string;
+  subnote: string;
+  lines: SummaryLine[];
+  omitted: number;
+  omitted_note: string | null;
+  empty_note: string;
+}
+
+export interface SummaryWaiting {
+  total: number;
+  high: number;
+  kinds: string[];
+  sentence: string;
+}
+
+export interface Summary {
+  id: string;
+  prepared: string;
+  prepared_words: string;
+  title: string;
+  dateline: string;
+  standfirst: string;
+  demo: boolean;
+  demo_warning: string | null;
+  label: string;
+  question: string;
+  since: string | null;
+  since_ts: string | null;
+  since_reason: string;
+  sections: SummarySection[];
+  waiting: SummaryWaiting;
+  cited: string[];
+  sources: string[];
+  /** True only when medications or allergies took more than one page on their
+   *  own. Nothing is ever dropped from either to prevent it. */
+  overflowed: boolean;
+  height_mm: number;
+  print_url: string;
+  markdown?: string;
+  event?: string;
+  exports?: { markdown?: string; html?: string };
+  message?: string;
+}
+
+/** What `GET /api/summary/{id}` returns for a sheet withdrawn by a rejection. */
+export interface SummaryResponse extends Partial<Summary> {
+  id: string;
+  summary?: null;
+  withdrawn?: number;
+  message?: string;
+  exports?: { markdown?: string; html?: string };
+}
+
+export interface SummaryRow {
+  id: string;
+  ts: string;
+  prepared: string | null;
+  prepared_words: string;
+  label: string;
+  question: string;
+  since: string | null;
+  since_source: string | null;
+  exports: { markdown?: string; html?: string };
+  withdrawn: number;
+  print_url: string;
+}
+
+export interface SummaryList {
+  summaries: SummaryRow[];
+  as_of: string;
+}

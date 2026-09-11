@@ -97,9 +97,13 @@ td {
   border-bottom: 1px solid #d2d4ce;
 }
 tr:last-child td { border-bottom: 0; }
-td.name { width: 27%; font-weight: 600; }
+/* The source column is sized to hold "Prescription · 2 September 2026" on one
+   line. At 24% it was a millimetre short, which broke the year onto a second
+   line on every row of a long medication list and doubled the height of the
+   one section that may never be shortened. */
+td.name { width: 24%; font-weight: 600; }
 td.said { width: 49%; }
-td.src { width: 24%; padding-right: 0; text-align: right; }
+td.src { width: 27%; padding-right: 0; text-align: right; }
 .alt { font-style: normal; }
 .or { font-variant: small-caps; letter-spacing: 0.04em; }
 .state { font-weight: 600; }
@@ -179,7 +183,11 @@ def _section(section: Section, mode: str) -> str:
     if section.subnote:
         out.append(f'<p class="subnote small muted">{escape(section.subnote)}</p>')
     if not section.lines:
-        out.append(f'<p class="empty muted">{escape(section.empty_note)}</p>')
+        # What the page dropped, where it dropped everything — never the empty
+        # note, which would assert that nothing happened over the top of it.
+        note = section.omitted_note
+        text = f"{note}." if note else section.empty_note
+        out.append(f'<p class="empty muted">{escape(text)}</p>')
         return "\n".join(out)
     rows = []
     for line in section.lines:

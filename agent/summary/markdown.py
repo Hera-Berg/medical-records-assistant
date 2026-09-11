@@ -50,7 +50,12 @@ def _section(document: Document, section: Section) -> None:
         # finding and the reader needs it, but there is no document that says
         # so, and inventing a citation for it would be worse than saying it
         # plainly as something the sheet asserts about itself.
-        document.aside(section.empty_note)
+        #
+        # Unless something *was* dropped, in which case the absence is the page's
+        # doing and not the record's, and saying "nothing changed" would be the
+        # sheet asserting one over the other.
+        note = section.omitted_note
+        document.aside(f"{note}." if note else section.empty_note)
         return
     for line in section.lines:
         document.bullet(_line_sentence(line))

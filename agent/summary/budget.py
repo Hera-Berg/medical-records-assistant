@@ -27,6 +27,11 @@ different sizes and no single row height describes both. ``frontend/tools/sheet.
 renders the print view through a real browser and reports how many pages came
 out; the constants in :mod:`agent.summary.model` were tuned until that agreed
 with :func:`fit`, and it is the tool to re-run if the stylesheet changes.
+
+The model does not account for **margin collapse** — it adds every margin, where
+a browser collapses adjacent ones — so it reads 10 to 15mm long on a typical
+sheet. That is the direction to be wrong in: an over-estimate costs a row, and
+an under-estimate is a sheet that says it fits on one page and does not.
 """
 
 from __future__ import annotations
@@ -60,10 +65,14 @@ FOOTER_MM = 14.0
 QUESTION_LINE_MM = 5.5
 QUESTION_CHARS = 84
 
-#: How close to the bottom of the page the sheet may come. The estimate is an
-#: estimate; without slack, a sheet the arithmetic calls exactly one page comes
-#: out of a real printer as one page and one orphaned line.
-SLACK_MM = 6.0
+#: How close to the bottom of the page the sheet may come.
+#:
+#: Kept small because the model already errs on the safe side: it adds every
+#: margin, and the browser collapses adjacent ones, so a measured sheet comes
+#: out 10 to 15mm shorter than this predicts. Every millimetre of that is a row
+#: the sheet could have carried, so the deliberate slack on top of it is only
+#: what covers an estimate going the *other* way on some shape not yet seen.
+SLACK_MM = 4.0
 
 
 @dataclass(frozen=True)
@@ -101,6 +110,15 @@ def fit(sections: tuple[Section, ...], question: str = "", demo: bool = False) -
     "what changed" to ten rows before the budget was consulted at all, which hid
     two changes on a sheet with half a page of white space under it — a limit
     that cost something and bought nothing.
+
+    Trimming continues even when one page has already been lost, which is worth
+    saying because the opposite looks more honest and is not. A record of
+    forty-five medications rendered without it came out at five A4 pages with the
+    medication list starting on the third, because "what changed" was allowed to
+    run to full length in front of it. Every row of that was disclosed and the
+    sheet was still worse: the two sections that may never be shortened were the
+    ones pushed off the front, which is the opposite of what protecting them is
+    for.
     """
     fixed = (
         MASTHEAD_MM
@@ -113,8 +131,13 @@ def fit(sections: tuple[Section, ...], question: str = "", demo: bool = False) -
     budget = PAGE_MM - fixed - protected
 
     working = list(sections)
-    while budget < _height_of(working) and _can_trim(working, budget):
+    while budget < _height_of(working):
         index = _tallest(working)
+        if index < 0:
+            # Everything truncatable is down to its last line. The sheet runs
+            # long from here and says so; there is nothing left to give up that
+            # would not leave a heading standing over a bare count.
+            break
         section = working[index]
         working[index] = section.trimmed(len(section.lines) - 1)
 
@@ -126,30 +149,28 @@ def _height_of(sections: list[Section]) -> float:
     return sum(section.height_mm for section in sections if section.truncatable)
 
 
-def _can_trim(sections: list[Section], budget: float) -> bool:
-    """Whether anything is left to shorten.
-
-    A truncatable section keeps its last line while the budget is positive; when
-    the budget has gone entirely — the protected sections took the page on their
-    own — even that goes, because there is nothing left to print it on.
-    """
-    floor = 1 if budget > 0 else 0
-    return any(
-        section.truncatable and len(section.lines) > floor for section in sections
-    )
-
-
 def _tallest(sections: list[Section]) -> int:
-    """The truncatable section with the most millimetres; ties go to the later.
+    """The tallest section that can still give up a row, or ``-1`` for none.
 
-    Ties broken by position rather than arbitrarily, so the same input always
+    A truncatable section always keeps its last line: a heading standing over
+    nothing but "45 entries are not on this page" tells a reader less than one
+    row and a count do.
+
+    **Eligibility is tested here and nowhere else, and that is the point.** With
+    the test split between this function and the loop's condition, a section
+    already down to one line could be chosen as the tallest, trimming it would
+    return it unchanged, and the loop would spin for ever. It did — for seven
+    minutes at full CPU, on a record where one section had a single tall row and
+    another had three short ones.
+
+    Ties break by position rather than arbitrarily, so the same input always
     produces the same sheet. The sections are already in the spec's fixed order,
     and the later one is the one further from the top of the page.
     """
     best = -1
     best_height = -1.0
     for index, section in enumerate(sections):
-        if not section.truncatable:
+        if not section.truncatable or len(section.lines) <= 1:
             continue
         if section.height_mm >= best_height:
             best, best_height = index, section.height_mm

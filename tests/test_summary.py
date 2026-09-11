@@ -607,3 +607,83 @@ def _confirmed(device, subject, predicate, value, day, artifact="a3f91c", dated=
         occurred={"value": when[:10], "precision": "day", "uncertainty_days": 0},
     )
     return [proposed, confirm(device, proposed.id, ts=on_day(day + 1))]
+
+
+def test_a_section_never_reports_an_absence_over_what_it_dropped(device):
+    """"Nothing has changed" must not print above "45 entries did not fit".
+
+    The two sentences are both produced by the same section and they contradict
+    each other flatly: one is a finding about the record, the other is a fact
+    about the page. Found by rendering a record of forty-five medications and
+    reading the sheet, not by any assertion that existed at the time.
+    """
+    events = [ingested(device, "a3f91c", ts=on_day(1))]
+    for index in range(45):
+        events.extend(
+            _confirmed(device, f"med:drug-{index:02d}", "dose", f"{index + 1}mg daily", 2)
+        )
+    for index in range(6):
+        events.extend(
+            _confirmed(device, f"problem:thing-{index:02d}", "name", f"Thing {index}", 2)
+        )
+    summary = store.compose(ordered(*events), as_of=NOW)
+    rendered = text_of(summary)
+    assert summary.overflowed
+    if not summary.section("problems").lines:  # pragma: no cover - shape guard
+        assert "No problems are recorded" not in rendered
+
+
+def test_a_lost_page_still_trims_down_to_one_row_a_section(device):
+    """Protecting the medication list means keeping it near the front, too.
+
+    With forty-five medications the sheet cannot be one page whatever happens.
+    Trimming still continues, because the alternative — found by rendering it —
+    was a five-page sheet whose medication list began on page three, with "what
+    changed" running to full length in front of it. What is dropped is stated;
+    what may never be dropped stays complete and stays first.
+    """
+    events = [ingested(device, "a3f91c", ts=on_day(1))]
+    for index in range(45):
+        events.extend(
+            _confirmed(device, f"med:drug-{index:02d}", "dose", f"{index + 1}mg daily", 2)
+        )
+    for index in range(6):
+        events.extend(
+            _confirmed(device, f"problem:thing-{index:02d}", "name", f"Thing {index}", 2)
+        )
+    summary = store.compose(ordered(*events), as_of=NOW)
+    assert summary.overflowed
+    assert len(summary.section("medications").lines) == 45
+    for key in ("changes", "problems"):
+        section = summary.section(key)
+        # Never emptied: a heading over nothing but a count tells a reader less
+        # than one row and a count does.
+        assert len(section.lines) >= 1
+        assert section.omitted > 0
+        assert section.omitted_note in text_of(summary)
+
+
+def test_a_prepared_summary_appears_on_the_timeline(vault, device):
+    """An event the log holds that no view shows is invisible state.
+
+    "What did I hand over, and when" is a question the timeline exists to
+    answer, and the row says only that a sheet was prepared — it is an act, not
+    a claim, and it asserts nothing about anyone's health.
+    """
+    from agent.projection import project
+
+    for event in ordered(
+        ingested(device, "a3f91c", ts=on_day(1)),
+        _confirmed(device, "med:perindopril", "dose", "5mg daily", 2),
+    ):
+        vault.append(event)
+    store.prepare(vault, as_of=NOW, question="q", label="cardiology")
+
+    rows = project(list(vault.read().events), NOW).rows
+    prepared = [row for row in rows if row.text.startswith("Prepared a summary")]
+    assert len(prepared) == 1
+    assert prepared[0].text == "Prepared a summary to take to cardiology"
+    assert prepared[0].cite.startswith("ev-")
+    # Not a claim: it is filed against no entity and carries no evidence tier of
+    # its own beyond "the patient did this".
+    assert prepared[0].subject_id is None
