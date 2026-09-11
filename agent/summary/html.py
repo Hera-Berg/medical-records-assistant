@@ -62,7 +62,13 @@ body {
 }
 .sheet {
   background: #fff;
-  max-width: 184mm;
+  /* A whole sheet of A4, padding included, so the text column on screen is the
+     same 184mm it will be on paper. At 184mm the padding came out of the
+     content instead and the column was 26mm narrower than the print view —
+     enough to wrap the year of every source onto its own line in the one place
+     this file is most often read, which is somebody double-clicking it in a
+     folder. */
+  max-width: 210mm;
   margin: 8mm auto;
   padding: 13mm;
 }
