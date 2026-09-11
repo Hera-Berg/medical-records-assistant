@@ -257,6 +257,27 @@ class Document:
         if self.body and self.body[-1] != "":
             self.body.append("")
 
+    def aside(self, *lines: str) -> None:
+        """Furniture: a block quote carrying no assertion about the patient.
+
+        The citation rule covers claims — what a source said about the person
+        this record is about. It does not cover a document saying what *it* is:
+        a dateline, an invented-data warning, the patient's own typed question,
+        or a statement that a section is empty. None of those has an artefact
+        behind it, and demanding one would mean either inventing a citation or
+        leaving the sheet unable to say what it is.
+
+        Deliberately narrow, and deliberately a quote block, which
+        :data:`_EXEMPT` already excludes. Nothing that asserts a fact about the
+        patient may be written through here — use :meth:`paragraph`, which
+        cannot be called without evidence.
+        """
+        if self.body and self.body[-1] != "":
+            self.body.append("")
+        for line in lines:
+            cleaned = " ".join(line.split())
+            self.body.append(f"> {cleaned}" if cleaned else ">")
+
     def _remember(self, sentence: Sentence) -> None:
         for citation in sentence.citations:
             self._citations.setdefault(citation.key, citation)
