@@ -37,6 +37,13 @@ empty pass with no explanation is indistinguishable from a broken command.
 
 ``--vault`` is accepted before or after the subcommand, in either position.
 
+``summary`` prepares the consultation sheet: one page, written into
+``exports/`` as Markdown and as a standalone HTML page that prints on A4 with
+nothing installed. ``--question`` is the patient's own words and is printed
+verbatim; nothing on the sheet is written by a model. ``--preview`` composes it
+and writes nothing, which is the way to see what a sheet will say before an
+event and two files exist.
+
 ``set-key`` writes the inference credential to the OS keychain. It never writes
 one to ``config.toml``, which lives in the vault and syncs with it.
 
@@ -57,6 +64,8 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from .asr import runner as speech_mod
+from .summary import markdown as summary_markdown
+from .summary import store as summary_store
 from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
@@ -257,6 +266,73 @@ def cmd_rebuild(args: argparse.Namespace, out: TextIO) -> int:
         print(f"PROBLEM   {problem}", file=out)
 
     return EXIT_PROBLEMS if report.problems else EXIT_OK
+
+
+def cmd_summary(args: argparse.Namespace, out: TextIO) -> int:
+    """Prepare the one-page consultation sheet, or preview it."""
+    vault = Vault.open(args.vault)
+    as_of = projection_mod.parse_as_of(args.as_of) or datetime.now(timezone.utc)
+    events = list(vault.read().events)
+
+    if args.preview:
+        summary = summary_store.compose(
+            events,
+            as_of=as_of,
+            question=args.question or "",
+            label=args.label or "",
+            since=args.since,
+            demo=vault.is_demo,
+        )
+        if args.json:
+            json.dump(summary.to_dict(), out, indent=2, sort_keys=True)
+            print("", file=out)
+            return EXIT_OK
+        # The Markdown is what the folder would hold, so previewing prints
+        # exactly that rather than a description of it.
+        out.write(summary_markdown.render(summary).decode("utf-8"))
+        print("\n(preview — nothing was written and nothing was recorded)", file=out)
+        return EXIT_OK
+
+    prepared = summary_store.prepare(
+        vault,
+        as_of=as_of,
+        question=args.question or "",
+        label=args.label or "",
+        since=args.since,
+        events=events,
+    )
+    summary = prepared.summary
+
+    if args.json:
+        payload = summary.to_dict()
+        payload["event"] = prepared.event.id
+        payload["exports"] = dict(prepared.event.payload["exports"])
+        json.dump(payload, out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_OK
+
+    print(f"prepared  {summary.id}", file=out)
+    print(f"          {prepared.markdown_path}", file=out)
+    print(f"          {prepared.html_path}  (open this and print it)", file=out)
+    for section in summary.sections:
+        count = len(section.lines)
+        line = f"{section.key:<12} {count} {'entry' if count == 1 else 'entries'}"
+        if section.omitted:
+            line += f", {section.omitted} not on the page"
+        print(f"          {line}", file=out)
+    if summary.overflowed:
+        # Said out loud. The page limit is real and this is the one case it
+        # gives way, so the person preparing the sheet finds out here rather
+        # than at the printer.
+        print(
+            "          runs past one page; nothing was dropped from medications "
+            "or allergies to make it fit",
+            file=out,
+        )
+    print(f"waiting   {summary.waiting.sentence}", file=out)
+    if summary.demo:
+        print("note      invented data; the sheet says so on its face", file=out)
+    return EXIT_OK
 
 
 def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
@@ -826,6 +902,47 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild.add_argument("--json", action="store_true", help="machine-readable output")
     _add_vault(rebuild)
     rebuild.set_defaults(func=cmd_rebuild)
+
+    summary = subparsers.add_parser(
+        "summary",
+        help="prepare the one-page consultation sheet into exports/",
+    )
+    summary.add_argument(
+        "--question",
+        default="",
+        help=(
+            "what you came to ask, in your own words. Printed verbatim on the "
+            "sheet; nothing on it is written by a model."
+        ),
+    )
+    summary.add_argument(
+        "--for",
+        dest="label",
+        default="",
+        help="who the visit is with — 'cardiology'. Becomes part of the filename.",
+    )
+    summary.add_argument(
+        "--since",
+        default=None,
+        help=(
+            "measure 'what changed' from this date (YYYY-MM-DD); defaults to "
+            "your last summary, or the last three months if there is none"
+        ),
+    )
+    summary.add_argument(
+        "--as-of",
+        default=None,
+        dest="as_of",
+        help="the moment to prepare the sheet at; defaults to now",
+    )
+    summary.add_argument(
+        "--preview",
+        action="store_true",
+        help="print the sheet without recording it or writing any file",
+    )
+    summary.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(summary)
+    summary.set_defaults(func=cmd_summary)
 
     demo = subparsers.add_parser(
         "demo",
