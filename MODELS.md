@@ -229,8 +229,12 @@ Moving to 9B on a dedicated box relaxes the latency picture, not the trust pictu
   that paragraph is exactly the kind of fluent unverifiable output this project is built to avoid.
 - **Merge proposals require a code-system match** (ATC/RxNorm) or an exact normalised string before
   the model is consulted. Fuzzy semantic merging stays off.
-- **Consultation summaries stay template-driven.** Structure, section order and selection rules are
-  code. The model writes short connective prose and never selects what is clinically salient.
+- **Consultation summaries are a pure function of the record — no model call at all.**
+  Structure, section order and selection rules are code, and the model writes nothing. An earlier
+  draft allowed it "short connective prose"; that was wrong. Model prose is the one kind of sentence
+  on the sheet that cannot carry a citation to an artefact, and it spends a hard one-page budget on
+  text that adds no fact. This is settled architecture, not a phase-scoping choice: no later phase
+  "finishes" the feature by adding the prose back.
 
 These were framed as concessions to a 4B model in an earlier draft. They aren't — they're the
 architecture. A better model makes them easier to abandon and no more correct to abandon.
