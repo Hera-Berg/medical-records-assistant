@@ -250,6 +250,7 @@ def _generate(
         sentences=sentences,
         retrieval=found,
         tally=render.tally_for(parsed, found),
+        note=render.note_for(found),
         dropped=dropped,
         model=completion.model,
         prompt_hash=prompt.prompt_hash,

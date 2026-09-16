@@ -141,6 +141,10 @@ def payload(answer, turns_used: int, built_ts: str) -> dict[str, Any]:
             for sentence in answer.sentences
         ],
         "tally": answer.tally,
+        # Something the record does not hold, said plainly. Written in code, like
+        # the count: it is an assertion *about the record*, which the model is in
+        # no position to make and has every incentive to paper over.
+        "note": answer.note,
         # Why the question was refused, as a code as well as a sentence: the
         # screen groups its own copy by this, and an interface that had to match
         # on the sentence would break the moment the sentence was reworded.

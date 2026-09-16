@@ -722,6 +722,12 @@ export interface AskResponse {
   message: string;
   sentences: AnswerSentence[];
   tally: string;
+  /**
+   * Something the record does not hold, said plainly — "your record does not
+   * say what each medicine is for". Written by the server in code, never by the
+   * model: it is an assertion about the record itself.
+   */
+  note: string;
   refusal: string | null;
   refusal_next: string;
   found: FoundEntry[];

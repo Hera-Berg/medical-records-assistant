@@ -291,6 +291,12 @@ function Answered({
         </p>
       )}
 
+      {/* What the record does not hold. Not muted and not an aside: it is the
+          half of the answer that says the other half is not there, and a
+          question asked twice because this was missed is a question answered
+          from somewhere worse. */}
+      {answer.note ? <p className="mt-2">{answer.note}</p> : null}
+
       {answer.tally ? (
         <p className="mt-2 text-[color:var(--color-muted)]">{answer.tally}</p>
       ) : null}

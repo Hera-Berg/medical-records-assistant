@@ -277,6 +277,19 @@ Answering a text question proves the box is reachable and the key is good, and
 proves nothing about whether it can read a photograph. "Working" here means the
 startup probe passed, vision included.
 
+**A citation must cover the join, not only the facts either side of it.** The
+dangerous sentence is not the uncited one — that is dropped and gone. It is "you
+take perindopril 5mg daily for your blood pressure", citing a real photograph of
+a real script, where the drug and the dose came off the page and the word *for*
+came from what the model knows about perindopril. It looks sourced, it reads as
+sourced, and the one thing it asserts is the one thing the record never said;
+that is more dangerous than an uncited sentence, not less. So when a question
+asks what a medicine is for and nothing retrieved says, any sentence using the
+question's own words for it is dropped unless the extract it cites contains
+them, and a code-written sentence says the record does not record it. The rule
+needs no second version for the day the record holds an indication: on that day
+the extract carries those words and nothing is refused.
+
 **Every value a passage carries is separated from its provenance by a
 separator, never wrapped in brackets.** A value can itself contain brackets —
 "November 2024 (±15 days)" — so `value (tier, date)` has no unambiguous end, and
@@ -658,6 +671,9 @@ Do not start a phase before the previous one's tests pass.
 8. **Consultation summary + print view.**
 9. **Wearable bulk import.** Fitbit/Apple Health export parsing, summary-only events.
 10. **Querying the record.** Not before phase 9. See below.
+11. **The `indication` predicate.** What a medication is *for*, read off the
+    documents that say it. Its own piece of work — see "Next: the `indication`
+    predicate".
 
 ## Querying the record
 
@@ -713,6 +729,44 @@ Rules, all enforced in code rather than requested in the prompt:
 
 If this ever starts wanting a tool loop, that is a signal the retrieval layer is too weak, not that
 the system needs a planner.
+
+## Next: the `indication` predicate
+
+Not part of phase 10 and deliberately not folded into it. Phase 10's job was to
+make the query layer *honest* about not having this; reading it is an extraction
+and projection change and it is its own piece of work.
+
+**What it is.** Scripts and letters routinely say what a medication is for — "for
+blood pressure", "to control your cholesterol", "for the reflux" — and it is the
+first thing a clinician wants beside a drug name. Today the record holds the drug
+and the dose and nothing that joins them to a reason, so "what am I taking for my
+blood pressure" can only be answered with the list and a sentence saying the
+record does not record what each is for.
+
+**What it touches.** `agent/extract/schema.py` (`indication` joins `PREDICATES`),
+the extraction prompt, `agent/projection/tiers.py`, the entity page and its
+frontmatter, the consultation summary's medication lines, and the eval corpus —
+the fixtures get expected indication claims, and medication recall is already
+required to be 100%. The query layer needs no change at all: it already asks the
+record whether it holds one and already says so when it does not.
+
+**Rules it inherits, and one it needs.**
+
+- **The model copies the literal span**, as everywhere else: `"for blood
+  pressure"`, not a normalised condition and not a code. Render the literal.
+- **An indication is not a diagnosis.** "For blood pressure" on a script does not
+  put hypertension on the problems list, and must not be allowed to. A script
+  says what was prescribed and why the prescriber wrote it; it is not a
+  diagnostic assertion about the patient, and the two reach the record through
+  different doors.
+- **Linking an indication to a `problem:` entity is a merge-shaped decision**, so
+  it needs a user tap and the same code-system-or-exact-match discipline merges
+  get. A model matching "for blood pressure" to `problem:hypertension` is fuzzy
+  semantic merging wearing a different hat.
+- **The consequence tier has to be chosen deliberately.** It is not an add, a
+  stop, a dose change or a diagnosis, so medium is the likely answer — but until
+  it is written down, `tiers.consequence_for` fails closed and gates it high,
+  which is the safe direction to be wrong in.
 
 ## Testing
 

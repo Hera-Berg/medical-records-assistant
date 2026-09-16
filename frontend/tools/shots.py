@@ -490,6 +490,18 @@ def ask_shots(play, out: Path, work: Path) -> None:
         ask(page, "What dose of perindopril am I taking?")
         shoot(page, out, "52-ask-answered")
 
+        # 3b. The question the citation rule exists for. The record holds the
+        #     medications and nothing saying what any of them is for, so the
+        #     answer names them and says so — and a sentence supplying the link
+        #     is dropped before it is rendered, however real the document it
+        #     cites. See CLAUDE.md, "A citation must cover the join".
+        page.goto(f"{origin}/ask")
+        ask(page, "What am I taking for my blood pressure?")
+        shoot(page, out, "52b-ask-unrecorded-indication")
+
+        page.goto(f"{origin}/ask")
+        ask(page, "What dose of perindopril am I taking?")
+
         # 4. The same answer with its sources opened.
         page.get_by_text("What this was read from").click()
         page.wait_for_timeout(200)

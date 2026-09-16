@@ -714,6 +714,10 @@ def cmd_ask(args: argparse.Namespace, out: TextIO) -> int:
     else:
         print(answer.message, file=out)
 
+    if answer.note:
+        print("", file=out)
+        print(answer.note, file=out)
+
     if answer.tally:
         print("", file=out)
         print(answer.tally, file=out)
@@ -759,6 +763,7 @@ def _ask_payload(answer) -> dict[str, Any]:
             for sentence in answer.sentences
         ],
         "tally": answer.tally,
+        "note": answer.note,
         "refusal": answer.refusal,
         "box": answer.box,
         "found": [

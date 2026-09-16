@@ -11,6 +11,19 @@ is one of the keys that were actually put in front of the model, and it does not
 survive otherwise — whether the key is invented, hallucinated from another
 record, copied out of the question, or simply absent.
 
+**A citation has to cover the join, not just the facts either side of it.** The
+dangerous sentence is not the uncited one — that is dropped and gone. It is "you
+take perindopril for your blood pressure", citing a real photograph of a real
+script, where the drug and the dose came off the page and the word *for* came
+from what the model knows about perindopril. It looks sourced, it reads as
+sourced, and the one thing it asserts is the one thing the record never said.
+
+So when a question asks what a medicine is for and nothing retrieved says,
+:func:`validate` drops any sentence that uses the question's own words for it
+unless the extract it cites contains them. The rule needs no second version for
+the day the record does hold an indication: on that day the passage carries
+those words and nothing is refused.
+
 The states below are the whole vocabulary of this feature's outcomes, and two of
 them exist because collapsing them would be a lie:
 
@@ -32,6 +45,7 @@ from typing import Any, Sequence
 from ..projection.citations import Citation
 from .classify import REFUSAL_NEXT, REFUSALS, Question
 from .retrieve import Retrieval
+from .text import contains_phrase
 
 # Outcomes.
 ANSWERED = "answered"
@@ -137,6 +151,11 @@ class Answer:
     #: A count the question asked for, written by code. The model never
     #: produces a number that reaches the person.
     tally: str = ""
+    #: Something the record does not hold, said plainly, and written by code for
+    #: the same reason the count is: it is an assertion about the record itself,
+    #: which the model is in no position to make and has every incentive to
+    #: paper over.
+    note: str = ""
     #: How many sentences were dropped for citing something they were not shown.
     dropped: int = 0
     #: What the box was doing, where that is why there is no written answer.
@@ -205,8 +224,62 @@ def validate(
         if citation is None:
             dropped += 1
             continue
+        if _borrows_the_join(text, cleaned, retrieval):
+            dropped += 1
+            continue
         kept.append(Sentence(text=" ".join(text.split()), key=cleaned, citation=citation))
     return tuple(kept), dropped
+
+
+def _borrows_the_join(text: str, key: str, retrieval: Retrieval) -> bool:
+    """Whether this sentence supplies a link the cited extract does not.
+
+    Only asked about the words a question used for a medicine's purpose, and
+    only when nothing retrieved contained them. Narrow on purpose: a general
+    rule that every word of a sentence must appear in its source would delete
+    ordinary rephrasing, and rephrasing is not the failure. Asserting a
+    connection the record does not hold is.
+    """
+    words = retrieval.unsupported_purpose
+    if not words:
+        return False
+    cited = " ".join(
+        f"{passage.title} {passage.text}"
+        for passage in retrieval.passages
+        if passage.key == key
+    )
+    return any(
+        contains_phrase(text, word) and not contains_phrase(cited, word)
+        for word in words
+    )
+
+
+#: Said when a question asked what a medicine is for and the record does not
+#: record it. Names the gap rather than leaving the answer to read as though the
+#: question had simply been answered.
+PURPOSE_UNRECORDED = (
+    "Your record does not say what each medicine is for, so nothing here can "
+    "tell you which of them is for {purpose}. It can only say what you take."
+)
+
+#: How much of the person's own phrase is said back. Long enough for "my blood
+#: pressure", short enough that a pasted paragraph cannot be echoed.
+MAX_PURPOSE_CHARS = 60
+
+
+def note_for(retrieval: Retrieval) -> str:
+    """The sentence saying what the record does not hold. Written here, in code.
+
+    Emitted only beside an actual list of medications: "your record does not say
+    what each medicine is for" is an answer when the medicines are on screen and
+    a non-sequitur when they are not.
+    """
+    if not retrieval.purpose or retrieval.indication_supported:
+        return ""
+    if not retrieval.unsupported_purpose or not retrieval.has_medications:
+        return ""
+    purpose = " ".join(retrieval.purpose.split())[:MAX_PURPOSE_CHARS].strip()
+    return PURPOSE_UNRECORDED.format(purpose=purpose)
 
 
 def tally_for(question: Question | None, retrieval: Retrieval) -> str:
@@ -253,6 +326,7 @@ def offline(question: Question, retrieval: Retrieval, box: str) -> Answer:
         retrieval=retrieval,
         box=box,
         tally=tally_for(question, retrieval),
+        note=note_for(retrieval),
     )
 
 
@@ -263,6 +337,7 @@ def failed(question: Question, retrieval: Retrieval, state: str) -> Answer:
         message=MESSAGES[state],
         retrieval=retrieval,
         tally=tally_for(question, retrieval),
+        note=note_for(retrieval),
     )
 
 
@@ -274,6 +349,8 @@ __all__ = [
     "EMPTY",
     "MESSAGES",
     "NO_QUESTION",
+    "PURPOSE_UNRECORDED",
+    "note_for",
     "OFFLINE",
     "REFUSED",
     "Sentence",

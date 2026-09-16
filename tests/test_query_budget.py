@@ -59,6 +59,7 @@ def passage(size: int, rank: int = 0) -> Passage:
         subject_id="med:x",
         title="X (medication) — dose",
         text="y" * size,
+        predicate="dose",
         tier="prescriber-issued",
         corrected=False,
         when="",

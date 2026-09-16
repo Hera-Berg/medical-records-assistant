@@ -51,7 +51,7 @@ from ..projection.reconcile import REJECTED, Slot
 from ..projection.timeline import Row
 from . import classify as classify_mod
 from .classify import Question, Window
-from .text import contains_phrase, fold
+from .text import contains_phrase, content_words, fold
 from .vocab import Vocabulary
 
 #: Per-facet caps. Generous enough that a real question is answered in full,
@@ -65,6 +65,16 @@ MAX_PASSAGES = 60
 #: every line containing one would quietly blank passages that have nothing to
 #: do with the rejection.
 MIN_SUPPRESSED_LITERAL = 5
+
+#: The predicate that would say what a medication is *for*.
+#:
+#: **Nothing emits it yet.** Scripts and letters routinely say "for blood
+#: pressure" and it is the first thing a clinician wants beside a drug name, but
+#: reading it is an extraction and projection change and it is its own piece of
+#: work — see CLAUDE.md, "The indication predicate". The name is here so that
+#: this layer can ask the record whether it holds one and get an honest "no"
+#: rather than assuming the question is unanswerable forever.
+INDICATION = "indication"
 
 # Passage kinds. What sort of thing the model is being shown.
 FACT = "fact"
@@ -94,6 +104,10 @@ class Passage:
     subject_id: str | None
     title: str
     text: str
+    #: The slot this came off, where it came off one. Carried so that a rule can
+    #: ask whether the record holds a particular kind of fact without parsing
+    #: the title back apart.
+    predicate: str
     #: The evidence tier this rests on, kept as its own field rather than folded
     #: into ``text``. The prompt wants the record's own vocabulary and the screen
     #: wants the patient's — "Prescription", not "prescriber-issued" — and one
@@ -156,6 +170,19 @@ class Retrieval:
     #: Set when the one bounded expansion ran, and what it searched for.
     expanded_terms: tuple[str, ...] = ()
     withheld: int = field(default=0, repr=False)
+    #: What the question asked a medicine was *for*, in the asker's words.
+    purpose: str = ""
+    #: The purpose's own words that appear in **no** retrieved passage. A
+    #: sentence using one of these got it from somewhere other than the record,
+    #: and :func:`agent.query.render.validate` drops it. This is the mechanism
+    #: behind the rule that a citation must cover the *join* as well as the
+    #: facts either side of it.
+    unsupported_purpose: tuple[str, ...] = ()
+    #: Whether anything retrieved actually says what a medication is for.
+    indication_supported: bool = False
+    #: Whether any medication was retrieved at all — the note about what the
+    #: record does not hold is only worth printing beside a list of them.
+    has_medications: bool = False
 
     @property
     def is_empty(self) -> bool:
@@ -288,6 +315,7 @@ def _passage(
         subject_id=entity.id,
         title=_title(entity, claim.predicate),
         text=f"{claim.value.literal}{suffix}",
+        predicate=claim.predicate,
         tier=claim.evidence_tier,
         corrected=claim.is_correction,
         when=_when(claim),
@@ -389,6 +417,7 @@ def _lifecycle_passages(
             subject_id=entity.id,
             title=f"{entity.name} ({KIND_NOUNS.get(entity.subject.kind, '')}) — how it stands",
             text="; ".join(lines),
+            predicate="~state",
             tier=entity.evidence_tier or anchor.evidence_tier,
             corrected=False,
             when="",
@@ -407,6 +436,7 @@ def _lifecycle_passages(
                 kind=LIFECYCLE,
                 event_id=report.claim.event_id,
                 subject_id=entity.id,
+                predicate="~stop",
                 title=f"{entity.name} ({KIND_NOUNS.get(entity.subject.kind, '')}) — reported stopped",
                 text=(
                     f"you reported stopping this ({report.tier}"
@@ -450,6 +480,7 @@ def _row_passage(row: Row, citer: Citer, facet: str, rank: int, position: int) -
         subject_id=row.subject_id,
         title=when,
         text=row.text + (f" ({row.reading_text})" if row.reading_text else ""),
+        predicate="~row",
         tier=row.marker,
         corrected=False,
         when=when,
@@ -712,13 +743,46 @@ def retrieve(
             hits += 1
             offer(_entity_passages(entity, citer, classify_mod.TERMS, 5))
 
-    ordered = _dedupe(sorted(passages, key=lambda p: (p.rank, p.order)))
+    ordered = _dedupe(sorted(passages, key=lambda p: (p.rank, p.order)))[:MAX_PASSAGES]
     return Retrieval(
-        passages=tuple(ordered[:MAX_PASSAGES]),
+        passages=tuple(ordered),
         question=question,
         term_hits=hits,
         expanded_terms=tuple(extra_terms),
         withheld=withheld,
+        purpose=question.purpose,
+        unsupported_purpose=_unsupported_purpose(question, ordered),
+        indication_supported=any(
+            passage.predicate == INDICATION for passage in ordered
+        ),
+        has_medications=any(
+            (passage.subject_id or "").startswith("med:") for passage in ordered
+        ),
+    )
+
+
+def _unsupported_purpose(
+    question: Question, passages: Sequence[Passage]
+) -> tuple[str, ...]:
+    """The purpose's words that nothing retrieved actually contains.
+
+    "What am I taking for my blood pressure" retrieves a medication list, and
+    nothing in that list says what any of them is for — the record has no
+    ``indication`` predicate yet. A sentence joining the two would be citing a
+    real extract for the drug and supplying the *link* from general knowledge,
+    which is worse than an uncited sentence because it looks sourced.
+
+    So the words are collected here and the join is refused in code. When the
+    record does hold an indication, its passage carries these words and nothing
+    is refused — the rule needs no second version for that day.
+    """
+    if not question.purpose:
+        return ()
+    body = " ".join(f"{p.title} {p.text}" for p in passages)
+    return tuple(
+        word
+        for word in content_words(question.purpose)
+        if not contains_phrase(body, word)
     )
 
 

@@ -39,7 +39,7 @@ from datetime import date, timedelta
 from typing import Sequence
 
 from ..projection import dates as dates_mod
-from .text import content_words, fold, words
+from .text import STOPWORDS, content_words, fold, words
 from .vocab import Vocabulary
 
 #: How many questions one conversation may carry before it starts again. The
@@ -63,6 +63,7 @@ ARTEFACT = "artefact"
 CHANGES = "changes"
 COUNT = "count"
 TERMS = "terms"
+PURPOSE = "purpose"
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,11 @@ class Question:
     terms: tuple[str, ...] = ()
     counting: bool = False
     changes: bool = False
+    #: What the question asked a medication was *for* — "my blood pressure",
+    #: "fluid retention". Kept as the person's own words, because it is said
+    #: back to them and because the record has no vocabulary of its own for it.
+    #: See :mod:`agent.query.retrieve` on why this is tracked at all.
+    purpose: str = ""
     #: Set when this question was answered from the previous turn's facets.
     inherited: bool = False
     #: Set when the question asks what something means. Nothing is retrieved.
@@ -520,6 +526,51 @@ def _terms(question: str, taken: Sequence[str]) -> tuple[str, ...]:
     return tuple(found[:8])
 
 
+#: "what am I taking **for my blood pressure**". Anchored at the end because
+#: that is where the purpose sits in every natural phrasing of the question, and
+#: an unanchored match would take the "for" in "for June" and in "for a while".
+_PURPOSE_RE = re.compile(
+    r"\bfor ((?:my |the |his |her |their )?[a-z0-9][a-z0-9 ]{1,48})$"
+)
+
+#: The same question asked the other way round.
+_TREATS_RE = re.compile(
+    r"\b(?:treats|treating|helps? with|controls?|controlling) "
+    r"((?:my |the |his |her |their )?[a-z0-9][a-z0-9 ]{1,48})$"
+)
+
+
+def purpose_of(question: str) -> str:
+    """What the question asked a medicine was *for*, in the asker's words.
+
+    Returns "" unless the phrase carries at least one word that is not a
+    function word — which is what keeps "for me", "for now" and "for a while"
+    from being read as a purpose.
+    """
+    folded = fold(question)
+    if not folded:
+        return ""
+    for pattern in (_PURPOSE_RE, _TREATS_RE):
+        found = pattern.search(folded)
+        if found is None:
+            continue
+        phrase = found.group(1).strip()
+        content = [
+            word
+            for word in phrase.split()
+            if word not in STOPWORDS and word not in _META_WORDS
+        ]
+        # A date is not a purpose. "what did the letter say for June" ends in
+        # "for June", and reading that as an indication would make "June" a word
+        # the record supposedly does not contain — which would then start
+        # deleting sentences that mention the month.
+        if content and not all(
+            word in _MONTHS or word.isdigit() for word in content
+        ):
+            return phrase
+    return ""
+
+
 def _is_continuation(question: str) -> bool:
     folded = fold(question)
     if not folded:
@@ -568,6 +619,7 @@ def classify(
 
     parsed = Question(
         text=text,
+        purpose=purpose_of(text),
         entities=entities,
         kinds=kinds,
         predicates=predicates,
@@ -630,6 +682,8 @@ def _shapes(parsed: Question) -> frozenset[str]:
         shapes.add(COUNT)
     if parsed.terms:
         shapes.add(TERMS)
+    if parsed.purpose:
+        shapes.add(PURPOSE)
     return frozenset(shapes)
 
 
@@ -643,6 +697,7 @@ __all__ = [
     "Turn",
     "Window",
     "classify",
+    "purpose_of",
     "refusal_for",
     "window_for",
 ]
