@@ -162,3 +162,31 @@ class ExtractionError(HealthAgentError):
     event holds the raw output, a bad reading stops raising and starts being
     reported: the artefact surfaces as "could not read — review manually".
     """
+
+
+class ReaderUnavailable(EndpointUnreachable):
+    """The reader on this computer cannot answer right now, and ``reason`` says why.
+
+    A subclass of :class:`EndpointUnreachable` on purpose: everything that
+    already degrades gracefully when a box is asleep — the queue waiting, a
+    question answered from the record alone — does the right thing here without
+    being taught a second word for "not now". ``reason`` is a code from
+    :mod:`agent.runtime.states`, so what reaches a screen is chosen from a fixed
+    table rather than read out of this message.
+    """
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+class DownloadError(HealthAgentError):
+    """The one-time download of the reader's files did not complete.
+
+    ``reason`` is a code with a fixed sentence, for the same reason as
+    :class:`ReaderUnavailable`: the detail can quote a far end's error text.
+    """
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason

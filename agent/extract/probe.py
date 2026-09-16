@@ -52,7 +52,6 @@ from ..errors import (
     InferenceError,
     ModelIdentityMismatch,
 )
-from ..llm import credentials as credentials_mod
 from ..llm import redaction
 from ..llm.endpoint import FUNNEL_WARNING
 from .images import DESKEW_NOTE
@@ -198,10 +197,16 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
     # whose whole job is telling a person what is wrong. `status` returns a
     # single word and exists for `/api/health`, which may say no more than that.
     try:
-        found = credentials_mod.resolve(settings.auth.api_key_env, client.vault_root)
+        found = client.resolve_credential()
     except CredentialError as exc:
         checks.append(Check("credential", False, redaction.scrub(str(exc))))
         return ProbeReport(MISCONFIGURED, tuple(checks), auth="missing", notes=tuple(notes))
+    except EndpointUnreachable as exc:
+        # The reader on this computer holds its key only while it is running.
+        # A reader that stopped between being started and being asked is not a
+        # missing credential, and saying so would send someone to the keychain.
+        checks.append(Check("reachability", False, redaction.scrub(str(exc))))
+        return ProbeReport(UNREACHABLE, tuple(checks), auth="missing", notes=tuple(notes))
     # The source, never the value. `Credential.source` is a place, not a secret.
     checks.append(Check("credential", True, f"found in {found.source}"))
 

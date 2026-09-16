@@ -42,7 +42,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import httpx
 
@@ -159,10 +159,24 @@ class Client:
         vault_root=None,
         transport: httpx.BaseTransport | None = None,
         resolver=None,
+        credential: Callable[[], credentials_mod.Credential] | None = None,
+        runtime: Mapping[str, Any] | None = None,
     ):
+        """*credential* replaces the resolver chain outright, when it is given.
+
+        It exists for the reader on this computer, whose key is made per launch
+        and lives only in memory. Falling through to the chain would be the one
+        wrong answer: the chain ends in the keychain, which holds the *remote*
+        box's key, and would send it to whatever is listening on a loopback port.
+
+        *runtime* is what this client talks to, as observations for provenance —
+        ``kind``, ``engine``, pinned file hashes. The client never reads it.
+        """
         self.settings = settings
         self.vault_root = vault_root
         self._resolver = resolver
+        self._credential = credential
+        self.runtime: dict[str, Any] = dict(runtime) if runtime else {"kind": "endpoint"}
         redaction.install()
         timeout = httpx.Timeout(
             connect=settings.connect_timeout_s,
@@ -207,12 +221,16 @@ class Client:
                 "verified as private. This should be unreachable; if you are seeing "
                 "it, the address guard has a bug and the key has not left the machine."
             )
-        credential = credentials_mod.resolve(
-            self.settings.auth.api_key_env, self.vault_root
-        )
+        credential = self.resolve_credential()
         redaction.register(credential.value)
         name, value = self.settings.auth.format(credential.value)
         return {name: value, "Content-Type": "application/json"}
+
+    def resolve_credential(self) -> credentials_mod.Credential:
+        """The key this client would send, from its own source. Never logged."""
+        if self._credential is not None:
+            return self._credential()
+        return credentials_mod.resolve(self.settings.auth.api_key_env, self.vault_root)
 
     # -- requests ----------------------------------------------------------
 

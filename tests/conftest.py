@@ -30,6 +30,24 @@ def isolated_env(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_reader(tmp_path, monkeypatch):
+    """No test may touch this machine's real reader files or start its process.
+
+    The data directory points at tmp, so the reader is "not downloaded" unless a
+    test puts files there, and the process-wide reader is replaced before and
+    shut down after, so a reader one test started cannot outlive it.
+    """
+    from agent.runtime import platforms, supervisor
+
+    monkeypatch.setenv(platforms.ENV_DATA_HOME, str(tmp_path / "data-home"))
+    previous = supervisor.install(None)
+    yield tmp_path / "data-home"
+    current = supervisor.install(previous)
+    if current is not None:
+        current.shutdown()
+
+
+@pytest.fixture(autouse=True)
 def _no_real_keychain(monkeypatch):
     """No test may read or write the developer's own OS keychain.
 
