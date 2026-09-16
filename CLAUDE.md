@@ -471,7 +471,24 @@ POST /api/rebuild               wipe wiki/ + index, replay events
 GET  /api/files?path=           one folder in the vault, or one file's description
 GET  /api/files/content?path=   a text file, for reading in place
 DELETE /api/files?path=         remove one file or one empty folder
+GET  /api/settings              storage profile, inference endpoint, key state
+POST /api/settings/sync-profile where the folder already is
+POST /api/settings/endpoint     write base_url, model and header shape
+POST /api/settings/endpoint/key store the key in the OS keychain. Write-only.
+POST /api/settings/endpoint/models   ask the box what it runs, for the picker
+POST /api/settings/endpoint/test     run the startup probe, step by step
 ```
+
+The endpoint settings write **four keys** of `config.toml` by the same surgical
+line rewrite `sync_profile` uses: comments and every unrelated value survive.
+**The address guard runs at save time**, not at first use — a refusal that
+arrives days later, when a photograph fails to be read, is one nobody can
+connect to what they typed. The key never goes through `config.toml` and never
+comes back out of any route: `/api/settings` reports `configured | not set |
+unusable` and the *place* a key was found, which is a place and not a secret.
+The test route's step list is written in `agent/server/endpoint_check.py` and
+selected by a code, so no sentence the inference box composed reaches the
+browser — the same rule `/api/health` follows.
 
 `/api/files` is the folder browser behind the **Files** screen — the folder is the
 record, so the app shows it. Deletion is tiered by what the path *is*, and the tiers

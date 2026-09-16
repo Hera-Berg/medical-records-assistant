@@ -701,3 +701,94 @@ def test_a_value_needing_escapes_survives_the_round_trip(vault_root):
     config_mod.set_values(path, {"models.vlm.model": awkward})
 
     assert config_mod.load(path).raw["models"]["vlm"]["model"] == awkward
+
+
+# --- a table that is there but will not load -------------------------------
+
+
+def test_an_unusable_endpoint_table_is_reported_rather_than_shown_as_empty(
+    client, vault
+):
+    """Empty fields would read as "not set up yet" when the truth is "set up wrongly".
+
+    Reachable while the server runs: the file is re-read after every save, and a
+    hand edit between two saves lands here.
+    """
+    from agent import config as config_mod
+
+    (vault.root / CONFIG_FILENAME).write_text(
+        'sync_profile = "local"\n'
+        "\n[models.vlm]\n"
+        f'base_url = "{URL}"\n'
+        'model = "m"\n'
+        "ctx = 99999999\n",
+        encoding="utf-8",
+    )
+    client.app.state.record.reload_config()
+
+    endpoint = client.get("/api/settings").json()["endpoint"]
+
+    assert endpoint["problem"] is not None
+    assert "ctx" in endpoint["problem"]
+    assert endpoint["configured"] is False, "and the fields stay empty rather than lying"
+    assert config_mod.load(vault.root / CONFIG_FILENAME).sync_profile.value == "local"
+
+
+def test_saving_over_an_unusable_table_repairs_it(client, vault):
+    (vault.root / CONFIG_FILENAME).write_text(
+        'sync_profile = "local"\n'
+        "\n[models.vlm]\n"
+        f'base_url = "{URL}"\n'
+        'model = "m"\n'
+        "ctx = 99999999\n",
+        encoding="utf-8",
+    )
+    client.app.state.record.reload_config()
+
+    # The bad key is not on this screen, so saving cannot fix it — and must say
+    # so rather than reporting a success that changed nothing a person can see.
+    body = client.post("/api/settings/endpoint", json=draft()).json()
+
+    assert body["endpoint"]["problem"] is not None, "ctx is still wrong and still said"
+    text = (vault.root / CONFIG_FILENAME).read_text(encoding="utf-8")
+    assert URL in text and MODEL in text, "and what this screen does own was written"
+
+
+# --- the worker ------------------------------------------------------------
+
+
+def test_changing_the_endpoint_makes_the_worker_ask_again(vault):
+    """A stall means "stop asking until a person acts". A person just acted."""
+    from agent.server.state import RecordState
+    from agent.server.worker import Worker
+
+    worker = Worker(RecordState(vault))
+    worker._stalled = True
+    worker._probed = True
+
+    worker.reconfigured()
+
+    assert worker._stalled is False
+    assert worker._probed is False, "what it learned was about the other machine"
+
+
+def test_changing_the_endpoint_does_not_unpark_jobs(vault):
+    """A new address is not a new key.
+
+    Un-parking everything because a URL typo was corrected would send every job
+    that stopped on a rejected credential straight back at a box that will
+    reject them again — and MODELS.md is explicit that a rejected key is not
+    retried.
+    """
+    from agent.extract import jobs as jobs_mod
+    from agent.server.state import RecordState
+    from agent.server.worker import Worker
+
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    queue.add("a3f91c")
+    queue.park_for_auth("the box rejected the key")
+    assert jobs_mod.Queue.open(vault.root / ".agent").is_parked
+
+    Worker(RecordState(vault)).reconfigured()
+
+    assert jobs_mod.Queue.open(vault.root / ".agent").is_parked
