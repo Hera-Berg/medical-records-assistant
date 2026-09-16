@@ -30,6 +30,22 @@ def isolated_env(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_keychain(monkeypatch):
+    """No test may read or write the developer's own OS keychain.
+
+    The settings screen and the probe both resolve the inference credential,
+    which means a plain ``GET /api/settings`` would otherwise reach a real
+    Secret Service — slow at best, and on a developer machine it would report
+    the state of a key that has nothing to do with the vault under test. Stubbed
+    to "no entry"; the tests that exercise the keychain reader itself put the
+    real function back.
+    """
+    from agent.llm import credentials as credentials_mod
+
+    monkeypatch.setattr(credentials_mod, "_from_keychain", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def restore_writable(tmp_path):
     """Put write permission back on everything under ``tmp_path`` afterwards.
 

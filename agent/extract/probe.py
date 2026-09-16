@@ -254,13 +254,26 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
         checks.append(Check("grammar", False, redaction.scrub(str(exc))))
         return ProbeReport(UNCONSTRAINED, tuple(checks), auth="ok", notes=tuple(notes))
 
+    # What the box said it was, taken from the answer rather than from the
+    # config. The client has already refused any disagreement, so this is the
+    # identity of the machine that actually replied — which is what `/api/health`
+    # and the settings screen report, and what makes "which model produced this
+    # claim" answerable from a screen as well as from the log.
+    reported = answered.model
+
     grammar = _check_grammar(answered)
     checks.append(grammar)
     if not grammar.ok:
-        return ProbeReport(UNCONSTRAINED, tuple(checks), auth="ok", notes=tuple(notes))
+        return ProbeReport(
+            UNCONSTRAINED, tuple(checks), auth="ok", model_reported=reported,
+            notes=tuple(notes),
+        )
 
     if skip_vision:
-        return ProbeReport(WORKING, tuple(checks), auth="ok", notes=tuple(notes))
+        return ProbeReport(
+            WORKING, tuple(checks), auth="ok", model_reported=reported,
+            notes=tuple(notes),
+        )
 
     # 5. Vision actually works. The check this module exists for.
     import base64  # noqa: PLC0415 - only needed here
@@ -273,7 +286,10 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
         return ProbeReport(MISCONFIGURED, tuple(checks), auth="ok", notes=tuple(notes))
     except InferenceError as exc:
         checks.append(Check("vision", False, redaction.scrub(str(exc))))
-        return ProbeReport(UNREACHABLE, tuple(checks), auth="ok", notes=tuple(notes))
+        return ProbeReport(
+            UNREACHABLE, tuple(checks), auth="ok", model_reported=reported,
+            notes=tuple(notes),
+        )
 
     if not saw_it:
         checks.append(
@@ -288,7 +304,12 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
                 f"be silently ignored, which reads as the model being bad at OCR",
             )
         )
-        return ProbeReport(BLIND, tuple(checks), auth="ok", notes=tuple(notes))
+        return ProbeReport(
+            BLIND, tuple(checks), auth="ok", model_reported=reported,
+            notes=tuple(notes),
+        )
 
     checks.append(Check("vision", True, f"the box read {PROBE_TEXT!r} out of a test image"))
-    return ProbeReport(WORKING, tuple(checks), auth="ok", notes=tuple(notes))
+    return ProbeReport(
+        WORKING, tuple(checks), auth="ok", model_reported=reported, notes=tuple(notes)
+    )

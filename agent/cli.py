@@ -78,7 +78,7 @@ from .extract import (
     session,
 )
 from .llm import credentials as credentials_mod
-from .errors import HealthAgentError
+from .errors import CredentialError, HealthAgentError
 from .vault import Vault
 
 EXIT_OK = 0
@@ -664,35 +664,19 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     Never to ``config.toml``: that file lives at the vault root and syncs to
     Dropbox, Drive or Nextcloud, so a key written there has been handed to a
     third party by definition.
+
+    The write itself is :func:`agent.llm.credentials.store`, which the settings
+    screen also calls. One implementation, so the terminal and the browser
+    cannot come to disagree about where a key goes.
     """
-    try:
-        import keyring
-    except ImportError:
-        print(
-            "error: the `keyring` package is not installed, so there is no keychain "
-            "to write to. Install it with `pip install 'health-agent[keychain]'`, or "
-            "put the key in the environment variable named by "
-            "[models.vlm.auth] api_key_env, or in a 0600 file at "
-            f"{credentials_mod.credentials_path()}.",
-            file=out,
-        )
-        return EXIT_PROBLEMS
-
     value = args.key or getpass.getpass("key for the inference box (not echoed): ")
-    if not value.strip():
-        # The same rule the resolver applies: an empty credential is a
-        # misconfiguration to report, never a blank header to send.
-        print("error: an empty key is not a credential. Nothing was written.", file=out)
+    try:
+        where = credentials_mod.store(value)
+    except CredentialError as exc:
+        print(f"error: {exc}", file=out)
         return EXIT_PROBLEMS
 
-    keyring.set_password(
-        credentials_mod.KEYRING_SERVICE, credentials_mod.KEYRING_ACCOUNT, value.strip()
-    )
-    print(
-        f"stored    in the OS keychain under "
-        f"{credentials_mod.KEYRING_SERVICE}/{credentials_mod.KEYRING_ACCOUNT}",
-        file=out,
-    )
+    print(f"stored    in the OS {where}", file=out)
     print("          run `health-agent probe` to check the box accepts it", file=out)
     return EXIT_OK
 

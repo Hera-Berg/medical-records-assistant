@@ -189,6 +189,59 @@ def resolve(
     )
 
 
+#: Said wherever the app offers to take a key. The set-only field on the
+#: settings screen shows it, and it is the reason that field exists at all: the
+#: obvious place for a person to put a key is the settings file they can see, and
+#: that file is the one place it must never go.
+NEVER_IN_CONFIG = (
+    "Your key goes into this computer's keychain, and never into your settings "
+    "file. That file lives inside your record folder, so it is copied to Dropbox, "
+    "Drive or Nextcloud along with everything else — a key written there has "
+    "already been handed to a company, whether or not anyone reads it. The app "
+    "refuses to start if it finds one there, which is a rude way to be told, so "
+    "it is worth saying here instead."
+)
+
+
+def store(value: str) -> str:
+    """Put *value* in the OS keychain. Returns the place, for a message.
+
+    The one write in this module, and the only one the app ever performs: the
+    environment belongs to whoever started the process and the credentials file
+    is a fallback for machines with no keychain, so neither is this program's to
+    edit. Both are still read, and both still win or lose by the resolution
+    order above — which is why the caller is told where a key *actually* comes
+    from afterwards rather than being left to assume it is this one.
+    """
+    if not value.strip():
+        raise CredentialError(
+            "an empty key is not a credential, so nothing was stored. Sending it "
+            "would put a blank header on the wire and come back as a rejection "
+            "that looks exactly like a key having been changed."
+        )
+    try:
+        import keyring  # noqa: PLC0415 - optional dependency, imported where used
+    except ImportError:
+        raise CredentialError(
+            f"there is no keychain on this machine to write to — the `keyring` "
+            f"package is not installed. Install it with "
+            f"`pip install 'health-agent[keychain]'`, or put the key in the "
+            f"environment variable named by [models.vlm.auth] api_key_env, or in a "
+            f"0600 file at {credentials_path()}. It cannot go in config.toml: "
+            f"that file syncs with the vault."
+        ) from None
+    try:
+        keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, value.strip())
+    except Exception as exc:  # keyring raises backend-specific errors
+        raise CredentialError(
+            f"the OS keychain would not accept the key: {exc}. On a headless "
+            f"machine there may be no Secret Service running — set the key in an "
+            f"environment variable instead and name it in config.toml under "
+            f"[models.vlm.auth] api_key_env."
+        ) from None
+    return f"{SOURCE_KEYCHAIN} ({KEYRING_SERVICE}/{KEYRING_ACCOUNT})"
+
+
 def status(
     api_key_env: str | None = None,
     vault_root: Path | None = None,

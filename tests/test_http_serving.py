@@ -25,6 +25,7 @@ paths, rather than a list someone has to remember to extend.
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -181,7 +182,19 @@ def test_the_built_bundle_reaches_for_nothing_on_the_network(client):
             assert marker not in text, f"{path.name} reaches {marker}"
 
 
-def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app):
+#: Every route that is handed a credential or reaches the machine holding one,
+#: with a body each will accept. ``/endpoint/key`` is posted the key itself: its
+#: answer, and its answer when it fails, must contain no part of it.
+_POSTS_THAT_TOUCH_THE_KEY = (
+    ("/api/settings/endpoint/key", {"key": KEY}),
+    ("/api/settings/endpoint/key", {"key": "   "}),
+    ("/api/settings/endpoint/test", {"base_url": "http://127.0.0.1:9/v1", "model": "m"}),
+    ("/api/settings/endpoint/models", {"base_url": "http://127.0.0.1:9/v1"}),
+    ("/api/settings/endpoint", {"base_url": f"https://user:{KEY}@127.0.0.1/v1", "model": "m"}),
+)
+
+
+def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app, monkeypatch):
     """Every registered route, including the error paths.
 
     Walked from the app's own routing table rather than a hand-kept list, so a
@@ -194,6 +207,20 @@ def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app):
     proposed = claim(device, "med:perindopril", "dose", "5mg daily", ts=on_day(2), artifact="a3f91c")
     vault.append(proposed)
     vault.append(confirm(device, proposed.id, ts=on_day(3)))
+
+    # A keychain that is not the developer's, so the *successful* store path is
+    # swept too and not only its refusal.
+    class _Keyring:
+        def __init__(self):
+            self.stored = {}
+
+        def set_password(self, service, account, value):
+            self.stored[(service, account)] = value
+
+        def get_password(self, service, account):
+            return self.stored.get((service, account))
+
+    monkeypatch.setitem(sys.modules, "keyring", _Keyring())
 
     redaction.register(KEY)
     try:
@@ -230,7 +257,19 @@ def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app):
                 checked += 1
                 _assert_no_key(response.text, url)
 
-            assert checked >= 12, "the sweep did not reach the routes"
+            # And the routes that take a key, or talk to the box that has one.
+            # These cannot be swept from the routing table the way the reads
+            # above are: each needs a body, and the one that matters most is the
+            # one the key is *posted to*. A route that accepted a credential and
+            # echoed it back in its own response would defeat every other guard
+            # in this file.
+            for url, body in _POSTS_THAT_TOUCH_THE_KEY:
+                response = client.post(url, json=body)
+                checked += 1
+                _assert_no_key(response.text, url)
+                _assert_no_key(json.dumps(dict(response.headers)), f"{url} headers")
+
+            assert checked >= 16, "the sweep did not reach the routes"
     finally:
         redaction.forget_all()
 

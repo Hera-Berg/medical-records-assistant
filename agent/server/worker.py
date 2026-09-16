@@ -135,6 +135,20 @@ class Worker:
         self.nudge()
         return len(resumed)
 
+    def reconfigured(self) -> None:
+        """The endpoint itself changed. Forget what was learned about the old one.
+
+        Not :meth:`resume`: a new address is not a new key, and un-parking jobs
+        that stopped on a rejected credential because someone corrected a
+        typo in a URL would send them all at a box that will reject them again.
+        What this does clear is the *stall* — "stop asking until a person acts"
+        is satisfied by a person having just acted — and the probe, so the next
+        pass finds out about the machine that is configured now.
+        """
+        self._stalled = False
+        self._probed = False
+        self.nudge()
+
     # -- the loop ----------------------------------------------------------
 
     def _loop(self) -> None:

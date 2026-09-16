@@ -13,13 +13,14 @@ things that genuinely differ between them.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tomllib
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from .errors import ConfigError, SecretInConfigError
 
@@ -393,11 +394,15 @@ def _rewrite_sync_profile(text: str, profile: SyncProfile) -> str:
     return newline.join(lines)
 
 
-def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
-    """Write ``sync_profile`` into an existing ``config.toml``. Returns the reload.
+def _guarded_write(
+    path: Path,
+    rewrite: Callable[[str], str],
+    verify: Callable[[Config], str | None],
+) -> Config:
+    """Rewrite *path* through *rewrite*, or leave it exactly as it was.
 
-    Three guards, in order, because each one protects against a different way
-    of losing the file:
+    Four guards, in order, because each one protects against a different way of
+    losing the file:
 
     1. **A sync fork beside it is a refusal.** Writing into a file the sync
        client is actively forking is how the whole config goes missing: two
@@ -409,6 +414,12 @@ def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
     3. **The result is re-read and validated, and restored if it fails.** The
        rewrite is a regex over a hand-edited file; if it produced something
        ``load`` rejects, the original bytes go back and the caller is told.
+    4. **The reload has to say what was asked for.** ``verify`` re-reads the
+       value out of the loaded config and returns a sentence if it disagrees.
+       A file that loads but does not mean what was written is the failure a
+       regex over hand-edited TOML actually has — a second ``[models.vlm]``
+       table further down, an inline table, a key that was already there twice
+       — and it is silent unless something reads the value back.
     """
     if not path.exists():
         raise ConfigError(
@@ -438,7 +449,7 @@ def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
     except UnicodeDecodeError as exc:
         raise ConfigError(f"{path} is not valid UTF-8: {exc}") from exc
 
-    updated = _rewrite_sync_profile(text, profile)
+    updated = rewrite(text)
     if updated == text:
         # Already says this. Nothing is written — an unchanged file keeps its
         # mtime, which is one less thing for the sync client to think about.
@@ -457,11 +468,215 @@ def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
     except ConfigError:
         path.write_bytes(original)
         raise
-    if config.sync_profile is not profile:
+    disagreement = verify(config)
+    if disagreement is not None:
         path.write_bytes(original)
-        raise ConfigError(
-            f"{path} was left unchanged: writing sync_profile = "
-            f"{profile.value!r} produced a file that reads back as "
-            f"{config.sync_profile.value!r}. Set it by hand."
-        )
+        raise ConfigError(f"{path} was left unchanged: {disagreement}")
     return config
+
+
+def set_sync_profile(path: Path, profile: SyncProfile) -> Config:
+    """Write ``sync_profile`` into an existing ``config.toml``. Returns the reload."""
+
+    def verify(config: Config) -> str | None:
+        if config.sync_profile is profile:
+            return None
+        return (
+            f"writing sync_profile = {profile.value!r} produced a file that reads "
+            f"back as {config.sync_profile.value!r}. Set it by hand."
+        )
+
+    return _guarded_write(path, lambda text: _rewrite_sync_profile(text, profile), verify)
+
+
+# --- the same write, for a key inside a table ------------------------------
+#
+# ``[models.vlm]`` is set from the settings screen for the same reason
+# ``sync_profile`` is: the alternative is a person editing TOML by hand to point
+# the record at their own box, and the thing they are most likely to get wrong
+# while doing it — pasting a key in beside the URL — is the one mistake that
+# cannot be taken back once the folder has synced.
+#
+# It is the same surgical rewrite, for the same reason. This file is hand-written
+# and hand-read: it carries the comment saying the endpoint must resolve to
+# 100.x, and the one saying never to put a key here. Re-serialising through a
+# TOML writer would delete both, and the person who opens the file in five years
+# would find a machine's version of their own config.
+
+#: An assignment inside a table, captured so the value can be swapped without
+#: touching the indentation or the trailing comment.
+def _assignment(key: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"^(?P<lead>\s*{re.escape(key)}\s*=\s*)"
+        rf"(?P<value>\"[^\"]*\"|'[^']*'|[^#\s][^#]*?)"
+        rf"(?P<rest>\s*(?:#.*)?)$"
+    )
+
+
+def _any_assignment(key: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*{re.escape(key)}\s*=")
+
+
+def _header_of(line: str) -> tuple[str, ...] | None:
+    """The table path a ``[a.b.c]`` line names, or ``None`` if it is not one.
+
+    Quoted segments are read as literal names, which is what TOML means by
+    them. Anything this cannot parse confidently returns a path that will not
+    match — the write then appends a fresh table and the reload check catches
+    it, rather than this guessing.
+    """
+    stripped = line.strip()
+    if not stripped.startswith("[") or stripped.startswith("[["):
+        return None
+    end = stripped.find("]")
+    if end == -1:
+        return None
+    inside = stripped[1:end].strip()
+    if not inside:
+        return None
+    segments = []
+    for raw in inside.split("."):
+        name = raw.strip()
+        if len(name) >= 2 and name[0] == name[-1] and name[0] in "\"'":
+            name = name[1:-1]
+        segments.append(name)
+    return tuple(segments)
+
+
+def _toml_string(value: str) -> str:
+    """*value* as a TOML basic string.
+
+    ``json.dumps`` with ``ensure_ascii=False``: TOML basic strings take the same
+    escapes, and leaving non-ASCII literal avoids emitting the surrogate pairs
+    JSON would and TOML forbids.
+    """
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _rewrite_values(text: str, values: Mapping[str, str]) -> str:
+    """Return *text* with each dotted key in *values* set, changing nothing else.
+
+    Keys are full dotted paths — ``models.vlm.base_url`` — and are grouped by
+    the table they live in, because that is what a file is: a header line and
+    the assignments under it. A key already present has its value swapped in
+    place; a key missing from an existing table is appended to that table; a
+    table that is not there at all is added at the end of the file.
+    """
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(newline)
+
+    by_table: dict[tuple[str, ...], dict[str, str]] = {}
+    for dotted, value in values.items():
+        parts = tuple(dotted.split("."))
+        by_table.setdefault(parts[:-1], {})[parts[-1]] = value
+
+    for table in sorted(by_table, key=len):
+        lines = _rewrite_table(lines, table, by_table[table])
+    return newline.join(lines)
+
+
+def _table_bounds(lines: list[str], table: tuple[str, ...]) -> tuple[int, int] | None:
+    """Where *table*'s assignments start and end, or ``None`` if it is absent.
+
+    The top-level table (an empty path) runs from the first line to the first
+    header. Any other runs from just after its header to the next header.
+    """
+    if not table:
+        for index, line in enumerate(lines):
+            if _header_of(line) is not None:
+                return (0, index)
+        return (0, len(lines))
+    for index, line in enumerate(lines):
+        if _header_of(line) != table:
+            continue
+        end = len(lines)
+        for after in range(index + 1, len(lines)):
+            if _header_of(lines[after]) is not None:
+                end = after
+                break
+        return (index + 1, end)
+    return None
+
+
+def _rewrite_table(
+    lines: list[str], table: tuple[str, ...], values: Mapping[str, str]
+) -> list[str]:
+    bounds = _table_bounds(lines, table)
+    if bounds is None:
+        return _append_table(lines, table, values)
+
+    start, end = bounds
+    remaining = dict(values)
+    for index in range(start, end):
+        for key in list(remaining):
+            if not _any_assignment(key).match(lines[index]):
+                continue
+            match = _assignment(key).match(lines[index])
+            if match:
+                # The trailing comment is the one explaining what the key is
+                # for. It is the reason this is a line rewrite at all.
+                lines[index] = (
+                    f"{match.group('lead')}{_toml_string(remaining[key])}"
+                    f"{match.group('rest')}"
+                )
+            else:
+                lines[index] = f"{key} = {_toml_string(remaining[key])}"
+            del remaining[key]
+            break
+
+    if not remaining:
+        return lines
+
+    # Appended at the end of the table's own lines, above whatever blank lines
+    # separate it from the next header.
+    insert_at = end
+    while insert_at > start and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    added = [f"{key} = {_toml_string(value)}" for key, value in remaining.items()]
+    return lines[:insert_at] + added + lines[insert_at:]
+
+
+def _append_table(
+    lines: list[str], table: tuple[str, ...], values: Mapping[str, str]
+) -> list[str]:
+    """Add a table this file does not have, at the end, after one blank line."""
+    if not table:  # pragma: no cover - the top level always exists
+        return lines + [f"{key} = {_toml_string(v)}" for key, v in values.items()]
+    tail = list(lines)
+    while tail and not tail[-1].strip():
+        tail.pop()
+    header = "[" + ".".join(table) + "]"
+    body = [f"{key} = {_toml_string(value)}" for key, value in values.items()]
+    return tail + ["", header, *body, ""]
+
+
+def _at(raw: Mapping[str, Any], dotted: str) -> Any:
+    found: Any = raw
+    for segment in dotted.split("."):
+        if not isinstance(found, dict):
+            return None
+        found = found.get(segment)
+    return found
+
+
+def set_values(path: Path, values: Mapping[str, str]) -> Config:
+    """Write dotted TOML keys into an existing ``config.toml``. Returns the reload.
+
+    The same four guards as :func:`set_sync_profile`, and the same refusal to
+    invent a file. The reload check reads every key back out of the parsed
+    document: a rewrite that lands in the wrong table, or under a second header
+    with the same name further down, loads perfectly and means something else.
+    """
+
+    def verify(config: Config) -> str | None:
+        for dotted, wanted in values.items():
+            found = _at(config.raw, dotted)
+            if found != wanted:
+                return (
+                    f"writing {dotted} = {wanted!r} produced a file that reads back "
+                    f"as {found!r}. The file may define that table more than once, "
+                    f"or define it as an inline table; set the value by hand."
+                )
+        return None
+
+    return _guarded_write(path, lambda text: _rewrite_values(text, values), verify)

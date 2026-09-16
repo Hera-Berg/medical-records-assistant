@@ -151,6 +151,28 @@ def _boolean(data: Mapping[str, Any], name: str, path: str, default: bool) -> bo
     return value
 
 
+def _scheme(auth: Mapping[str, Any]) -> str:
+    """``models.vlm.auth.scheme``, where empty is a real answer rather than a typo.
+
+    Every other string in this file is rejected when it is blank, because a
+    blank one is a half-finished edit. This one is not: a server that wants
+    ``X-API-Key: <key>`` with no word in front of the value is asking for an
+    empty scheme, and the only way to say that in a config file is to write
+    ``scheme = ""``. Absent still means ``Bearer`` — the default has to stay the
+    default for a file that never mentions the key.
+    """
+    if "scheme" not in auth:
+        return DEFAULT_AUTH_SCHEME
+    value = auth["scheme"]
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"models.vlm.auth.scheme must be a string, got {value!r}. Write "
+            f'scheme = "" for a server that wants the key on its own, with no '
+            f"word in front of it."
+        )
+    return value.strip()
+
+
 def parse(raw: Mapping[str, Any]) -> ModelSettings:
     """Validate the ``[models]`` tables of an already-loaded config."""
     models = _table(raw, "models", "config.toml")
@@ -174,7 +196,7 @@ def parse(raw: Mapping[str, Any]) -> ModelSettings:
     auth = AuthSettings(
         api_key_env=_string(auth_table, "api_key_env", "models.vlm.auth"),
         header=_string(auth_table, "header", "models.vlm.auth", DEFAULT_AUTH_HEADER),
-        scheme=_string(auth_table, "scheme", "models.vlm.auth", DEFAULT_AUTH_SCHEME) or "",
+        scheme=_scheme(auth_table),
     )
 
     asr_table = _table(models, "asr", "models")
