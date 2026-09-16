@@ -75,13 +75,20 @@ locale = "en"
 #: produced by a folder of invented data. A demo seeds a record, not a
 #: connection to a model, so by default the table is absent and the absence is
 #: explained where someone hits it.
+#:
+#: Written about the *seeding* rather than about the file's current contents.
+#: The settings screen can add a ``[models.vlm]`` table to this file later, and
+#: a comment reading "there is deliberately no [models.vlm] table here" would
+#: then be sitting directly above one — a note that has quietly become false is
+#: worse than no note, because the folder is meant to outlive the app and be
+#: read by someone with only what it says.
 _NO_ENDPOINT = """\
-# There is deliberately no [models.vlm] table here. A demo vault seeds a record,
-# not an inference endpoint: pointing this at a placeholder host would make
+# This vault was seeded without a [models.vlm] table. A demo seeds a record, not
+# an inference endpoint: pointing it at a placeholder host would make
 # `health-agent extract` fail with a DNS error that looks exactly like your own
-# box being asleep. Run extraction against your real vault, paste your
-# [models.vlm] table in below, or re-seed with `demo --endpoint-from <config>`
-# to copy one — see MODELS.md.
+# box being asleep. Run extraction against your real vault, set an endpoint on
+# the Settings screen, paste a [models.vlm] table in below, or re-seed with
+# `demo --endpoint-from <config>` to copy one — see MODELS.md.
 """
 
 #: ``[models.asr]`` is always written: speech runs locally, so it needs no

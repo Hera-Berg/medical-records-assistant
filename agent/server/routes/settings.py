@@ -257,6 +257,17 @@ def set_sync_profile(
 # writes anything.
 
 
+def _count(number: int, one: str, many: str) -> str:
+    """"one model", "three models", "12 models". Never "1 model(s)".
+
+    The interface is read by a patient, not by whoever wrote the endpoint. A
+    parenthesised plural is the shape of a message nobody finished writing.
+    """
+    words = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+    spelled = words[number] if number < len(words) else str(number)
+    return f"{spelled} {one if number == 1 else many}"
+
+
 def _draft(
     base_url: str, model: str, header: str | None, scheme: str | None
 ) -> dict[str, Any]:
@@ -439,7 +450,7 @@ def list_endpoint_models(
         "reached": True,
         "state": endpoint_state.WORKING,
         "message": (
-            f"The computer offers {len(models)} model(s)."
+            f"The computer offers {_count(len(models), 'model', 'models')}."
             if models
             else "The computer answered, but does not list any models. Type the "
             "name in by hand, exactly as that server spells it."

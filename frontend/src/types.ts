@@ -398,6 +398,65 @@ export interface SyncOption {
   current: boolean;
 }
 
+/**
+ * Where a key was found, and never what it is.
+ *
+ * `source` is a *place* — "keychain", "environment (HEALTH_VLM_TOKEN)". There
+ * is no field here for the key, no field for a prefix of it and no field for
+ * its length, and there is no route that would fill one in.
+ */
+export interface KeyState {
+  state: "configured" | "not set" | "unusable";
+  source: string | null;
+  detail: string | null;
+}
+
+export interface EndpointSettings {
+  explanation: string;
+  configured: boolean;
+  base_url: string;
+  model: string;
+  auth: { header: string; scheme: string; api_key_env: string | null };
+  defaults: { header: string; scheme: string };
+  key: KeyState;
+  key_explanation: string;
+  last_known: Health["endpoint"];
+  /** Set when `[models.vlm]` is present but will not load. */
+  problem: string | null;
+}
+
+/**
+ * One step of the connection test.
+ *
+ * `detail` is written by the server from a fixed table and selected by a code.
+ * Nothing the inference box said is ever interpolated into it — the same rule
+ * `/api/health` follows, because httpx puts request headers into some error
+ * representations and a short key would pass through the redaction filter.
+ */
+export interface EndpointStep {
+  name: string;
+  title: string;
+  state: "ok" | "failed" | "not-checked";
+  detail: string;
+}
+
+export interface EndpointCheck {
+  state: EndpointState;
+  ok: boolean;
+  auth: "ok" | "failed" | "missing";
+  model_reported: string | null;
+  message: string;
+  steps: EndpointStep[];
+  settings?: Settings;
+}
+
+export interface EndpointModels {
+  models: string[];
+  reached: boolean;
+  state: EndpointState;
+  message: string;
+}
+
 export interface Settings {
   explanation: string;
   sync_profile: {
@@ -410,9 +469,13 @@ export interface Settings {
     writable: boolean;
     conflict_forks: string[];
   };
+  endpoint: EndpointSettings;
   vault: { root: string; demo: boolean };
   changed?: string;
   conflicts?: string[];
+  /** On the answer to storing a key: where it went, and how much work resumed. */
+  stored?: string;
+  resumed?: number;
 }
 
 export interface CaptureResult {

@@ -14,6 +14,8 @@
 import type {
   ArtifactMeta,
   CaptureResponse,
+  EndpointCheck,
+  EndpointModels,
   EntityDetail,
   FileContent,
   FileListing,
@@ -222,6 +224,61 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ profile }),
+    }),
+
+  /**
+   * Write the inference endpoint into `config.toml`.
+   *
+   * The address guard runs on the server before anything is written, so a
+   * public host comes back as a refusal with the reason in it. There is no
+   * client-side check standing in front of that: a guard the browser could be
+   * talked out of is not a guard.
+   */
+  setEndpoint: (body: {
+    base_url: string;
+    model: string;
+    header: string;
+    scheme: string;
+  }) =>
+    request<Settings>("/api/settings/endpoint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * Store the key in this computer's keychain.
+   *
+   * One way only. There is no `getEndpointKey`, no route that would answer one,
+   * and nothing in the response that carries the key, a prefix of it or its
+   * length — see MODELS.md, "The browser never sees the key".
+   */
+  setEndpointKey: (key: string) =>
+    request<Settings>("/api/settings/endpoint/key", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
+
+  /** What the box says it is running, verbatim. An id is not a name to retype. */
+  endpointModels: (body: { base_url: string; header: string; scheme: string }) =>
+    request<EndpointModels>("/api/settings/endpoint/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  /** Run the startup probe against what is in the form. Writes nothing. */
+  testEndpoint: (body: {
+    base_url: string;
+    model: string;
+    header: string;
+    scheme: string;
+  }) =>
+    request<EndpointCheck>("/api/settings/endpoint/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     }),
 };
 

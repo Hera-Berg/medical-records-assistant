@@ -92,6 +92,49 @@ A server that is not draining holds exactly that state, which is what a deep
 queue looks like. Without `--waiting-only` the script watches for the state and
 says it passed too quickly rather than posing it.
 
+## Photographing the inference endpoint
+
+The settings screen's connection test exists to tell apart states a developer on
+a working laptop never reaches: a box that refuses the key, one that answers
+text perfectly and silently throws every picture away, one that ignores the
+schema it was handed. Those are exactly the states where a person is stuck and
+reading the screen carefully, so they are photographed.
+
+```
+python frontend/tools/shots.py --endpoint-only --out /tmp/shots
+```
+
+This is the one mode that does **not** want a server already running. It builds
+the whole arrangement itself in a temporary directory and tears it down
+afterwards:
+
+- a throwaway demo vault, which carries no endpoint — that is the "nothing set
+  up yet" shot, and it is real rather than posed;
+- `HEALTH_AGENT_CONFIG_HOME` pointed at a temporary directory, so **nothing
+  touches your keychain, your device identity or any real vault**. The
+  credential the app finds is a throwaway one written into a 0600 file there.
+  The settings screen's own password field writes to the OS keychain, and
+  overwriting the key you actually use in order to take a photograph is not a
+  trade worth making — that path is covered by tests instead;
+- `tools/fake_box.py`, a real OpenAI-compatible HTTP server on loopback with a
+  mode switch, so each failure is a machine genuinely behaving that way.
+
+Nothing between the browser and that box is stubbed. The address guard resolves
+the address for real, the client sends real requests, the probe reads real
+answers — including the vision check, which really does send a generated image
+with known text in it and really does look for that text in the reply. The
+unreachable shot is taken by closing the box's socket, not by pretending.
+
+The fake box can also be run on its own while working on the screen:
+
+```
+python frontend/tools/fake_box.py --port 7999 --mode blind
+```
+
+`working`, `blind`, `unconstrained`, `unauthorised` and `mismatched`. It is a
+developer tool, imported by nothing under `agent/`, and it speaks only the two
+paths the client uses.
+
 ## Constraints
 
 These are not style preferences. Each has a reason, and they are enforced by

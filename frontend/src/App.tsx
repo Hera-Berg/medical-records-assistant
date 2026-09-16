@@ -279,7 +279,8 @@ function defaultHeader(segments: string[]): PageHeader {
   if (first === "settings") {
     return {
       title: "Settings",
-      subtitle: "Where your record is kept, and what this app watches out for.",
+      subtitle:
+        "Where your record is kept, which computer reads it, and what this app watches out for.",
     };
   }
   if (first === "add") {

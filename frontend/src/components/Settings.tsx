@@ -1,7 +1,9 @@
 /**
- * Where your folder lives — which is a question, not an instruction.
+ * Two settings: where your folder lives, and which computer reads your documents.
  *
- * This screen has one setting and a lot of words, and the words are the point.
+ * The first is a question, not an instruction.
+ *
+ * This screen is mostly words, and the words are the point.
  * The reading a person arrives at unprompted is that choosing "Dropbox" here
  * *puts* their record in Dropbox, and that reading is wrong in a way that hurts
  * both ways round: someone believing it will pick Dropbox while their record
@@ -26,6 +28,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { PageHeader } from "../App";
 import type { Settings as SettingsData, SyncOption } from "../types";
+import { EndpointSettings } from "./EndpointSettings";
 
 export function Settings({
   version,
@@ -50,7 +53,8 @@ export function Settings({
         setError(null);
         setHeader({
           title: "Settings",
-          subtitle: "Where your record is kept, and what this app watches out for.",
+          subtitle:
+            "Where your record is kept, which computer reads it, and what this app watches out for.",
         });
       })
       .catch((exc: Error) => setError(exc.message));
@@ -215,6 +219,14 @@ export function Settings({
         </p>
       ) : null}
 
+      <div className="mt-8 border-t border-[color:var(--color-rule)] pt-6">
+        <EndpointSettings
+          settings={settings}
+          onSettings={setSettings}
+          onChanged={onChanged}
+        />
+      </div>
+
       <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
         Your settings file
       </h2>
@@ -222,9 +234,10 @@ export function Settings({
         <code className="font-mono">{settings.config.path}</code>
       </p>
       <p className="mt-1 text-[color:var(--color-muted)]">
-        A plain text file you can open and edit yourself. This app only ever writes one
-        line of it. It syncs along with everything else in your folder, which is why no
-        password or key belongs in it — see the note above.
+        A plain text file you can open and edit yourself. This app changes only the few
+        lines it is asked to from this screen, and leaves your own comments and spacing
+        exactly as they are. It syncs along with everything else in your folder, which is
+        why no password or key belongs in it — see the note above.
         {settings.config.writable ? null : " This app cannot write to it at the moment."}
       </p>
     </section>

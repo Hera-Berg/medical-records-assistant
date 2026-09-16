@@ -19,6 +19,23 @@ A screenshot of a mocked state is a picture of the mock.
 Needs ``playwright`` and its chromium (``python -m playwright install
 chromium``). Neither is a dependency of the application: this is a developer
 tool and the recording it takes pictures of runs in the user's own browser.
+
+``--endpoint-only`` is the exception to "point this at a running server". The
+inference endpoint's states need a machine on the other end behaving in a
+specific way — refusing the key, throwing pictures away — plus a vault with no
+endpoint to start from and a credential that is emphatically not the
+developer's. So that mode builds the whole arrangement itself, in a temporary
+directory, and tears it down afterwards:
+
+    python frontend/tools/shots.py --endpoint-only --out /tmp/shots
+
+It starts its own ``health-agent serve`` on a throwaway demo vault, with
+``HEALTH_AGENT_CONFIG_HOME`` pointed at a temporary directory so that **nothing
+touches the real keychain, the real device identity or a real vault**. The far
+end is ``fake_box.py``, a real HTTP server on loopback that misbehaves to order.
+Everything between the browser and that box — the address guard, the credential
+resolution, the probe, the classification of a 401 as terminal — is the
+application, unmodified.
 """
 
 from __future__ import annotations
@@ -193,6 +210,229 @@ def review_shots(play, origin: str, out: Path) -> None:
     browser.close()
 
 
+# --- the inference endpoint -------------------------------------------------
+#
+# The one section that builds its own world. Everything it needs is hostile to
+# borrowing: it has to start from a vault with no endpoint, it has to have a
+# credential that is not the developer's, and the machine on the far end has to
+# be persuadable into failing in five specific ways.
+
+BOX_PORT = 7999
+APP_PORT = 7789
+SHOT_KEY = "sk-fake-box-key-for-screenshots-0001"
+
+
+def endpoint_world(work: Path):
+    """A demo vault, an isolated config home, a server and a fake box.
+
+    ``HEALTH_AGENT_CONFIG_HOME`` is the load-bearing line. Without it this
+    script would resolve the developer's own device identity and, worse, could
+    read or write their real inference key — taking a photograph is not a reason
+    to go near either. Pointed at a temporary directory, the credential the app
+    finds is the throwaway one written below and nothing else exists to find.
+    """
+    import os
+
+    root = Path(__file__).resolve().parents[2]
+    vault = work / "vault"
+    home = work / "config-home"
+    home.mkdir(parents=True, exist_ok=True)
+
+    environment = {
+        **os.environ,
+        "HEALTH_AGENT_CONFIG_HOME": str(home),
+        "HEALTH_DEVICE": "shots-device",
+        # Nothing may inherit a real key and quietly make a failing state pass.
+        "HEALTH_VLM_TOKEN": "",
+    }
+    environment.pop("HEALTH_VLM_TOKEN")
+
+    subprocess.run(
+        [sys.executable, "-m", "agent.cli", "demo", str(vault)],
+        check=True, capture_output=True, cwd=root, env=environment,
+    )
+
+    server = subprocess.Popen(
+        [sys.executable, "-m", "agent.cli", "serve", "--vault", str(vault),
+         "--port", str(APP_PORT), "--no-worker"],
+        cwd=root, env=environment,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fake_box
+
+    box_server, box = fake_box.serve(BOX_PORT, "working")
+    return vault, home, server, box_server, box, f"http://127.0.0.1:{APP_PORT}"
+
+
+def wait_for(origin: str, seconds: float = 20.0) -> None:
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            with urlopen(f"{origin}/api/health", timeout=1):
+                return
+        except (URLError, OSError):
+            time.sleep(0.2)
+    raise SystemExit(f"the server never came up on {origin}")
+
+
+def write_key(home: Path) -> None:
+    """A credential the app will find, outside any vault and mode 0600.
+
+    Deliberately *not* through the settings screen's own field, which writes to
+    the OS keychain. Photographing a state is not worth overwriting the key a
+    developer actually uses, and the field's write path is covered by tests
+    instead. What the screen then shows — "found in the credentials file" — is a
+    real state of a real resolution order, not a posed one.
+    """
+    path = home / "credentials"
+    path.write_text(SHOT_KEY + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def set_mode(mode: str) -> None:
+    import json as _json
+    from urllib.request import Request, urlopen
+
+    request = Request(
+        f"http://127.0.0.1:{BOX_PORT}/v1/mode",
+        data=_json.dumps({"mode": mode}).encode("utf-8"),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5) as response:
+        response.read()
+
+
+def fill_endpoint(page, origin: str, url: str) -> None:
+    """Type the address in and pick the model off the box, as a person would."""
+    page.goto(f"{origin}/settings")
+    page.wait_for_selector("text=The computer that reads your documents")
+    page.get_by_role("textbox", name="Its address").fill(url)
+    page.get_by_role("button", name="Fetch the list").click()
+    page.wait_for_selector("select")
+    page.locator("select").select_option(index=1)
+
+
+def test_now(page) -> None:
+    page.get_by_role("button", name="Test this connection").click()
+    # The result table is what arriving looks like; waiting on a fixed timeout
+    # would photograph a button mid-press on a slow machine.
+    page.wait_for_selector("th:has-text('Result')", timeout=30000)
+    page.wait_for_timeout(300)
+
+
+def endpoint_shots(play, out: Path, work: Path) -> None:
+    """Every state the endpoint section can hold, each one genuinely reached."""
+    vault, home, server, box_server, box, origin = endpoint_world(work)
+    browser = None
+    try:
+        wait_for(origin)
+        browser = play.chromium.launch()
+        context = browser.new_context(viewport=DESKTOP)
+        page = context.new_page()
+
+        # 1. Nothing set up. A fresh demo vault carries no endpoint, and no key
+        #    exists anywhere this server can see.
+        page.goto(f"{origin}/settings")
+        page.wait_for_selector("text=No computer is set up yet")
+        shoot(page, out, "30-endpoint-unconfigured")
+
+        # 2. Filled in from the box's own answer, and not yet tested.
+        write_key(home)
+        url = f"http://127.0.0.1:{BOX_PORT}/v1"
+        fill_endpoint(page, origin, url)
+        shoot(page, out, "31-endpoint-filled-untested")
+
+        # 3. Working, including the step that matters: it read the words out of
+        #    a picture. Nothing about this is posed — the box really was sent a
+        #    generated image and really answered with the text in it.
+        test_now(page)
+        shoot(page, out, "32-endpoint-test-passing")
+
+        # 4. Saved. The four keys go into config.toml and the password does not.
+        page.get_by_role("button", name="Save", exact=True).click()
+        page.wait_for_selector("text=Your password was not written to it")
+        shoot(page, out, "33-endpoint-saved")
+
+        # 5. Each failure, produced by a box that genuinely behaves that way.
+        for mode, name in (
+            ("unauthorised", "34-endpoint-unauthorised"),
+            ("blind", "35-endpoint-vision-blind"),
+            ("unconstrained", "36-endpoint-grammar"),
+            ("mismatched", "37-endpoint-model-mismatch"),
+        ):
+            set_mode(mode)
+            page.reload()
+            page.wait_for_selector("text=Test this connection")
+            test_now(page)
+            shoot(page, out, name)
+        set_mode("working")
+
+        # 6. Unreachable, by actually stopping the machine. A refused socket is
+        #    not the same as a rejected key and the screen has to say so.
+        #
+        #    `server_close` as well as `shutdown`: the first stops the serving
+        #    loop and leaves the listening socket open, so connections are
+        #    accepted by the kernel and then hang — which is a *timeout*, not a
+        #    refusal, and waits out the client's three-minute read timeout. A
+        #    closed socket is what a sleeping machine actually looks like.
+        box_server.shutdown()
+        box_server.server_close()
+        page.reload()
+        page.wait_for_selector("text=Test this connection")
+        test_now(page)
+        shoot(page, out, "38-endpoint-unreachable")
+
+        # 7. A public address, refused at save time with the reason. Typed into
+        #    the real form and posted to the real guard.
+        page.get_by_role("textbox", name="Its address").fill("https://api.openai.com/v1")
+        page.get_by_role("button", name="Save", exact=True).click()
+        page.wait_for_selector("text=private address space", timeout=15000)
+        shoot(page, out, "39-endpoint-public-refused")
+
+        # 8. The password field, which has no read path. Shown with a value
+        #    typed but not submitted, so the shot says what the control offers.
+        page.reload()
+        page.wait_for_selector("text=Its password")
+        page.get_by_role("textbox", name="Replace it with a new one").fill(
+            "a-new-password-nobody-will-see"
+        )
+        page.locator("text=Its password").scroll_into_view_if_needed()
+        shoot(page, out, "40-endpoint-password-field")
+
+        small = context.new_page()
+        small.set_viewport_size(PHONE)
+        small.goto(f"{origin}/settings")
+        small.wait_for_selector("text=The computer that reads your documents")
+        small.locator("text=The computer that reads your documents").scroll_into_view_if_needed()
+        shoot(small, out, "41-endpoint-phone")
+        small.close()
+
+        context.close()
+    finally:
+        if browser is not None:
+            browser.close()
+        try:
+            box_server.shutdown()
+            box_server.server_close()
+        except OSError:
+            pass
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)
+        # Said out loud: a temporary vault with a throwaway key in it should be
+        # findable if something went wrong, and gone if nothing did.
+        print(f"  (worked in {work})")
+
+
 def main() -> int:
     from playwright.sync_api import sync_playwright
 
@@ -215,6 +455,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--endpoint-only",
+        action="store_true",
+        help=(
+            "photograph the inference endpoint section. Ignores --origin: this "
+            "one starts its own server on a throwaway demo vault, with an "
+            "isolated config home so it cannot touch your keychain, your device "
+            "identity or any real vault, and its own fake inference box on "
+            "loopback"
+        ),
+    )
+    parser.add_argument(
         "--waiting-only",
         action="store_true",
         help=(
@@ -233,6 +484,11 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="health-agent-shots-"))
 
     with sync_playwright() as play:
+        if args.endpoint_only:
+            endpoint_shots(play, out, work)
+            print(f"\n{len(list(out.glob('*.png')))} screenshots in {out}")
+            return 0
+
         if args.review_only:
             review_shots(play, args.origin, out)
             print(f"\n{len(list(out.glob('*.png')))} screenshots in {out}")
