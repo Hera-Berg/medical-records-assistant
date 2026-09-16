@@ -255,7 +255,14 @@ export function EndpointSettings({
         >
           {busy === "connect" ? "Connecting…" : "Connect"}
         </button>
-        {changed && endpoint.configured && !working ? (
+        {/* Why Connect cannot be pressed, beside it. */}
+        {!working && !address.trim() ? (
+          <span className="text-[color:var(--color-muted)]">Type the address first.</span>
+        ) : working && busy !== "connect" ? (
+          <span className="text-[color:var(--color-muted)]">
+            Waiting for the password to finish storing.
+          </span>
+        ) : changed && endpoint.configured && !working ? (
           <span className="text-[color:var(--color-muted)]">
             Connect to check and save this.
           </span>
@@ -387,6 +394,11 @@ function PasswordField({
         >
           {busy ? "Storing…" : "Store"}
         </button>
+        {!busy && disabled ? (
+          <span className="text-[color:var(--color-muted)]">Waiting for Connect to finish.</span>
+        ) : !busy && !value.trim() ? (
+          <span className="text-[color:var(--color-muted)]">Type a password to store it.</span>
+        ) : null}
       </div>
       <p className="mt-0.5 text-[color:var(--color-muted)]">
         {data.key.state === "unusable" ? (

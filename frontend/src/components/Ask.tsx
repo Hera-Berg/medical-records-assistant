@@ -143,7 +143,9 @@ export function Ask({
 
       {thread.length === 0 ? (
         <div className="mt-4">
-          <p className="text-[color:var(--color-muted)]">For example:</p>
+          <p className="text-[color:var(--color-muted)]">
+            {busy ? "For example — once this answer has come back:" : "For example:"}
+          </p>
           <ul className="mt-2 flex flex-col items-start gap-1">
             {EXAMPLES.map((example) => (
               <li key={example}>

@@ -105,8 +105,7 @@ export function Attention({
     );
   } else if (
     endpoint.state === "not-downloaded" &&
-    endpoint.where === "this-computer" &&
-    !health.vault.demo
+    endpoint.where === "this-computer"
   ) {
     said.add(endpoint.message);
     banners.push(

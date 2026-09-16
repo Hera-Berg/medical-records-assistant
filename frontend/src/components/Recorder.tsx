@@ -487,6 +487,12 @@ function Devices({
           </option>
         ))}
       </select>
+      {disabled ? (
+        <span className="text-[color:var(--color-muted)]">
+          {" "}
+          — stop recording to change it
+        </span>
+      ) : null}
     </p>
   );
 }

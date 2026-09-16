@@ -6,11 +6,15 @@
  * is for someone with a faster machine of their own, and opens the connection
  * form beneath.
  *
- * **Said before anything happens.** The download is the only thing this app
- * fetches from outside the user's own machines, so the screen states the size
- * that will actually arrive, which sites it comes from, where it is kept and
- * that nothing from the record is sent — and only then offers the button.
- * Nothing starts on its own, and a stopped download waits for "Continue".
+ * **Asked before anything happens, on every record.** The download is the only
+ * thing this app fetches from outside the user's own machines, so it starts
+ * only from a confirmation naming the exact bytes still to fetch, the sites
+ * they come from and where they are kept — and the server refuses a start that
+ * does not send that exact figure back. A demonstration record asks the same
+ * way: the files belong to this computer, not to the record, and a demo read
+ * by a local model is the safest way to watch reading work.
+ *
+ * **A disabled control says why, beside itself.**
  *
  * **Honest about speed.** A small model on a laptop is slow, and a queue that is
  * slow must not look like one that is broken. Before anything has been read
@@ -109,8 +113,9 @@ export function ReaderSettings({
         the others, and nothing in your record's folder.
       </p>
 
-      <fieldset className="mt-3" disabled={saving || info.demo}>
+      <fieldset className="mt-3" disabled={saving}>
         <legend className="sr-only">Which computer reads your documents</legend>
+        {saving ? <p className="text-[color:var(--color-muted)]">Saving…</p> : null}
         {info.options.map((option) => {
           const unavailable = option.value === "this-computer" && !info.platform.supported;
           return (
@@ -153,13 +158,15 @@ export function ReaderSettings({
         })}
       </fieldset>
 
-      {info.demo ? (
-        <p className="mt-3 text-[color:var(--color-muted)]">
-          This is a demonstration record, so nothing reads it and nothing is downloaded.
-        </p>
+      {here ? (
+        <ThisComputer
+          info={info}
+          saving={saving}
+          act={act}
+          minutes={minutes}
+          setMinutes={setMinutes}
+        />
       ) : null}
-
-      {here && !info.demo ? <ThisComputer info={info} saving={saving} act={act} minutes={minutes} setMinutes={setMinutes} /> : null}
 
       {error ? <p className="mt-3 text-[color:var(--color-alarm)]">{error}</p> : null}
     </section>
@@ -180,6 +187,7 @@ function ThisComputer({
   setMinutes: (value: string) => void;
 }) {
   const files = info.files;
+  const [asking, setAsking] = useState(false);
   const complete = files.state === "complete";
   const moving = BUSY.has(files.state);
   const status = info.reader;
@@ -223,7 +231,7 @@ function ThisComputer({
                  whether to spend 3.6 GB on this should know a document takes
                  a minute, not find out from a queue that seems stuck. */
               <p className="mt-1">
-                <strong>{info.speed.pace}</strong> A dedicated computer of your own is faster.
+                <strong>{info.speed.pace}</strong> Another computer of your own can read them instead.
               </p>
             ) : null}
             <table className="mt-2 w-full border-collapse">
@@ -263,24 +271,49 @@ function ThisComputer({
 
             {files.message ? <p className="mt-2">{files.message}</p> : null}
 
-            <div className="mt-3 flex gap-3">
-              {moving ? (
+            {moving ? (
+              <div className="mt-3">
                 <button type="button" className="btn" onClick={() => act(readerApi.cancel)}>
                   Stop
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={saving}
-                  onClick={() => act(readerApi.download)}
-                >
+              </div>
+            ) : asking ? (
+              <div className="mt-3 rounded-lg border border-[color:var(--color-warn)] bg-[color:var(--color-warn-soft)] p-3">
+                <p className="font-semibold">
+                  Download {files.remaining_bytes.toLocaleString("en")} bytes (
+                  {gigabytes(files.remaining_bytes)})?
+                </p>
+                <p className="mt-1">
+                  From {files.hosts.join(" and ")}, into{" "}
+                  <code className="font-mono break-all">{files.location}</code>. Once, for this
+                  computer. Nothing from your record is sent.
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={saving}
+                    onClick={() => {
+                      act(() => readerApi.download(files.remaining_bytes));
+                      setAsking(false);
+                    }}
+                  >
+                    {saving ? "Starting…" : `Yes, download ${gigabytes(files.remaining_bytes)}`}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setAsking(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <button type="button" className="btn btn-primary" onClick={() => setAsking(true)}>
                   {files.done_bytes > 0
-                    ? `Continue — ${gigabytes(files.remaining_bytes)} to go`
-                    : `Download ${gigabytes(files.remaining_bytes)}`}
+                    ? `Continue — ${gigabytes(files.remaining_bytes)} to go…`
+                    : `Download ${gigabytes(files.remaining_bytes)}…`}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -307,7 +340,7 @@ function ThisComputer({
                 disabled={saving}
                 onClick={() => act(readerApi.retry)}
               >
-                Try again
+                {saving ? "Starting…" : "Try again"}
               </button>
             </div>
           ) : null}
@@ -337,9 +370,16 @@ function ThisComputer({
         <button
           type="submit"
           className="btn"
-          disabled={saving || minutes === String(info.choice.sleep_after_minutes)}
+          disabled={saving || !validMinutes(minutes) || minutes === String(info.choice.sleep_after_minutes)}
         >
-          Save
+          {/* The reason it cannot be pressed is its label. */}
+          {saving
+            ? "Saving…"
+            : !validMinutes(minutes)
+              ? "Enter 0 to 1440 minutes"
+              : minutes === String(info.choice.sleep_after_minutes)
+                ? "Saved"
+                : "Save"}
         </button>
         <span className="basis-full text-[color:var(--color-muted)]">
           It wakes by itself when you add something; the first document after that takes a few
@@ -359,6 +399,12 @@ const STATE_WORDS: Record<string, string> = {
   unsupported: "Not available.",
   "in-use-elsewhere": "In use elsewhere.",
 };
+
+function validMinutes(value: string): boolean {
+  if (!/^\d+$/.test(value.trim())) return false;
+  const minutes = Number.parseInt(value, 10);
+  return minutes >= 0 && minutes <= 1440;
+}
 
 function progressTitle(state: string): string {
   if (state === "verifying") return "Checking what arrived…";

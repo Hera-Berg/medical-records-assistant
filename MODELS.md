@@ -38,7 +38,14 @@ same box from every machine.
 An existing vault with a `[models.vlm]` table starts on **another computer**, so upgrading changes
 nothing for someone already reading on a box. The default is written to the per-machine file the first
 time the server starts, so it cannot silently flip later because a synced config gained a table.
-A demo vault reads nowhere, downloads nothing, and starts nothing.
+A demo vault is not an exception: it reads documents wherever this machine does. The reader's files
+belong to the machine, not the vault, so a download made for a demo is the same download a real vault
+uses and outlives the demo being deleted; a demo can already reach a remote box, so refusing only the
+local path would track nothing; and invented documents read by a local model are the only way to see
+extraction work end to end without a personal document anywhere. Two things do stay: a demo never
+*writes* this machine's default (it has no `[models.vlm]` table, so it would record "this computer"
+over a real vault's "another computer"), and it keeps saying it is a demonstration, because claims
+extracted from invented documents are still invented.
 
 There is **no automatic fallback** between the two. A job waits for the reader the machine chose. A
 smaller model quietly standing in because the box was asleep is exactly the substitution that made a
@@ -75,9 +82,13 @@ is refused: 3.6 GB of model would sync to Dropbox.
 The one-time download is the only outbound connection this app makes other than to an inference
 endpoint the user configured. It is therefore held to rules of its own:
 
-- **Never automatic.** It starts from an explicit action on a screen that has already said the exact
-  size (from the manifest, not an estimate), which hosts it contacts, where the files go, and that no
-  part of the record is sent. An interrupted download says "Continue" and waits for a tap.
+- **Never automatic, and never unasked — on every vault.** It starts from an explicit confirmation that
+  names the exact bytes still to fetch (from the manifest and what is already on disk, not an
+  estimate), which hosts it contacts, where the files go, and that no part of the record is sent. The
+  server enforces it: `POST /api/reader/download` must carry `confirm_bytes` equal to what it would
+  fetch right now, and anything else is refused with the real figure. An unexpected multi-gigabyte
+  download is the harm, and it is guarded by asking, not by deciding which vaults may ask. An
+  interrupted download says "Continue" and asks again.
 - **Allowlisted hosts, https only, checked on every redirect hop.** Hugging Face and GitHub release
   assets and their CDN hosts, and nothing else.
 - **Resumable.** A `.part` file and a `Range` request; a server that ignores `Range` restarts from zero

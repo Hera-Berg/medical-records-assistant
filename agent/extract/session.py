@@ -51,11 +51,13 @@ def settings_for(vault) -> ModelSettings:
 def reads_here(vault) -> bool:
     """Whether this machine reads this vault's documents itself.
 
-    A demo vault never does: it seeds a record, not a connection to a model, and
-    it must not be the thing that starts a 3.5 GB process or asks for a download.
+    A demo vault is no exception. The reader's files live outside every vault, so
+    reading a demo on this computer downloads nothing a real vault would not
+    use; a demo can already reach a remote box, so refusing only this path would
+    draw a line that tracks nothing; and invented documents read by a local model
+    are the one way to watch extraction work end to end with no personal document
+    anywhere. What guards a download is the size confirmation every vault gets.
     """
-    if vault.is_demo:
-        return False
     return choice_mod.load(vault).reads_here
 
 

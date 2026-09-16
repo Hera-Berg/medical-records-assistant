@@ -107,6 +107,10 @@ class Downloader:
 
     # -- reporting ---------------------------------------------------------
 
+    def bundles(self) -> tuple[Bundle, ...]:
+        """What a run would fetch, for the machine's choice as it stands now."""
+        return self._bundles()
+
     def progress(self) -> Progress:
         with self._lock:
             current = self._progress

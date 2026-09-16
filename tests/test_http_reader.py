@@ -35,20 +35,44 @@ def test_the_reader_screen_says_what_a_download_would_be_before_one_starts(vault
     assert files["state"] == download.IDLE
 
 
-def test_the_download_starts_only_when_asked(vault, monkeypatch):
+@pytest.fixture
+def no_real_download(monkeypatch):
     started = []
     monkeypatch.setattr(download.Downloader, "start", lambda self: started.append(1) or True)
     monkeypatch.setattr(download.Downloader, "join", lambda self, timeout=None: None)
+    return started
+
+
+def test_a_download_without_the_agreed_size_starts_nothing(vault, no_real_download):
+    """Guarded by asking, on every vault: the exact bytes must come back."""
     with api_client(vault) as client:
-        response = client.post("/api/reader/download")
+        remaining = client.get("/api/reader").json()["files"]["remaining_bytes"]
+        refused = client.post("/api/reader/download", json={})
+        stale = client.post("/api/reader/download", json={"confirm_bytes": remaining - 1})
+    assert no_real_download == []
+    for response in (refused, stale):
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert f"{remaining:,} bytes" in detail
+        assert "huggingface.co" in detail and "github.com" in detail
+
+
+def test_the_download_starts_once_the_exact_size_is_agreed(vault, no_real_download):
+    with api_client(vault) as client:
+        remaining = client.get("/api/reader").json()["files"]["remaining_bytes"]
+        response = client.post("/api/reader/download", json={"confirm_bytes": remaining})
     assert response.status_code == 200
-    assert started == [1]
+    assert no_real_download == [1]
 
 
-def test_a_demo_record_downloads_nothing(vault, monkeypatch):
+def test_a_demo_record_downloads_the_same_way_as_any_other(vault, monkeypatch, no_real_download):
     monkeypatch.setattr(type(vault), "is_demo", property(lambda self: True))
     with api_client(vault) as client:
-        assert client.post("/api/reader/download").status_code == 409
+        remaining = client.get("/api/reader").json()["files"]["remaining_bytes"]
+        assert client.post("/api/reader/download", json={}).status_code == 409
+        assert client.post("/api/reader/download", json={"confirm_bytes": remaining}).status_code == 200
+    assert no_real_download == [1]
+    assert not choice.path().exists(), "a demo still never settles this machine's choice"
 
 
 def test_choosing_another_computer_writes_this_machine_and_never_config_toml(vault):

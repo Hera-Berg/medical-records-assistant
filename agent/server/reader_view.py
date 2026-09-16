@@ -132,7 +132,7 @@ def payload(state) -> dict[str, Any]:
         device = None
 
     reader_status: dict[str, Any] | None = None
-    if current.reads_here and not vault.is_demo:
+    if current.reads_here:
         reader_status = supervisor.get(vault).status().to_dict()
 
     reason = progress.reason

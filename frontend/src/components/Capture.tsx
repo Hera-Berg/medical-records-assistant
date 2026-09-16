@@ -318,6 +318,8 @@ export function CapturePanel({
         </button>
         {noteError ? (
           <span className="text-[color:var(--color-alarm)]">{noteError}</span>
+        ) : !text.trim() ? (
+          <span className="text-[color:var(--color-muted)]">Write the note first.</span>
         ) : null}
       </div>
 

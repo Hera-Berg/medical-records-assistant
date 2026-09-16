@@ -571,7 +571,7 @@ function Actions({
     );
   }
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
       {item.dateable ? <DateActions item={item} decide={decide} busy={busy} /> : null}
       {(item.actions ?? []).map((action) => {
         if (action === "date") return null;
@@ -606,6 +606,9 @@ function Actions({
           </button>
         );
       })}
+      {busy ? (
+        <span className="text-[color:var(--color-muted)]">Saving your decision…</span>
+      ) : null}
     </div>
   );
 }
@@ -663,6 +666,9 @@ function DateActions({
       >
         Save the date
       </button>
+      {!busy && !typed ? (
+        <span className="text-[color:var(--color-muted)]">Pick a date first.</span>
+      ) : null}
     </div>
   );
 }
@@ -707,7 +713,7 @@ function CorrectField({
         />
       </label>
       <button type="submit" className="btn" disabled={!value.trim()}>
-        Save the correction
+        {value.trim() ? "Save the correction" : "Type what it should say"}
       </button>
       <button type="button" className="btn" onClick={onCancel}>
         Cancel

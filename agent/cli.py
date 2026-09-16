@@ -364,7 +364,19 @@ def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
         file=out,
     )
     if report.endpoint is None:
-        print("endpoint  none — a demo vault reaches no model by default", file=out)
+        # Said from this machine's actual choice. A demo reads documents wherever
+        # this machine does, and a line claiming it reaches no model would be
+        # false the moment the reader on this computer is downloaded.
+        from .runtime import choice as choice_mod  # noqa: PLC0415
+
+        reads = choice_mod.load(Vault.open(report.root))
+        print(f"reads on  {reads.to_dict()['label']} — this machine's choice", file=out)
+        if reads.reads_here:
+            print(
+                "          nothing is fetched by making a demo; `health-agent reader "
+                "download` says what reading here needs before it fetches anything",
+                file=out,
+            )
     else:
         # Named, every time, and never merely implied by the absence of a
         # warning. A vault of invented data that can reach a real box is a thing

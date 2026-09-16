@@ -1,9 +1,15 @@
 """``/api/reader`` and ``/api/settings/reader`` — reading documents on this computer.
 
-**The download never starts itself.** ``POST /api/reader/download`` is the only
-thing that starts it, and the screen that sends it has already shown the exact
-size, the hosts and where the files go. Nothing here runs at startup, and an
-interrupted download stays interrupted until someone presses continue.
+**The download never starts itself, and never starts unasked.** ``POST
+/api/reader/download`` is the only thing that starts it, and it must carry
+``confirm_bytes`` equal to the bytes it would actually fetch right now. The
+screen gets that number by showing it — exact, from the manifest, beside the
+hosts and where the files go — and sending it back is the person's yes. A
+request without it, or with a number that has gone stale, is refused with the
+real figure. This holds for every vault, demo or not: the thing worth guarding
+is an unexpected 3.6 GB download, and it is guarded by asking. Nothing here runs
+at startup, and an interrupted download stays interrupted until someone
+presses continue.
 
 **The choice is this machine's.** ``POST /api/settings/reader`` writes the file
 beside the device identity and never ``config.toml``: "this computer" in a
@@ -32,14 +38,25 @@ def reader(state: RecordState = Depends(get_state)) -> dict[str, Any]:
 
 
 @router.post("/api/reader/download")
-def start_download(state: RecordState = Depends(get_state)) -> dict[str, Any]:
-    if state.vault.is_demo:
+def start_download(
+    confirm_bytes: int | None = Body(None, embed=True),
+    state: RecordState = Depends(get_state),
+) -> dict[str, Any]:
+    fetcher = reader_view.downloader(state)
+    progress = fetcher.progress()
+    remaining = max(0, progress.total_bytes - progress.done_bytes)
+    if remaining and confirm_bytes != remaining:
+        hosts = " and ".join(manifest.hosts_contacted(fetcher.bundles()))
         raise HTTPException(
             status_code=409,
-            detail="A demo record downloads nothing. Open your own record to set up reading.",
+            detail=(
+                f"Nothing was downloaded. This would fetch {remaining:,} bytes "
+                f"({remaining / 1024**3:.1f} GB) from {hosts}, and a download "
+                f"starts only once that exact size has been shown and agreed to."
+            ),
         )
     try:
-        reader_view.downloader(state).start()
+        fetcher.start()
     except DownloadError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     _nudge_when_done(state)
@@ -71,8 +88,6 @@ def choose(
     state: RecordState = Depends(get_state),
 ) -> dict[str, Any]:
     """Which computer reads this machine's documents, and how long its reader idles."""
-    if state.vault.is_demo:
-        raise HTTPException(status_code=409, detail="A demo record reads nowhere.")
     if reads_on == choice_mod.THIS_COMPUTER and not manifest.reader_bundles(platforms.current()):
         raise HTTPException(
             status_code=409,

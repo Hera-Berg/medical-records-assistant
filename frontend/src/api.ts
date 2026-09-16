@@ -299,7 +299,14 @@ export const reader = {
    * own machines, and it is made only from a button on a screen that has
    * already said the size, the hosts and where the files go.
    */
-  download: () => request<ReaderInfo>("/api/reader/download", { method: "POST" }),
+  download: (confirmBytes: number) =>
+    request<ReaderInfo>("/api/reader/download", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      /* The exact figure the person was shown. The server refuses a start
+         without it, or with one that no longer matches what it would fetch. */
+      body: JSON.stringify({ confirm_bytes: confirmBytes }),
+    }),
   cancel: () => request<ReaderInfo>("/api/reader/cancel", { method: "POST" }),
   retry: () => request<ReaderInfo>("/api/reader/retry", { method: "POST" }),
 

@@ -303,9 +303,9 @@ Added in phase 11:
 **Where documents are read is chosen per machine**, at `~/.config/health-agent/reader` beside the
 device identity, never in `config.toml`. "This computer" written into a synced file is false on every
 other machine that reads it. The remote endpoint's details stay in `config.toml`. A vault that already
-has `[models.vlm]` starts on another computer; a new vault starts on this one; a demo vault reads
-nowhere and downloads nothing. The default is written the first time the server starts, so it cannot
-flip later because a synced config gained a table.
+has `[models.vlm]` starts on another computer; a new vault starts on this one. The default is written
+the first time the server starts, so it cannot flip later because a synced config gained a table — and
+never by a demo vault, which has no table and would write "this computer" over a real vault's default.
 
 **Binaries and weights are downloaded, pinned and verified — never committed, never compiled.** One
 manifest in code carries URL, exact size and sha256 for the `llama-server` build and every model file,
@@ -313,9 +313,19 @@ per platform. Git history is forever, and this project's durability claim is abo
 repo. Files live outside the vault; a data directory inside it is refused.
 
 **The download is the one outbound connection that is not to the user's own machines**, so it never
-starts without a tap on a screen that has said the exact size, the hosts, where files go and that no
-part of the record is sent. Allowlisted hosts, https, checked per redirect hop, resumable, and verified
-before a byte is used.
+starts without a confirmation that names the exact bytes, the hosts, where files go and that no part of
+the record is sent — enforced by the server, which refuses a start that does not carry the exact byte
+count back. Allowlisted hosts, https, checked per redirect hop, resumable, and verified before a byte
+is used.
+
+**Guard the act, not a context that correlates with it.** Demo vaults were first blocked from reading
+on this computer. That tracked nothing: the files are the machine's, a demo could already reach a
+remote box, and a demo plus a local model is the only way to watch extraction work without personal
+documents. The harm was an unexpected download, and asking guards it on every vault. A demo vault keeps
+its demonstration banner, because what it extracts is still invented.
+
+**A disabled control says why at the control** — in its label or directly beside it, never only as a
+general line elsewhere on the page. A greyed control with the reason a paragraph away reads as a bug.
 
 **Record the facts, derive the judgement.** The `degraded-tier` label is retired, not renamed.
 `extraction.completed` carries a `runtime` block — `kind`, `engine`, file hashes, elapsed time — and

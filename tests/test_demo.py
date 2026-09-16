@@ -321,7 +321,11 @@ def test_the_demo_config_names_no_endpoint(seeded):
 
 
 def test_extract_against_a_demo_vault_says_demo_vaults_have_no_endpoint(seeded, capsys):
+    """On a machine that reads on another computer, a demo still carries no box."""
     from agent import cli
+    from agent.runtime import choice
+
+    choice.save(choice.ANOTHER_COMPUTER)
 
     code = cli.main(["extract", "--vault", str(seeded.root)])
     out = capsys.readouterr().out
@@ -340,6 +344,22 @@ def test_a_refused_demo_vault_gets_no_queue_written(seeded):
 
     cli.main(["extract", "--vault", str(seeded.root)])
     assert not (seeded.root / ".agent" / "jobs.jsonl").exists()
+
+
+def test_a_demo_vault_reads_on_this_computer_like_any_vault(seeded, capsys):
+    """No demo exception. The reader's files are the machine's, and a demo plus
+    a local model is the one way to watch extraction work end to end without a
+    personal document anywhere. Here nothing is downloaded, so it says that —
+    and fetches nothing, because a download is only ever started by asking."""
+    from agent import cli
+    from agent.runtime import states
+
+    code = cli.main(["extract", "--vault", str(seeded.root)])
+    out = capsys.readouterr().out
+
+    assert code == cli.EXIT_PROBLEMS
+    assert states.MESSAGES["not-downloaded"] in out
+    assert "demo vaults don't carry one" not in out
 
 
 def _vault(seeded):
@@ -548,7 +568,8 @@ def test_the_cli_says_so_when_there_is_no_endpoint(tmp_path, capsys):
     cli.main(["demo", str(tmp_path / "demo")])
     out = capsys.readouterr().out
 
-    assert "endpoint  none — a demo vault reaches no model by default" in out
+    assert "reads on  Read on this computer — this machine's choice" in out
+    assert "nothing is fetched by making a demo" in out
 
 
 def test_a_table_that_would_not_load_is_refused_at_the_source(tmp_path, real_config):

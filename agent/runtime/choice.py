@@ -144,8 +144,11 @@ def save(reads_on: str, sleep_after_minutes: int = DEFAULT_SLEEP_MINUTES) -> Cho
 def settle(vault) -> Choice:
     """Write the default if nothing is written yet. Called when the server starts.
 
-    A demo vault is never settled: it reads nowhere, and letting it write a
-    choice would decide the real vault's default on this machine.
+    A demo vault never writes it. It may *read* on this computer like any vault,
+    but the choice is the machine's, and a demo has no ``[models.vlm]`` table: a
+    demo served first would write "this computer" for the whole machine and
+    override the "another computer" default a real vault set up with a box is
+    owed.
     """
     current = load(vault)
     if current.source == "file" or vault.is_demo:

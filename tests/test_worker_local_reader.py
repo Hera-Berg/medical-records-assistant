@@ -75,11 +75,21 @@ def test_capture_works_before_anything_is_downloaded(vault):
     assert RecordState(vault).queue().depth() == 1
 
 
-def test_a_demo_vault_reads_nowhere(vault, monkeypatch):
+def test_a_demo_vault_reads_on_this_computer_like_any_other(vault, monkeypatch):
     monkeypatch.setattr(type(vault), "is_demo", property(lambda self: True))
     from agent.extract import session
 
-    assert session.reads_here(vault) is False
+    assert session.reads_here(vault) is True
+
+
+def test_a_demo_vault_still_says_it_is_a_demonstration(vault, monkeypatch):
+    monkeypatch.setattr(type(vault), "is_demo", property(lambda self: True))
+    with api_client(vault) as client:
+        health = client.get("/api/health").json()
+        reader = client.get("/api/reader").json()
+    assert health["vault"]["demo"] is True
+    assert reader["demo"] is True
+    assert reader["reader"] is not None, "a demo reports its reader like any vault"
 
 
 def test_the_first_pass_starts_the_reader_and_probes_it(vault, ready_store):

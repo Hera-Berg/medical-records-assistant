@@ -123,6 +123,15 @@ export function Settings({
 
       <fieldset className="mt-4" disabled={saving || settings.config.conflict_forks.length > 0}>
         <legend className="sr-only">Where your folder is kept</legend>
+        {/* Why these cannot be chosen, said where the choices are. */}
+        {settings.config.conflict_forks.length > 0 ? (
+          <p className="font-semibold text-[color:var(--color-alarm)]">
+            Locked until the second copy of your settings file, described just above, is
+            sorted out.
+          </p>
+        ) : saving ? (
+          <p className="text-[color:var(--color-muted)]">Saving…</p>
+        ) : null}
         {settings.sync_profile.options.map((option) => (
           <label
             key={option.value}
@@ -187,7 +196,7 @@ export function Settings({
               className="btn btn-primary"
               disabled={saving}
             >
-              Yes — my folder is already there
+              {saving ? "Saving…" : "Yes — my folder is already there"}
             </button>
             <button type="button" onClick={() => setPending(null)} className="btn">
               Cancel
