@@ -20,6 +20,8 @@ import type {
   FileContent,
   FileListing,
   Health,
+  ReaderInfo,
+  ReadsOn,
   ReviewQueue,
   Settings,
   Summary,
@@ -283,6 +285,30 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key }),
+    }),
+};
+
+export const reader = {
+  /** What reading on this computer needs, and where it has got to. Starts nothing. */
+  info: () => request<ReaderInfo>("/api/reader"),
+
+  /**
+   * Start or continue the one-time download.
+   *
+   * The only call in this app that fetches anything from outside the user's
+   * own machines, and it is made only from a button on a screen that has
+   * already said the size, the hosts and where the files go.
+   */
+  download: () => request<ReaderInfo>("/api/reader/download", { method: "POST" }),
+  cancel: () => request<ReaderInfo>("/api/reader/cancel", { method: "POST" }),
+  retry: () => request<ReaderInfo>("/api/reader/retry", { method: "POST" }),
+
+  /** Which computer reads documents — for this computer only, never the synced settings file. */
+  choose: (reads_on: ReadsOn, sleep_after_minutes?: number) =>
+    request<ReaderInfo>("/api/settings/reader", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reads_on, sleep_after_minutes }),
     }),
 };
 

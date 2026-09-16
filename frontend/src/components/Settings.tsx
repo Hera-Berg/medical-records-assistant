@@ -27,8 +27,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { PageHeader } from "../App";
-import type { Settings as SettingsData, SyncOption } from "../types";
+import type { ReadsOn, Settings as SettingsData, SyncOption } from "../types";
 import { EndpointSettings } from "./EndpointSettings";
+import { ReaderSettings } from "./ReaderSettings";
 
 export function Settings({
   version,
@@ -44,6 +45,9 @@ export function Settings({
   const [pending, setPending] = useState<SyncOption | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  // The connection form belongs under "Read on another computer" and nowhere
+  // else: shown under "this computer" it reads as something still to fill in.
+  const [readsOn, setReadsOn] = useState<ReadsOn | null>(null);
 
   const load = useCallback(() => {
     api
@@ -220,12 +224,18 @@ export function Settings({
       ) : null}
 
       <div className="mt-8 border-t border-[color:var(--color-rule)] pt-6">
-        <EndpointSettings
-          settings={settings}
-          onSettings={setSettings}
-          onChanged={onChanged}
-        />
+        <ReaderSettings onChoice={setReadsOn} onChanged={onChanged} />
       </div>
+
+      {readsOn === "another-computer" ? (
+        <div className="mt-8 border-t border-[color:var(--color-rule)] pt-6">
+          <EndpointSettings
+            settings={settings}
+            onSettings={setSettings}
+            onChanged={onChanged}
+          />
+        </div>
+      ) : null}
 
       <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
         Your settings file
@@ -237,7 +247,7 @@ export function Settings({
         A plain text file you can open and edit yourself. This app changes only the few
         lines it is asked to from this screen, and leaves your own comments and spacing
         exactly as they are. It syncs along with everything else in your folder, which is
-        why no password or key belongs in it — see the note above.
+        why no password or key ever belongs in it.
         {settings.config.writable ? null : " This app cannot write to it at the moment."}
       </p>
     </section>

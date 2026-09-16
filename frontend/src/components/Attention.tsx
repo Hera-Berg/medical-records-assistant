@@ -96,6 +96,29 @@ export function Attention({
         start the queue again.
       </Banner>,
     );
+  } else if (endpoint.state === "stopped") {
+    said.add(endpoint.message);
+    banners.push(
+      <Banner key="reader" tone="alarm" title="The reader on this computer has stopped.">
+        {endpoint.message}
+      </Banner>,
+    );
+  } else if (
+    endpoint.state === "not-downloaded" &&
+    endpoint.where === "this-computer" &&
+    !health.vault.demo
+  ) {
+    said.add(endpoint.message);
+    banners.push(
+      <Banner
+        key="download"
+        tone="info"
+        title="Reading documents on this computer needs a one-time download."
+      >
+        It is started from <strong>Settings</strong>, which says how big it is and where it
+        comes from first. Anything you add in the meantime is kept and waits to be read.
+      </Banner>,
+    );
   } else if (endpoint.state === "misconfigured" || endpoint.state === "vision-not-working") {
     said.add(endpoint.message);
     banners.push(
@@ -151,6 +174,16 @@ export function Attention({
         title={`${countWord(health.queue.depth, "file is", "files are")} waiting to be read.`}
       >
         They are already stored in your folder. Nothing is lost while they wait.
+        {health.reading ? (
+          <>
+            {" "}
+            {health.reading.pace}
+            {health.reading.eta ? ` ${health.reading.eta}` : null}
+            {endpoint.state === "sleeping" || endpoint.state === "starting"
+              ? " The reader is waking up to read them."
+              : null}
+          </>
+        ) : null}
       </Banner>,
     );
   }

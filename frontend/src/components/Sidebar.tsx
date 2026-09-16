@@ -45,6 +45,10 @@ export const ENDPOINT_WORDS: Record<
   "vision-not-working": { short: "Cannot read pictures", tone: "alarm" },
   "not-configured": { short: "Not set up yet", tone: "quiet" },
   unknown: { short: "Not checked yet", tone: "quiet" },
+  "not-downloaded": { short: "Needs a one-time download", tone: "quiet" },
+  sleeping: { short: "Sleeping — wakes when you add something", tone: "quiet" },
+  starting: { short: "Starting up", tone: "quiet" },
+  stopped: { short: "Stopped — see Settings", tone: "alarm" },
 };
 
 const DOT: Record<"good" | "quiet" | "alarm", string> = {
@@ -65,7 +69,9 @@ export function Sidebar({
   uploading: number;
 }) {
   const endpoint = health
-    ? (ENDPOINT_WORDS[health.endpoint.state] ?? ENDPOINT_WORDS.unknown)
+    ? health.endpoint.state === "working" && health.endpoint.where === "this-computer"
+      ? { short: "Reading on this computer", tone: "good" as const }
+      : (ENDPOINT_WORDS[health.endpoint.state] ?? ENDPOINT_WORDS.unknown)
     : null;
   const folder = health ? folderName(health.vault.root) : null;
 

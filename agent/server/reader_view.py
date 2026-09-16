@@ -73,9 +73,13 @@ def speed(events: Sequence[Event], device: str | None, platform: str | None, wai
     measured = round(statistics.median(recent)) if recent else None
 
     if measured is None:
-        sentence = f"Reading on this computer takes {states.speed_estimate(platform)}."
+        pace = f"Reading on this computer takes {states.speed_estimate(platform)}."
     else:
-        sentence = f"Usually about {_seconds(measured)} a document on this computer."
+        pace = f"Usually about {_seconds(measured)} a document on this computer."
+    eta = None
+    if measured is not None and waiting > 1:
+        eta = f"Roughly {_duration(measured * waiting)} for all {waiting}."
+    sentence = pace
     if waiting:
         noun = "document" if waiting == 1 else "documents"
         sentence += f" {waiting} {noun} waiting"
@@ -87,6 +91,9 @@ def speed(events: Sequence[Event], device: str | None, platform: str | None, wai
         "measured_seconds": measured,
         "measured_from": len(recent),
         "waiting": waiting,
+        # Without the count, for a place that has already said how many.
+        "pace": pace,
+        "eta": eta,
         "sentence": sentence,
     }
 

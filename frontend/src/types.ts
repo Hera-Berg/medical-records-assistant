@@ -249,7 +249,12 @@ export type EndpointState =
   | "misconfigured"
   | "vision-not-working"
   | "not-configured"
-  | "unknown";
+  | "unknown"
+  /* The reader on this computer. */
+  | "not-downloaded"
+  | "sleeping"
+  | "starting"
+  | "stopped";
 
 export interface Health {
   ok: boolean;
@@ -268,7 +273,11 @@ export interface Health {
     message: string;
     model: string | null;
     checked_ts: string | null;
+    /** Which computer this state describes. The reader on this one has no key. */
+    where: "this-computer" | "another-computer";
   };
+  /** Present when this computer reads documents. Measured here, never elsewhere. */
+  reading: ReadingSpeed | null;
   queue: {
     depth: number;
     parked: boolean;
@@ -735,4 +744,65 @@ export interface AskResponse {
   box: string | null;
   turns_left: number;
   as_of: string;
+}
+
+/**
+ * How long reading takes on this computer.
+ *
+ * `pace` is measured from this device's own recent readings once there are
+ * any, and is the honest range for the hardware before. It never quotes another
+ * machine: a laptop told how fast the desktop was has been told nothing.
+ */
+export interface ReadingSpeed {
+  estimate: string;
+  measured_seconds: number | null;
+  measured_from: number;
+  waiting: number;
+  pace: string;
+  eta: string | null;
+  sentence: string;
+}
+
+export type ReadsOn = "this-computer" | "another-computer";
+
+/**
+ * The reader on this computer, and its one-time download.
+ *
+ * Every sentence is chosen on the server from a fixed table. The numbers are
+ * this machine's: bytes from the pinned manifest, memory and disk from the
+ * operating system.
+ */
+export interface ReaderInfo {
+  choice: {
+    reads_on: ReadsOn;
+    label: string;
+    sleep_after_minutes: number;
+    source: "file" | "default";
+  };
+  options: { value: ReadsOn; label: string; current: boolean }[];
+  demo: boolean;
+  platform: { key: string | null; label: string; supported: boolean; verified: boolean };
+  memory: { total_bytes: number | null; low: boolean };
+  disk: { free_bytes: number | null };
+  files: {
+    explanation: string;
+    location: string;
+    hosts: string[];
+    bundles: { id: string; title: string; licence: string; size_bytes: number }[];
+    total_bytes: number;
+    done_bytes: number;
+    remaining_bytes: number;
+    state: "idle" | "downloading" | "verifying" | "unpacking" | "stopped" | "failed" | "complete";
+    current: string | null;
+    reason: string | null;
+    message: string | null;
+  };
+  reader: {
+    state: "not-downloaded" | "sleeping" | "starting" | "ready" | "stopped" | "unsupported" | "in-use-elsewhere";
+    reason: string;
+    message: string;
+    launches: number;
+    log_path: string | null;
+  } | null;
+  speed: ReadingSpeed | null;
 }
