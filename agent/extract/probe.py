@@ -74,11 +74,25 @@ BLIND = "vision-not-working"
 UNCONSTRAINED = "grammar-not-enforced"
 
 
+#: How much the probe text is enlarged. Pillow's built-in font is an 11-pixel
+#: bitmap, and at that size the bundled 4B reader read "Z07 VERIFY 42" — a
+#: working model failing the check on acuity, not on sight, which would have
+#: reported every correctly installed reader as blind. Enlarged, it is about the
+#: size of print on a photographed page. A server that discards images still
+#: cannot produce the string at any size, so the check loses nothing.
+PROBE_SCALE = 4
+
+
 def probe_image() -> bytes:
-    """A generated image carrying :data:`PROBE_TEXT`. Never stored in the vault."""
-    image = Image.new("RGB", (640, 200), "white")
-    draw = ImageDraw.Draw(image)
-    draw.text((30, 80), PROBE_TEXT, fill="black")
+    """A generated image carrying :data:`PROBE_TEXT`. Never stored in the vault.
+
+    Drawn with the built-in bitmap font and scaled with nearest-neighbour, so it
+    is the same pixels on every machine and needs no font file.
+    """
+    small = Image.new("RGB", (160, 50), "white")
+    draw = ImageDraw.Draw(small)
+    draw.text((8, 20), PROBE_TEXT, fill="black")
+    image = small.resize((160 * PROBE_SCALE, 50 * PROBE_SCALE), Image.Resampling.NEAREST)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
@@ -174,7 +188,11 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
     """Work through the checks in order, stopping at the first that fails."""
     checks: list[Check] = []
     settings = client.settings
-    notes = [FUNNEL_WARNING, DESKEW_NOTE]
+    bundled = (getattr(client, "runtime", None) or {}).get("kind") == "bundled"
+    # Tailscale Funnel is about a box on a tailnet. Saying it about a process on
+    # loopback that this app started would send someone to check a thing that
+    # does not exist.
+    notes = [DESKEW_NOTE] if bundled else [FUNNEL_WARNING, DESKEW_NOTE]
 
     # 1. The address. Before anything else, and before the key is read.
     try:
@@ -293,6 +311,24 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
         checks.append(Check("vision", False, redaction.scrub(str(exc))))
         return ProbeReport(
             UNREACHABLE, tuple(checks), auth="ok", model_reported=reported,
+            notes=tuple(notes),
+        )
+
+    if not saw_it and bundled:
+        checks.append(
+            Check(
+                "vision",
+                False,
+                f"the reader on this computer answered but did not read {PROBE_TEXT!r} "
+                f"out of a test image. Its projector file loaded, or it would not "
+                f"have started, so the files may be damaged or this build cannot "
+                f"read images on this machine. Download the files again; if it "
+                f"persists, read documents on another computer. Every prescription "
+                f"photo would otherwise be silently ignored",
+            )
+        )
+        return ProbeReport(
+            BLIND, tuple(checks), auth="ok", model_reported=reported,
             notes=tuple(notes),
         )
 

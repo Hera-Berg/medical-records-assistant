@@ -90,8 +90,25 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
             "count": snapshot.anomaly_count,
             "items": [redaction.scrub(str(note)) for note in snapshot.anomalies()],
         },
+        # The honest-speed sentence, when this computer reads documents: what the
+        # last few readings here actually took, and how many are waiting.
+        "reading": _reading(state, snapshot, queue),
         "problems": problems,
     }
+
+
+def _reading(state: RecordState, snapshot, queue) -> dict[str, Any] | None:
+    from ...extract import session  # noqa: PLC0415
+    from ...runtime import platforms  # noqa: PLC0415
+    from .. import reader_view  # noqa: PLC0415
+
+    try:
+        if not session.reads_here(state.vault):
+            return None
+        device = state.vault.identity.id
+    except Exception:  # noqa: BLE001 - reported elsewhere; health must answer
+        return None
+    return reader_view.speed(snapshot.events, device, platforms.current(), queue.depth())
 
 
 def _device(vault) -> dict[str, Any]:
@@ -140,7 +157,9 @@ def _problems(
         )
     if endpoint.state == endpoint_state.UNAUTHORISED or blocked:
         problems.append(endpoint_state.MESSAGES["key-rejected"])
-    elif endpoint.state in (endpoint_state.MISCONFIGURED, endpoint_state.BLIND):
+    elif endpoint.state in (
+        endpoint_state.MISCONFIGURED, endpoint_state.BLIND, endpoint_state.STOPPED
+    ):
         problems.append(endpoint.to_dict()["message"])
     for line in snapshot.read.malformed:
         problems.append(f"unreadable event line: {line.describe()}")

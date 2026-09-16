@@ -911,6 +911,98 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK if report.ok else EXIT_PROBLEMS
 
 
+def _gigabytes(value: int | None) -> str:
+    if value is None:
+        return "unknown"
+    return f"{value / 1024**3:.2f} GB"
+
+
+def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
+    """Which computer reads documents here, and the files for reading on this one.
+
+    ``download`` prints what it would fetch and stops unless ``--yes`` is given.
+    The one outbound connection this program makes to anything but a machine
+    the user owns is not something a mistyped command should start.
+    """
+    from .runtime import choice as choice_mod  # noqa: PLC0415
+    from .runtime import download as download_mod  # noqa: PLC0415
+    from .runtime import manifest, platforms, states  # noqa: PLC0415
+    from .runtime import supervisor  # noqa: PLC0415
+    from .runtime.store import Store  # noqa: PLC0415
+
+    vault = Vault.open(args.vault)
+    action = args.action or "status"
+
+    if action == "use":
+        if args.where is None:
+            print("error: say where — `reader use this-computer` or `reader use another-computer`", file=out)
+            return EXIT_PROBLEMS
+        current = choice_mod.load(vault)
+        minutes = current.sleep_after_minutes if args.sleep_after is None else args.sleep_after
+        chosen = choice_mod.save(args.where, minutes)
+        print(f"reads on  {choice_mod.LABELS[chosen.reads_on]} (this machine only; config.toml is unchanged)", file=out)
+        if chosen.reads_here:
+            print(f"sleeps    after {chosen.sleep_after_minutes} idle minutes" if chosen.sleep_after_minutes else "sleeps    never", file=out)
+        return EXIT_OK
+
+    platform = platforms.current()
+    current = choice_mod.load(vault)
+    bundles = manifest.required(platform, current.reads_here)
+    store = Store(vault_root=vault.root)
+
+    if action == "download":
+        total = sum(bundle.size for bundle in bundles)
+        remaining = sum(
+            item.size - store.arrived_bytes(bundle, item)
+            for bundle in bundles for item in bundle.files
+        )
+        print(f"fetches   {', '.join(b.title for b in bundles)}", file=out)
+        if remaining == total:
+            print(f"size      {total} bytes ({_gigabytes(total)}), once", file=out)
+        else:
+            # Some of it is already here — downloaded before, or placed by hand.
+            # The number a person agrees to is what will actually arrive.
+            print(
+                f"size      {remaining} bytes ({_gigabytes(remaining)}) still to "
+                f"fetch, of {_gigabytes(total)} in all",
+                file=out,
+            )
+        print(f"from      {', '.join(manifest.hosts_contacted(bundles))} and the servers they send large files from", file=out)
+        print(f"into      {store.root} — outside the vault, never synced", file=out)
+        print("sends     nothing from the record; only requests for the files", file=out)
+        if not args.yes:
+            print("\nNothing was downloaded. Run again with --yes to start.", file=out)
+            return EXIT_PROBLEMS
+        fetcher = download_mod.Downloader(store, lambda: bundles)
+        try:
+            fetcher.run()
+        except HealthAgentError as exc:
+            reason = getattr(exc, "reason", "unexpected")
+            print(f"stopped   {states.DOWNLOAD_MESSAGES.get(reason, str(exc))}", file=out)
+            return EXIT_PROBLEMS
+        print("done      every file arrived and matched its pinned sha256", file=out)
+        return EXIT_OK
+
+    print(f"reads on  {choice_mod.LABELS[current.reads_on]}"
+          + ("" if current.source == "file" else " (the default; not yet written)"), file=out)
+    label = platforms.LABELS.get(platform or "", "a computer with no pinned build")
+    verified = platform in platforms.VERIFIED
+    print(f"machine   {label}" + ("" if verified else " — pinned but UNVERIFIED: never run in development"), file=out)
+    memory = platforms.total_memory_bytes()
+    print(f"memory    {_gigabytes(memory)}"
+          + (" — below 8 GB: reading here will be slow and crowd out other programs" if memory and memory < platforms.LOW_MEMORY_BYTES else ""), file=out)
+    for bundle in bundles:
+        arrived = sum(store.arrived_bytes(bundle, item) for item in bundle.files)
+        ready = store.is_ready((bundle,)) or (not store.missing((bundle,)) and bundle.is_archive)
+        print(f"files     {bundle.title}: {'verified' if ready else f'{arrived} of {bundle.size} bytes'}", file=out)
+    if current.reads_here and not vault.is_demo:
+        status = supervisor.get(vault).status()
+        print(f"reader    {status.state} — {states.message(status.reason)}", file=out)
+        if status.log_path:
+            print(f"log       {status.log_path}", file=out)
+    return EXIT_OK
+
+
 def server_host_default() -> str:
     """The only host ``serve`` binds without being argued with."""
     from .server.runtime import DEFAULT_HOST  # noqa: PLC0415
@@ -1245,6 +1337,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_vault(serve)
     serve.set_defaults(func=cmd_serve)
+
+    reader = subparsers.add_parser(
+        "reader",
+        help=(
+            "which computer reads documents on this machine, and the one-time "
+            "download for reading on this one"
+        ),
+    )
+    reader.add_argument(
+        "action", nargs="?", choices=("status", "download", "use"), default="status",
+    )
+    reader.add_argument(
+        "where", nargs="?", choices=("this-computer", "another-computer"), default=None,
+        help="with `use`: where documents are read",
+    )
+    reader.add_argument(
+        "--yes", action="store_true",
+        help="with `download`: start it. Without this, it only says what it would fetch",
+    )
+    reader.add_argument(
+        "--sleep-after", type=int, default=None, dest="sleep_after",
+        help="with `use`: idle minutes before the reader unloads (0 = never)",
+    )
+    _add_vault(reader)
+    reader.set_defaults(func=cmd_reader)
 
     evaluate = subparsers.add_parser(
         "eval",

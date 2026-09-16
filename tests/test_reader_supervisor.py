@@ -160,9 +160,27 @@ def test_the_full_probe_passes_against_the_reader(ready_store):
     reader = make_reader(ready_store)
     reader.ensure_ready()
     settings = reader.settings()
-    with Client(settings, credential=lambda: reader.credential_for(settings.endpoint.port)) as client:
+    with Client(
+        settings,
+        credential=lambda: reader.credential_for(settings.endpoint.port),
+        runtime=reader.runtime_facts(),
+    ) as client:
         report = probe_mod.run(client)
     assert report.ok, [check.describe() for check in report.checks]
+    # Tailscale Funnel is about a box on a tailnet, not a process on loopback.
+    assert not any("Funnel" in note for note in report.notes)
+
+
+def test_the_probe_text_is_large_enough_to_read():
+    """At Pillow's 11-pixel default the real 4B reader read "Z07 VERIFY 42"."""
+    import io
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(probe_mod.probe_image()))
+    assert image.size == (640, 200)
+    rows = [y for y in range(image.height) if any(image.getpixel((x, y)) != (255, 255, 255) for x in range(0, image.width, 2))]
+    assert rows and rows[-1] - rows[0] >= 30, "glyphs at least ~30 pixels tall"
 
 
 class Recorder(http.server.BaseHTTPRequestHandler):

@@ -36,6 +36,7 @@ from .routes import (
     capture,
     files,
     health,
+    reader,
     rebuild,
     record,
     review,
@@ -105,9 +106,9 @@ def create_app(
                 built.state.worker.stop()
             # The reader is a child process holding gigabytes. It goes when the
             # server goes, whether or not anything ever woke it.
-            reader = supervisor.install(None)
-            if reader is not None:
-                reader.shutdown()
+            running = supervisor.install(None)
+            if running is not None:
+                running.shutdown()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -125,9 +126,9 @@ def create_app(
         # another machine cannot move this one's documents to a box.
         if not under_pytest():
             choice_mod.settle(vault)
-        reader = supervisor.get(vault)
-        reader.has_work = lambda: bool(state.queue().ready(state.now()))
-        status = reader.status()
+        local_reader = supervisor.get(vault)
+        local_reader.has_work = lambda: bool(state.queue().ready(state.now()))
+        status = local_reader.status()
         state.set_endpoint(
             endpoint_state.from_reader(status.state, status.reason, None)
         )
@@ -149,6 +150,7 @@ def create_app(
         health,
         ask,
         capture,
+        reader,
         record,
         review,
         artifact,
