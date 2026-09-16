@@ -42,7 +42,24 @@ const TONES: Record<Tone, { rule: string; ground: string; ink: string }> = {
   },
 };
 
-export function Attention({ health, error }: { health: Health | null; error: string | null }) {
+export function Attention({
+  health,
+  error,
+  quietEndpoint = false,
+}: {
+  health: Health | null;
+  error: string | null;
+  /**
+   * Suppress the banner about the inference box.
+   *
+   * Set on the settings screen, and only there. The banner exists so a rejected
+   * key cannot be missed from any other screen; on the one screen that holds
+   * the control for it, and says in its own words what stopped, the banner is
+   * the same event told twice in two voices two inches apart. The sidebar's
+   * one-word state stays either way.
+   */
+  quietEndpoint?: boolean;
+}) {
   if (error) {
     return (
       <Banner tone="alarm" title="The record app is not answering.">
@@ -63,7 +80,11 @@ export function Attention({ health, error }: { health: Health | null; error: str
   */
   const said = new Set<string>();
 
-  if (endpoint.state === "unauthorised") {
+  if (quietEndpoint && endpoint.state !== "working") {
+    // Still marked as said, so the copy of it inside `problems` is suppressed
+    // with it rather than surviving as a bare "Something needs attention".
+    said.add(endpoint.message);
+  } else if (endpoint.state === "unauthorised") {
     said.add(endpoint.message);
     banners.push(
       <Banner key="auth" tone="alarm" title="The reading box refused the password.">

@@ -262,6 +262,7 @@ def endpoint_world(work: Path):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import fake_box
 
+    globals()["fake_box"] = fake_box
     box_server, box = fake_box.serve(BOX_PORT, "working")
     return vault, home, server, box_server, box, f"http://127.0.0.1:{APP_PORT}"
 
@@ -294,13 +295,18 @@ def write_key(home: Path) -> None:
     path.chmod(0o600)
 
 
-def set_mode(mode: str) -> None:
+def set_mode(mode: str | None = None, models: list[str] | None = None) -> None:
     import json as _json
     from urllib.request import Request, urlopen
 
+    payload: dict = {}
+    if mode is not None:
+        payload["mode"] = mode
+    if models is not None:
+        payload["models"] = models
     request = Request(
         f"http://127.0.0.1:{BOX_PORT}/v1/mode",
-        data=_json.dumps({"mode": mode}).encode("utf-8"),
+        data=_json.dumps(payload).encode("utf-8"),
         headers={"content-type": "application/json"},
         method="POST",
     )
@@ -308,21 +314,12 @@ def set_mode(mode: str) -> None:
         response.read()
 
 
-def fill_endpoint(page, origin: str, url: str) -> None:
-    """Type the address in and pick the model off the box, as a person would."""
-    page.goto(f"{origin}/settings")
-    page.wait_for_selector("text=The computer that reads your documents")
-    page.get_by_role("textbox", name="Its address").fill(url)
-    page.get_by_role("button", name="Fetch the list").click()
-    page.wait_for_selector("select")
-    page.locator("select").select_option(index=1)
-
-
-def test_now(page) -> None:
-    page.get_by_role("button", name="Test this connection").click()
-    # The result table is what arriving looks like; waiting on a fixed timeout
-    # would photograph a button mid-press on a slow machine.
-    page.wait_for_selector("th:has-text('Result')", timeout=30000)
+def press_connect(page) -> None:
+    """One button, which checks and then saves. Waits for the line it produces."""
+    page.get_by_role("button", name="Connect", exact=True).click()
+    page.wait_for_selector(
+        "text=/Connected\\.|Not connected\\.|Almost\\./", timeout=30000
+    )
     page.wait_for_timeout(300)
 
 
@@ -330,6 +327,7 @@ def endpoint_shots(play, out: Path, work: Path) -> None:
     """Every state the endpoint section can hold, each one genuinely reached."""
     vault, home, server, box_server, box, origin = endpoint_world(work)
     browser = None
+    url = f"http://127.0.0.1:{BOX_PORT}/v1"
     try:
         wait_for(origin)
         browser = play.chromium.launch()
@@ -337,43 +335,54 @@ def endpoint_shots(play, out: Path, work: Path) -> None:
         page = context.new_page()
 
         # 1. Nothing set up. A fresh demo vault carries no endpoint, and no key
-        #    exists anywhere this server can see.
+        #    exists anywhere this server can see. Three fields and one button.
         page.goto(f"{origin}/settings")
-        page.wait_for_selector("text=No computer is set up yet")
+        page.wait_for_selector("text=Not set up yet")
         shoot(page, out, "30-endpoint-unconfigured")
 
-        # 2. Filled in from the box's own answer, and not yet tested.
+        # 2. An address typed, a password stored, and the model field still
+        #    empty — because until something has reached the box there is
+        #    nothing true to put in it.
         write_key(home)
-        url = f"http://127.0.0.1:{BOX_PORT}/v1"
-        fill_endpoint(page, origin, url)
-        shoot(page, out, "31-endpoint-filled-untested")
+        page.reload()
+        page.wait_for_selector("text=The computer that reads your documents")
+        page.get_by_role("textbox", name="Address").fill(url)
+        shoot(page, out, "31-endpoint-before-connecting")
 
-        # 3. Working, including the step that matters: it read the words out of
-        #    a picture. Nothing about this is posed — the box really was sent a
-        #    generated image and really answered with the text in it.
-        test_now(page)
-        shoot(page, out, "32-endpoint-test-passing")
+        # 3. A box that runs more than one model: a question, not a failure, and
+        #    one that could not have been asked before it was reached.
+        set_mode(models=[fake_box.MODEL, "Qwen3.5-4B", "whisper-large-v3"])
+        press_connect(page)
+        shoot(page, out, "32-endpoint-choose-model")
 
-        # 4. Saved. The four keys go into config.toml and the password does not.
-        page.get_by_role("button", name="Save", exact=True).click()
-        page.wait_for_selector("text=Your password was not written to it")
-        shoot(page, out, "33-endpoint-saved")
+        # 4. Connected. One line, and the model that is doing the reading.
+        page.locator("select").select_option(fake_box.MODEL)
+        press_connect(page)
+        shoot(page, out, "33-endpoint-connected")
 
-        # 5. Each failure, produced by a box that genuinely behaves that way.
+        # 5. The same state with the steps opened, which is where the vision
+        #    check becomes visible. It is folded by default and it matters.
+        page.get_by_text("See what was checked").click()
+        page.wait_for_timeout(200)
+        shoot(page, out, "34-endpoint-connected-steps")
+
+        # 6. Each failure, produced by a box that genuinely behaves that way.
+        #    One sentence each; the detail is the paragraph under it.
+        set_mode(models=[fake_box.MODEL])
         for mode, name in (
-            ("unauthorised", "34-endpoint-unauthorised"),
-            ("blind", "35-endpoint-vision-blind"),
-            ("unconstrained", "36-endpoint-grammar"),
-            ("mismatched", "37-endpoint-model-mismatch"),
+            ("unauthorised", "35-endpoint-unauthorised"),
+            ("blind", "36-endpoint-vision-blind"),
+            ("unconstrained", "37-endpoint-grammar"),
+            ("mismatched", "38-endpoint-model-mismatch"),
         ):
             set_mode(mode)
             page.reload()
-            page.wait_for_selector("text=Test this connection")
-            test_now(page)
+            page.wait_for_selector("text=The computer that reads your documents")
+            press_connect(page)
             shoot(page, out, name)
         set_mode("working")
 
-        # 6. Unreachable, by actually stopping the machine. A refused socket is
+        # 7. Unreachable, by actually stopping the machine. A refused socket is
         #    not the same as a rejected key and the screen has to say so.
         #
         #    `server_close` as well as `shutdown`: the first stops the serving
@@ -384,33 +393,29 @@ def endpoint_shots(play, out: Path, work: Path) -> None:
         box_server.shutdown()
         box_server.server_close()
         page.reload()
-        page.wait_for_selector("text=Test this connection")
-        test_now(page)
-        shoot(page, out, "38-endpoint-unreachable")
+        page.wait_for_selector("text=The computer that reads your documents")
+        press_connect(page)
+        shoot(page, out, "39-endpoint-unreachable")
 
-        # 7. A public address, refused at save time with the reason. Typed into
-        #    the real form and posted to the real guard.
-        page.get_by_role("textbox", name="Its address").fill("https://api.openai.com/v1")
-        page.get_by_role("button", name="Save", exact=True).click()
-        page.wait_for_selector("text=private address space", timeout=15000)
-        shoot(page, out, "39-endpoint-public-refused")
+        # 8. A public address, refused before a byte is sent, in its own words.
+        page.get_by_role("textbox", name="Address").fill("https://api.openai.com/v1")
+        press_connect(page)
+        shoot(page, out, "40-endpoint-public-refused")
 
-        # 8. The password field, which has no read path. Shown with a value
-        #    typed but not submitted, so the shot says what the control offers.
+        # 9. The advanced disclosure, which is the only place the header shape
+        #    appears at all. Opened deliberately, never for you.
         page.reload()
-        page.wait_for_selector("text=Its password")
-        page.get_by_role("textbox", name="Replace it with a new one").fill(
-            "a-new-password-nobody-will-see"
-        )
-        page.locator("text=Its password").scroll_into_view_if_needed()
-        shoot(page, out, "40-endpoint-password-field")
+        page.wait_for_selector("text=Advanced")
+        page.get_by_text("Advanced", exact=False).first.click()
+        page.wait_for_timeout(200)
+        shoot(page, out, "41-endpoint-advanced")
 
         small = context.new_page()
         small.set_viewport_size(PHONE)
         small.goto(f"{origin}/settings")
         small.wait_for_selector("text=The computer that reads your documents")
         small.locator("text=The computer that reads your documents").scroll_into_view_if_needed()
-        shoot(small, out, "41-endpoint-phone")
+        shoot(small, out, "42-endpoint-phone")
         small.close()
 
         context.close()

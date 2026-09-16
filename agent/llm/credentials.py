@@ -194,13 +194,41 @@ def resolve(
 #: obvious place for a person to put a key is the settings file they can see, and
 #: that file is the one place it must never go.
 NEVER_IN_CONFIG = (
-    "Your key goes into this computer's keychain, and never into your settings "
-    "file. That file lives inside your record folder, so it is copied to Dropbox, "
-    "Drive or Nextcloud along with everything else — a key written there has "
-    "already been handed to a company, whether or not anyone reads it. The app "
-    "refuses to start if it finds one there, which is a rude way to be told, so "
-    "it is worth saying here instead."
+    "A key never goes in your settings file. That file lives inside your record "
+    "folder, so it is copied to Dropbox, Drive or Nextcloud along with everything "
+    "else — a key written there has already been handed to a company, whether or "
+    "not anyone reads it. The app refuses to start if it finds one there, which "
+    "is a rude way to be told, so it is worth saying here instead."
 )
+
+
+#: Said when there is no keychain to write to. **One sentence naming one thing
+#: to do.** It listed three alternatives and ran to four sentences, which is the
+#: shape of a message that makes a person read all of it to find out that the
+#: first option was the one they wanted. The alternatives are real and are kept
+#: — one tap away, in :func:`keychain_alternatives` — for the machine where
+#: installing a package is not the answer.
+KEYCHAIN_MISSING = (
+    "there is no keychain on this machine to write to. Install the keychain "
+    "package: pip install keyring"
+)
+
+
+def keychain_alternatives() -> str:
+    """The other two places a key may live, for the machine with no keychain.
+
+    A function rather than a constant because the path it names depends on
+    ``HEALTH_AGENT_CONFIG_HOME``, which the tests and the screenshot tool both
+    redirect; a module-level string would freeze whatever the environment said
+    at import.
+    """
+    return (
+        f"On a machine with no keychain — a headless server, a container — a key "
+        f"can also live in the environment variable named by [models.vlm.auth] "
+        f"api_key_env, or in a 0600 file at {credentials_path()}. Both are read "
+        f"before this app looks at the keychain at all. Neither may go in "
+        f"config.toml: that file is inside your record folder and syncs with it."
+    )
 
 
 def store(value: str) -> str:
@@ -222,14 +250,7 @@ def store(value: str) -> str:
     try:
         import keyring  # noqa: PLC0415 - optional dependency, imported where used
     except ImportError:
-        raise CredentialError(
-            f"there is no keychain on this machine to write to — the `keyring` "
-            f"package is not installed. Install it with "
-            f"`pip install 'health-agent[keychain]'`, or put the key in the "
-            f"environment variable named by [models.vlm.auth] api_key_env, or in a "
-            f"0600 file at {credentials_path()}. It cannot go in config.toml: "
-            f"that file syncs with the vault."
-        ) from None
+        raise CredentialError(KEYCHAIN_MISSING) from None
     try:
         keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, value.strip())
     except Exception as exc:  # keyring raises backend-specific errors

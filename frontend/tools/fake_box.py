@@ -29,7 +29,9 @@ Modes:
 ``mismatched``    offers and answers as a different model than it is asked for
 
 The mode can be changed while it runs by POSTing to ``/mode`` — that is how one
-run of the screenshot script photographs every failure without restarting.
+run of the screenshot script photographs every failure without restarting. The
+same call takes a ``models`` list, so the state where a box offers several and
+has to be asked which one can be photographed too.
 """
 
 from __future__ import annotations
@@ -52,11 +54,12 @@ MODES = ("working", "blind", "unconstrained", "unauthorised", "mismatched")
 
 
 class Box:
-    """The mode, shared between threads and changeable while serving."""
+    """The mode and the model list, shared between threads and changeable live."""
 
-    def __init__(self, mode: str = "working"):
+    def __init__(self, mode: str = "working", models: list[str] | None = None):
         self.lock = threading.Lock()
         self._mode = mode
+        self._models = list(models) if models is not None else [MODEL]
 
     @property
     def mode(self) -> str:
@@ -67,6 +70,16 @@ class Box:
     def mode(self, value: str) -> None:
         with self.lock:
             self._mode = value
+
+    @property
+    def models(self) -> list[str]:
+        with self.lock:
+            return list(self._models)
+
+    @models.setter
+    def models(self, value: list[str]) -> None:
+        with self.lock:
+            self._models = list(value)
 
 
 def make_handler(box: Box):
@@ -110,20 +123,24 @@ def make_handler(box: Box):
                     401, {"error": {"message": f"invalid api key: {self._key()}"}}
                 )
             if self.path.rstrip("/").endswith("/models"):
-                name = OTHER_MODEL if mode == "mismatched" else MODEL
+                listed = [OTHER_MODEL] if mode == "mismatched" else box.models
                 return self._send(
-                    200, {"object": "list", "data": [{"id": name, "object": "model"}]}
+                    200,
+                    {"object": "list", "data": [{"id": n, "object": "model"} for n in listed]},
                 )
             return self._send(404, {"error": "no such path"})
 
         def do_POST(self):  # noqa: N802
             body = self._read()
             if self.path.rstrip("/").endswith("/mode"):
+                if isinstance(body.get("models"), list):
+                    box.models = [str(name) for name in body["models"]]
                 wanted = str(body.get("mode", "")).strip()
-                if wanted not in MODES:
-                    return self._send(400, {"error": f"unknown mode {wanted!r}"})
-                box.mode = wanted
-                return self._send(200, {"mode": wanted})
+                if wanted:
+                    if wanted not in MODES:
+                        return self._send(400, {"error": f"unknown mode {wanted!r}"})
+                    box.mode = wanted
+                return self._send(200, {"mode": box.mode, "models": box.models})
 
             mode = box.mode
             if mode == "unauthorised":

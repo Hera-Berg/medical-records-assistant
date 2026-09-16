@@ -202,7 +202,13 @@ export function App() {
             </div>
           </header>
 
-          <Attention health={health} error={healthError} />
+          <Attention
+            health={health}
+            error={healthError}
+            /* The settings screen holds the control for the box and reports
+               what stopped in its own words. One telling, not two. */
+            quietEndpoint={first === "settings"}
+          />
 
           {/*
             Per screen, and reset by the route: a screen that cannot draw itself

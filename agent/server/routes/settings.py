@@ -54,6 +54,7 @@ why the exception is narrow and how the write protects the file.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -62,10 +63,10 @@ from ... import config as config_mod
 from ... import vault as vault_mod
 from ...config import CONFIG_FILENAME, SyncProfile
 from ...errors import (
-    AuthRejected,
     ConfigError,
     CredentialError,
     EndpointNotConfigured,
+    EndpointNotPrivate,
     HealthAgentError,
 )
 from ...extract import session
@@ -130,16 +131,30 @@ def _settings(state: RecordState) -> dict[str, Any]:
     }
 
 
-#: Said above the endpoint fields. The reading to rule out here is that this is
-#: a service being signed up to: it is a machine the person already owns, and
-#: the app will not talk to anything else.
+#: The one sentence in front of the fields.
+#:
+#: It was three paragraphs. Three paragraphs before the first input is not
+#: reassurance, it is a wall, and the reader who most needs the reassurance is
+#: the one least likely to read to the end of it. What it has to establish is
+#: that this is a machine they already own and that nothing leaves their
+#: network; everything else is true, useful, and answers a question nobody has
+#: asked yet.
 ENDPOINT_EXPLANATION = (
-    "Your documents are read by a model running on a computer you own — a "
-    "desktop at home, reached over your own private network. This says where "
-    "that computer is. The record will not talk to anything outside your own "
-    "network: not a company's service, not a website, nothing you would have to "
-    "trust. If that computer is off or asleep, nothing breaks — what you add "
-    "waits in your folder and is read when it comes back."
+    "Your documents are read by a model on a computer you own, and nothing "
+    "leaves your own network."
+)
+
+#: The rest, behind "What is this?". Not hidden — one tap away, and the tap is
+#: taken by the person who wants it rather than paid for by everyone.
+ENDPOINT_ABOUT = (
+    "The record needs something that can read a photograph of a prescription. "
+    "That is a model, and it runs on a computer you control — a desktop at home, "
+    "reached over your own private network. It will not talk to a company's "
+    "service or anything else outside that network: the app refuses to start if "
+    "you point it at one, which is the whole reason your record can live in a "
+    "folder you own.\n\n"
+    "If that computer is off or asleep, nothing breaks. What you add waits in "
+    "your folder and is read when it comes back."
 )
 
 
@@ -179,6 +194,7 @@ def _endpoint(state: RecordState) -> dict[str, Any]:
     vlm = models.vlm if models else None
     return {
         "explanation": ENDPOINT_EXPLANATION,
+        "about": ENDPOINT_ABOUT,
         "configured": vlm is not None,
         "base_url": vlm.endpoint.base_url if vlm else "",
         "model": vlm.model if vlm else "",
@@ -192,6 +208,10 @@ def _endpoint(state: RecordState) -> dict[str, Any]:
         "defaults": {"header": DEFAULT_AUTH_HEADER, "scheme": DEFAULT_AUTH_SCHEME},
         "key": _key_state(vlm, vault.root),
         "key_explanation": credentials_mod.NEVER_IN_CONFIG,
+        # Shown only when storing a key fails for want of a keychain. Kept here
+        # rather than in the error so that the error can be one sentence naming
+        # one thing to do.
+        "key_alternatives": credentials_mod.keychain_alternatives(),
         # The last thing anything learned about the box, from the worker's probe
         # or from the test button. Same sentences as /api/health, so the two
         # screens cannot say different things about one machine.
@@ -249,23 +269,20 @@ def set_sync_profile(
 
 # --- the inference endpoint -------------------------------------------------
 #
-# Four routes, and the shape of each follows from one decision: **the test runs
-# against the form, not against the file.** A test button that could only check
-# what was already saved would make the person save a bad endpoint in order to
-# find out it was bad — and saving is the step that rewrites `config.toml`. So
-# the draft crosses the wire on every call, and only `POST /api/settings/endpoint`
-# writes anything.
-
-
-def _count(number: int, one: str, many: str) -> str:
-    """"one model", "three models", "12 models". Never "1 model(s)".
-
-    The interface is read by a patient, not by whoever wrote the endpoint. A
-    parenthesised plural is the shape of a message nobody finished writing.
-    """
-    words = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
-    spelled = words[number] if number < len(words) else str(number)
-    return f"{spelled} {one if number == 1 else many}"
+# Two routes. There were four, and the extra two were a test button, a "fetch
+# the models" button and a save button standing for one intention: point this at
+# my computer. Three controls for one intention is three chances to do two of
+# them and believe it is set up.
+#
+# So `connect` asks the box what it runs, checks it end to end, and writes the
+# configuration **only if every check passed**. Saving an endpoint known not to
+# work has no value: the result is a queue that never drains and a screen that
+# says it is configured.
+#
+# The one thing lost with the save button is saving while the box is asleep. It
+# is a real cost and a small one — nothing about the record needs the endpoint
+# to be set, captures queue either way, and `config.toml` is a text file anyone
+# can still edit by hand.
 
 
 def _draft(
@@ -283,10 +300,10 @@ def _draft(
 
 
 def _settings_for_draft(state: RecordState, draft: dict[str, Any]) -> VlmSettings:
-    """Draft plus whatever is already configured, as settings to test with.
+    """Draft plus whatever is already configured, as settings to connect with.
 
     ``ctx``, the image budget and the timeouts are not on this screen. They are
-    carried over so a test runs against the same numbers a real read would,
+    carried over so a check runs against the same numbers a real read would,
     rather than against defaults the vault does not use.
     """
     try:
@@ -296,44 +313,15 @@ def _settings_for_draft(state: RecordState, draft: dict[str, Any]) -> VlmSetting
     return endpoint_check.settings_for(draft, current)
 
 
-@router.post("/api/settings/endpoint")
-def set_endpoint(
-    base_url: str = Body(..., embed=True),
-    model: str = Body(..., embed=True),
-    header: str | None = Body(None, embed=True),
-    scheme: str | None = Body(None, embed=True),
-    state: RecordState = Depends(get_state),
-) -> dict[str, Any]:
-    """Write the endpoint into ``config.toml``. Four keys, one line each.
+def _write(state: RecordState, settings: VlmSettings) -> None:
+    """The four keys, by the line rewrite that leaves the rest of the file alone.
 
-    **The address guard runs here**, before anything is written, and a public
-    host is refused with the whole explanation rather than with a validation
-    error. ``MODELS.md`` is explicit that reaching a commercial API is "a
-    startup failure, not a config option"; refusing it at the moment it is typed
-    is the same rule applied where it can still be read as a reason.
-
-    The model id is stored **verbatim**. What the box reports has already
-    differed from what a person typed in this project once, and identity is
-    checked on every call, so an approximation stops the run rather than being
-    quietly accepted.
+    The model id goes in **verbatim**, as the box reported it: what a server
+    calls itself has already differed from what a person typed in this project
+    once, and identity is checked on every call, so an approximation stops the
+    run rather than being quietly accepted. Fetching the name instead of asking
+    for it is the reason that class of mistake cannot happen here any more.
     """
-    draft = _draft(base_url, model, header, scheme)
-    if not draft["model"]:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "choose a model. Use “Fetch the list” to get the names from "
-                "the computer itself and pick one — the name has to match "
-                "exactly, and the record checks it on every read, so a near-miss "
-                "stops the run rather than being ignored."
-            ),
-        )
-
-    # Parses the URL and resolves the host: userinfo, a non-http scheme and a
-    # public address are all refused here, each with its own sentence.
-    settings = _settings_for_draft(state, draft)
-    settings.endpoint.verify()
-
     path = state.vault.root / CONFIG_FILENAME
     with state.lock:
         try:
@@ -350,23 +338,75 @@ def set_endpoint(
             raise HTTPException(status_code=409, detail=str(exc)) from None
         state.reload_config()
 
-    # What was last known about the old endpoint says nothing about this one.
-    # Left standing, a green "working" from ten minutes ago would sit under a
-    # freshly typed address that has never been contacted.
-    state.set_endpoint(
-        endpoint_state.EndpointState(
-            state=endpoint_state.UNKNOWN,
-            auth=endpoint_state.AUTH_MISSING,
-            reason="unknown",
+
+def _refusal(state: RecordState, result) -> dict[str, Any]:
+    """A failed connect, answered 200 with everything the screen needs."""
+    body = result.to_dict()
+    body["saved"] = False
+    body["settings"] = _settings(state)
+    return body
+
+
+@router.post("/api/settings/endpoint/connect")
+def connect_endpoint(
+    base_url: str = Body(..., embed=True),
+    model: str | None = Body(None, embed=True),
+    header: str | None = Body(None, embed=True),
+    scheme: str | None = Body(None, embed=True),
+    state: RecordState = Depends(get_state),
+) -> dict[str, Any]:
+    """Reach the box, check it, and save it if it works. One press, one meaning.
+
+    The address guard runs first and before any credential is read, so an
+    address outside private space is refused having sent nothing anywhere —
+    which is also why its refusal is the one message here allowed to speak in
+    its own words: at that moment there is no far-end text in existence.
+
+    Three outcomes reach the screen. ``connected`` wrote the configuration.
+    ``choose-model`` means the box answered and offers more than one model, and
+    is a question rather than a failure. ``failed`` carries one sentence saying
+    what stopped it, the detail behind it, and every step for whoever opens
+    them.
+    """
+    if not (base_url or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "type the address of the computer that reads your documents — the "
+                "web address of the model server on it, ending in /v1."
+            ),
         )
-    )
+
+    draft = _draft(base_url, model or "", header, scheme)
+    try:
+        settings = _settings_for_draft(state, draft)
+    except EndpointNotPrivate as exc:
+        # Refused while the address was still being parsed — a credential in the
+        # URL, a scheme that is not http. Onto the same surface as every other
+        # failure rather than out through the generic error handler, which would
+        # put it in a second place with a second shape.
+        return _refusal(state, endpoint_check.address_failure(str(exc)))
+
+    result = endpoint_check.connect(state.vault, settings)
+
+    if result.ok:
+        _write(state, replace(settings, model=result.model))
+
+    # Whatever this found is what the rest of the app now believes about the
+    # box: a person who has just watched it connect must not go back to a banner
+    # still saying it is asleep.
+    if result.report is not None:
+        state.set_endpoint(
+            endpoint_check.endpoint_state_from(result.report, state.snapshot().built_ts)
+        )
     worker = getattr(state, "worker", None)
-    if worker is not None:
+    if worker is not None and result.ok:
         worker.reconfigured()
 
-    result = _settings(state)
-    result["changed"] = "endpoint"
-    return result
+    body = result.to_dict()
+    body["saved"] = result.ok
+    body["settings"] = _settings(state)
+    return body
 
 
 @router.post("/api/settings/endpoint/key")
@@ -405,88 +445,4 @@ def set_key(
     result["changed"] = "key"
     result["stored"] = where
     result["resumed"] = resumed
-    return result
-
-
-@router.post("/api/settings/endpoint/models")
-def list_endpoint_models(
-    base_url: str = Body(..., embed=True),
-    header: str | None = Body(None, embed=True),
-    scheme: str | None = Body(None, embed=True),
-    state: RecordState = Depends(get_state),
-) -> dict[str, Any]:
-    """Ask the box what it is running, so the model can be picked and not typed.
-
-    Every id comes back **verbatim**, which is the point of asking rather than
-    typing: ``Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`` is not
-    ``Qwen3.8-Flash-Next-oQ4e-mtp``, that exact difference has already cost time
-    on this project, and the id is checked against the server's answer on every
-    call.
-
-    A box that is asleep is not an error here. It is the ordinary condition, and
-    it comes back as an empty list with the sentence that says so, so the field
-    can fall back to being typed by hand.
-    """
-    draft = _draft(base_url, "", header, scheme)
-    settings = _settings_for_draft(state, draft)
-    settings.endpoint.verify()
-
-    try:
-        models = endpoint_check.available_models(state.vault, settings)
-    except (AuthRejected, HealthAgentError) as exc:
-        # Reported by *class*, never by the far end's text. Same rule as
-        # /api/health: no message from the box crosses into the browser.
-        reported = endpoint_state.from_error(exc, state.snapshot().built_ts)
-        state.set_endpoint(reported)
-        return {
-            "models": [],
-            "reached": False,
-            "state": reported.state,
-            "message": reported.to_dict()["message"],
-        }
-
-    return {
-        "models": [redaction.scrub(name) for name in models],
-        "reached": True,
-        "state": endpoint_state.WORKING,
-        "message": (
-            f"The computer offers {_count(len(models), 'model', 'models')}."
-            if models
-            else "The computer answered, but does not list any models. Type the "
-            "name in by hand, exactly as that server spells it."
-        ),
-    }
-
-
-@router.post("/api/settings/endpoint/test")
-def test_endpoint(
-    base_url: str = Body(..., embed=True),
-    model: str = Body(..., embed=True),
-    header: str | None = Body(None, embed=True),
-    scheme: str | None = Body(None, embed=True),
-    state: RecordState = Depends(get_state),
-) -> dict[str, Any]:
-    """Run the startup probe against the form, and report every step separately.
-
-    The five things a person needs to be able to tell apart are a private
-    address, a machine that answered, a key that was accepted, the right model,
-    and **vision actually working** — a box that silently drops image content
-    parts answers everything else perfectly and ignores every prescription
-    photo, which reads as the model being bad at OCR and has already cost this
-    project an evening.
-
-    The result also updates what the rest of the app believes about the box, so
-    a person who has just watched the test pass does not go back to a banner
-    still saying it is asleep.
-    """
-    draft = _draft(base_url, model, header, scheme)
-    settings = _settings_for_draft(state, draft)
-
-    report = endpoint_check.run(state.vault, settings)
-    state.set_endpoint(
-        endpoint_check.endpoint_state_from(report, state.snapshot().built_ts)
-    )
-
-    result = report.to_dict()
-    result["settings"] = _settings(state)
     return result

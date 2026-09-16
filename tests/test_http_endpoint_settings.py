@@ -172,14 +172,29 @@ def test_a_vault_with_no_endpoint_says_so_and_offers_the_defaults(client):
     assert endpoint["problem"] is None
 
 
-def test_the_explanation_rules_out_the_reading_that_this_is_a_service(client):
-    """Not a sign-up. A machine the person already owns, and nothing else."""
-    explanation = client.get("/api/settings").json()["endpoint"]["explanation"].lower()
+def test_the_sentence_in_front_of_the_fields_is_one_sentence(client):
+    """Not a sign-up, a machine they already own — said once and said short.
 
-    assert "a computer you own" in explanation
-    assert "will not talk to anything outside your own network" in explanation
-    # And the sentence that stops a sleeping box reading as a broken record.
-    assert "nothing breaks" in explanation
+    Three paragraphs stood here. A wall of reassurance in front of the first
+    input is read by nobody, least of all the person who needs reassuring, so
+    what remains is the two things that have to be established before anything
+    is typed.
+    """
+    endpoint = client.get("/api/settings").json()["endpoint"]
+    explanation = endpoint["explanation"]
+
+    assert explanation.count(".") == 1, explanation
+    assert "a computer you own" in explanation.lower()
+    assert "nothing leaves your own network" in explanation.lower()
+
+
+def test_the_rest_of_the_explanation_is_kept_one_tap_away(client):
+    """Folded, not cut. The reader who wants it can still have all of it."""
+    about = client.get("/api/settings").json()["endpoint"]["about"].lower()
+
+    assert "refuses to start if you point it at one" in about
+    # The sentence that stops a sleeping box reading as a broken record.
+    assert "nothing breaks" in about
 
 
 def test_the_key_field_says_where_a_key_was_found_and_never_what_it_is(client):
@@ -215,11 +230,18 @@ def test_an_exported_variable_shadowing_the_keychain_is_visible(client, vault, m
 
 
 def test_the_key_explanation_says_why_it_cannot_go_in_the_settings_file(client):
+    """The prohibition and its reason. Not a claim about where it *is*.
+
+    Where it is depends on which of three places answered, and the field says so
+    on its own line. This paragraph used to open by asserting the keychain,
+    which read as a contradiction directly under "Stored in the credentials
+    file".
+    """
     explanation = client.get("/api/settings").json()["endpoint"]["key_explanation"]
 
-    assert "keychain" in explanation
-    assert "settings file" in explanation
+    assert explanation.startswith("A key never goes in your settings file")
     assert "Dropbox" in explanation
+    assert "already been handed to a company" in explanation
 
 
 def test_no_key_set_is_not_set_rather_than_an_error(client, no_key):
@@ -227,44 +249,74 @@ def test_no_key_set_is_not_set_rather_than_an_error(client, no_key):
     assert key == {"state": "not set", "source": None, "detail": None}
 
 
-# --- saving ----------------------------------------------------------------
+# --- connecting, which is the only way anything is saved -------------------
 
 
-def test_saving_writes_four_keys_and_the_running_server_uses_them(client, vault):
-    response = client.post("/api/settings/endpoint", json=draft())
+def connect(client, **overrides):
+    return client.post("/api/settings/endpoint/connect", json=draft(**overrides))
 
-    assert response.status_code == 200
-    endpoint = response.json()["endpoint"]
-    assert endpoint["configured"] is True
-    assert endpoint["base_url"] == URL
-    assert endpoint["model"] == MODEL
+
+def _steps(body) -> dict[str, str]:
+    return {step["name"]: step["state"] for step in body["check"]["steps"]}
+
+
+# --- the working path ------------------------------------------------------
+
+
+def test_connecting_checks_the_box_and_then_writes_the_file(client, vault, monkeypatch):
+    """One press: reach it, check it end to end, save it."""
+    box(monkeypatch)
+
+    body = connect(client, model=None).json()
+
+    assert body["outcome"] == "connected"
+    assert body["saved"] is True
+    assert body["status"] == f"Connected — reading with {MODEL}."
 
     text = (vault.root / CONFIG_FILENAME).read_text(encoding="utf-8")
     assert f'base_url = "{URL}"' in text
     assert f'model = "{MODEL}"' in text
-    assert '[models.vlm.auth]' in text
-    # And the next read of the settings — a fresh load of the file — agrees.
     assert client.get("/api/settings").json()["endpoint"]["base_url"] == URL
 
 
-def test_the_model_id_is_stored_exactly_as_the_box_reports_it(client, vault):
-    """``Jundot/Qwen…`` is not ``Qwen…``, and identity is checked on every call."""
-    client.post("/api/settings/endpoint", json=draft())
+def test_the_status_line_is_the_whole_of_what_a_person_has_to_read(client, monkeypatch):
+    """Everything else folds away. The sentence has to stand on its own."""
+    box(monkeypatch)
 
+    body = connect(client, model=None).json()
+
+    assert MODEL in body["status"], "it names what is actually reading the documents"
+    assert body["check"]["steps"], "and the steps are there for whoever opens them"
+
+
+def test_the_model_is_taken_from_the_box_and_stored_verbatim(client, vault, monkeypatch):
+    """``Jundot/Qwen…`` is not ``Qwen…``, and identity is checked on every call.
+
+    Nobody types it. That is the point of reaching the box before asking: the
+    one string that has to match exactly is the one string a person is most
+    likely to get subtly wrong.
+    """
+    box(monkeypatch)
+
+    body = connect(client, model=None).json()
+
+    assert body["model"] == MODEL
     from agent.extract import session
 
     assert session.settings_for(vault).vlm.model == MODEL
     assert "Jundot/" in (vault.root / CONFIG_FILENAME).read_text(encoding="utf-8")
 
 
-def test_the_comments_in_the_settings_file_survive_the_write(client, vault):
+def test_the_comments_in_the_settings_file_survive_the_write(client, vault, monkeypatch):
     """The reason this is a line rewrite rather than a TOML round-trip."""
-    path = vault.root / CONFIG_FILENAME
     from agent import config as config_mod
 
+    path = vault.root / CONFIG_FILENAME
     path.write_text(config_mod.CONFIG_TEMPLATE, encoding="utf-8")
+    client.app.state.record.reload_config()
+    box(monkeypatch)
 
-    client.post("/api/settings/endpoint", json=draft())
+    connect(client, model=None)
     text = path.read_text(encoding="utf-8")
 
     assert "Never put a key, token or" in text
@@ -273,47 +325,13 @@ def test_the_comments_in_the_settings_file_survive_the_write(client, vault):
     assert "max_pixels = 1638400" in text, "and every value not on the screen"
 
 
-def test_a_public_address_is_refused_with_the_reason(client, vault):
-    """Not a validation error. The premise of the project is the reason."""
-    before = (vault.root / CONFIG_FILENAME).read_bytes()
-
-    response = client.post(
-        "/api/settings/endpoint", json=draft(base_url="https://93.184.216.34/v1")
-    )
-
-    assert response.status_code == 400
-    detail = response.json()["detail"]
-    assert "outside private address space" in detail
-    assert "never leaves infrastructure you control" in detail
-    assert "fork the project" in detail
-    assert (vault.root / CONFIG_FILENAME).read_bytes() == before
-
-
-def test_a_key_pasted_into_the_url_is_refused_and_named_as_disclosed(client):
-    response = client.post(
-        "/api/settings/endpoint", json=draft(base_url="https://me:hunter2@127.0.0.1/v1")
-    )
-
-    assert response.status_code == 400
-    detail = response.json()["detail"]
-    assert "username or password" in detail
-    assert "syncs to Dropbox" in detail
-    assert "rotate it" in detail
-
-
-def test_saving_without_choosing_a_model_says_to_fetch_the_list(client):
-    response = client.post("/api/settings/endpoint", json=draft(model=""))
-
-    assert response.status_code == 400
-    assert "Fetch the list" in response.json()["detail"]
-
-
-def test_an_empty_scheme_is_a_real_answer_and_reaches_the_header(client, vault):
+def test_an_empty_scheme_is_a_real_answer_and_reaches_the_header(
+    client, vault, monkeypatch
+):
     """Some self-hosted servers want ``X-API-Key: <key>`` with no word in front."""
-    client.post(
-        "/api/settings/endpoint",
-        json=draft(header="X-API-Key", scheme=""),
-    )
+    box(monkeypatch)
+
+    connect(client, model=None, header="X-API-Key", scheme="")
 
     auth = client.get("/api/settings").json()["endpoint"]["auth"]
     assert auth == {"header": "X-API-Key", "scheme": "", "api_key_env": None}
@@ -323,292 +341,11 @@ def test_an_empty_scheme_is_a_real_answer_and_reaches_the_header(client, vault):
     assert session.settings_for(vault).vlm.auth.format("abc") == ("X-API-Key", "abc")
 
 
-def test_a_forked_settings_file_refuses_the_write(client, vault):
-    (vault.root / "config (1).toml").write_text("", encoding="utf-8")
-    before = (vault.root / CONFIG_FILENAME).read_bytes()
-
-    response = client.post("/api/settings/endpoint", json=draft())
-
-    assert response.status_code == 409
-    assert "config (1).toml" in response.json()["detail"]
-    assert (vault.root / CONFIG_FILENAME).read_bytes() == before
-
-
-def test_saving_a_new_endpoint_forgets_what_was_known_about_the_old_one(client, vault):
-    """A green tick from ten minutes ago must not sit under a new address."""
-    from agent.errors import AuthRejected
-
-    state = client.app.state.record
-    state.record_endpoint_error(AuthRejected("nope"))
-    assert state.endpoint.state == "unauthorised"
-
-    client.post("/api/settings/endpoint", json=draft())
-
-    assert client.get("/api/health").json()["endpoint"]["state"] == "unknown"
-
-
-# --- the key ---------------------------------------------------------------
-
-
-class _FakeKeyring:
-    def __init__(self):
-        self.stored: dict[tuple[str, str], str] = {}
-
-    def set_password(self, service, account, value):
-        self.stored[(service, account)] = value
-
-    def get_password(self, service, account):
-        return self.stored.get((service, account))
-
-
-@pytest.fixture
-def keychain(monkeypatch):
-    """A keychain that is not the developer's, with the real reader put back.
-
-    The reader is genuine — it is the fake ``keyring`` module below that stands
-    in for the OS service — so a key stored through the route is read back the
-    way the running app would read it.
-    """
-    fake = _FakeKeyring()
-    monkeypatch.setitem(sys.modules, "keyring", fake)
-    monkeypatch.setattr(credentials_mod, "_from_keychain", _REAL_FROM_KEYCHAIN)
-    return fake
-
-
-def test_a_key_goes_to_the_keychain_and_never_into_the_vault(client, vault, keychain):
-    response = client.post("/api/settings/endpoint/key", json={"key": KEY})
-
-    assert response.status_code == 200
-    assert keychain.stored[
-        (credentials_mod.KEYRING_SERVICE, credentials_mod.KEYRING_ACCOUNT)
-    ] == KEY
-
-    for path in sorted(vault.root.rglob("*")):
-        if path.is_file():
-            assert KEY.encode() not in path.read_bytes(), f"a key reached {path}"
-
-
-def test_the_response_to_setting_a_key_contains_no_part_of_it(client, keychain):
-    body = client.post("/api/settings/endpoint/key", json={"key": KEY}).text
-
-    assert KEY not in body
-    for length in range(12, len(KEY) + 1):
-        assert KEY[:length] not in body
-
-
-def test_setting_a_key_says_where_it_will_actually_be_read_from(client, keychain):
-    """The environment beats the keychain, and a person has to be told so."""
-    body = client.post("/api/settings/endpoint/key", json={"key": "sk-a-different-one"}).json()
-
-    assert "keychain" in body["stored"]
-    # The autouse fixture exports HEALTH_VLM_TOKEN, but this vault names no
-    # api_key_env, so the keychain is what answers.
-    assert body["endpoint"]["key"]["state"] == "configured"
-    assert "keychain" in body["endpoint"]["key"]["source"]
-
-
-def test_an_empty_key_is_refused_rather_than_stored(client, keychain):
-    response = client.post("/api/settings/endpoint/key", json={"key": "   "})
-
-    assert response.status_code == 400
-    assert "not a credential" in response.json()["detail"]
-    assert keychain.stored == {}
-
-
-def test_setting_a_key_unparks_the_queue(vault, keychain):
-    """A rotated key costs one failed job, not a restart. MODELS.md."""
-    from agent.extract import jobs as jobs_mod
-
-    queue = jobs_mod.Queue.open(vault.root / ".agent")
-    with api_client(vault) as client:
-        client.post("/api/capture", files={"files": ("a.jpg", JPEG, "image/jpeg")})
-        queue = jobs_mod.Queue.open(vault.root / ".agent")
-        queue.park_for_auth("the box rejected the key")
-        assert jobs_mod.Queue.open(vault.root / ".agent").is_parked
-
-        body = client.post("/api/settings/endpoint/key", json={"key": KEY}).json()
-
-    assert body["resumed"] >= 1
-    assert not jobs_mod.Queue.open(vault.root / ".agent").is_parked
-
-
-# --- the model list --------------------------------------------------------
-
-
-def test_the_model_list_comes_back_verbatim(client, monkeypatch):
-    box(monkeypatch, models=[MODEL, "Qwen3.5-4B"])
-
-    body = client.post("/api/settings/endpoint/models", json={"base_url": URL}).json()
-
-    assert body["reached"] is True
-    assert body["models"] == [MODEL, "Qwen3.5-4B"]
-
-
-def test_a_sleeping_box_is_an_empty_list_and_a_sentence_not_an_error(client, monkeypatch):
-    box(monkeypatch, refuse=True)
-
-    response = client.post("/api/settings/endpoint/models", json={"base_url": URL})
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["reached"] is False
-    assert body["state"] == "unreachable"
-    assert "keeps queuing" in body["message"]
-
-
-def test_the_model_list_never_carries_what_the_box_said(client, monkeypatch):
-    box(monkeypatch, status=401)
-
-    body = client.post("/api/settings/endpoint/models", json={"base_url": URL}).json()
-
-    assert body["state"] == "unauthorised"
-    assert KEY not in json.dumps(body)
-    assert "rejected token" not in json.dumps(body)
-
-
-# --- the test button -------------------------------------------------------
-
-
-def _steps(body) -> dict[str, str]:
-    return {step["name"]: step["state"] for step in body["steps"]}
-
-
-def test_a_working_box_passes_every_step_including_vision(client, monkeypatch):
+def test_connecting_updates_what_every_other_screen_believes(client, monkeypatch):
+    """Having just watched it connect, the banner must not still say it is asleep."""
     box(monkeypatch)
 
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    assert body["ok"] is True
-    assert body["state"] == "working"
-    assert _steps(body) == {
-        "address": "ok",
-        "credential": "ok",
-        "reachable": "ok",
-        "authentication": "ok",
-        "model": "ok",
-        "grammar": "ok",
-        "vision": "ok",
-    }
-
-
-def test_every_step_is_listed_even_the_ones_never_reached(client, monkeypatch):
-    """A list that shortened itself would hide where the test stopped."""
-    box(monkeypatch, refuse=True)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    assert [step["name"] for step in body["steps"]] == [
-        name for name, _ in endpoint_check.STEPS
-    ]
-
-
-def test_a_sleeping_box_is_unreachable_and_nothing_else(client, monkeypatch):
-    box(monkeypatch, refuse=True)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    assert body["state"] == "unreachable"
-    steps = _steps(body)
-    assert steps["reachable"] == "failed"
-    assert steps["authentication"] == "not-checked", "it was never asked"
-    assert body["auth"] == "ok", "nothing rejected the key; nothing tried it"
-
-
-@pytest.mark.parametrize("status", [401, 403])
-def test_a_rejected_key_is_unauthorised_and_the_box_still_answered(
-    client, monkeypatch, status
-):
-    """The distinction the whole endpoint design turns on, on one screen."""
-    box(monkeypatch, status=status)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    assert body["state"] == "unauthorised"
-    assert body["auth"] == "failed"
-    steps = _steps(body)
-    assert steps["reachable"] == "ok", "it answered — that is what makes this different"
-    assert steps["authentication"] == "failed"
-    assert steps["model"] == "not-checked"
-
-    detail = next(s["detail"] for s in body["steps"] if s["name"] == "authentication")
-    assert "refused the password" in detail
-    assert "cannot lock you out" in detail
-
-
-def test_a_box_that_throws_pictures_away_fails_its_own_step(client, monkeypatch):
-    """The failure this button exists for: everything else looks perfect."""
-    box(monkeypatch, sees_images=False)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    assert body["ok"] is False
-    assert body["state"] == "vision-not-working"
-    steps = _steps(body)
-    assert steps["grammar"] == "ok", "it answers text perfectly, which is the trap"
-    assert steps["vision"] == "failed"
-
-    detail = next(s["detail"] for s in body["steps"] if s["name"] == "vision")
-    assert "mlx_lm.server" in detail
-    assert "mmproj" in detail
-    assert "looks like nothing being wrong" in detail
-
-
-def test_a_box_that_ignores_the_schema_is_a_grammar_failure_not_a_vision_one(
-    client, monkeypatch
-):
-    box(monkeypatch, honours_schema=False)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    steps = _steps(body)
-    assert steps["grammar"] == "failed"
-    assert steps["vision"] == "not-checked"
-    detail = next(s["detail"] for s in body["steps"] if s["name"] == "grammar")
-    assert "guided-grammar" in detail
-
-
-def test_a_box_running_something_else_fails_the_model_step(client, monkeypatch):
-    box(monkeypatch, models=["some-other-model"])
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    steps = _steps(body)
-    assert steps["authentication"] == "ok"
-    assert steps["model"] == "failed"
-    detail = next(s["detail"] for s in body["steps"] if s["name"] == "model")
-    assert "answerable" in detail
-
-
-def test_a_test_with_no_credential_stops_at_the_credential_step(
-    client, monkeypatch, no_key
-):
-    box(monkeypatch)
-
-    body = client.post("/api/settings/endpoint/test", json=draft()).json()
-
-    steps = _steps(body)
-    assert steps["credential"] == "failed"
-    assert steps["reachable"] == "not-checked", "the key is never sent to an unchecked box"
-    assert body["auth"] == "missing"
-
-
-def test_the_test_result_carries_nothing_the_box_said(client, monkeypatch):
-    """Fixed sentences, selected by code. Same rule as /api/health."""
-    box(monkeypatch, status=401)
-
-    body = client.post("/api/settings/endpoint/test", json=draft())
-
-    assert KEY not in body.text
-    assert "rejected token" not in body.text
-    for length in range(12, len(KEY) + 1):
-        assert KEY[:length] not in body.text
-
-
-def test_testing_updates_what_every_other_screen_believes(client, monkeypatch):
-    """Having just watched it pass, the banner must not still say it is asleep."""
-    box(monkeypatch)
-
-    client.post("/api/settings/endpoint/test", json=draft())
+    connect(client, model=None)
 
     health = client.get("/api/health").json()["endpoint"]
     assert health["state"] == "working"
@@ -616,15 +353,225 @@ def test_testing_updates_what_every_other_screen_believes(client, monkeypatch):
     assert health["model"] == MODEL
 
 
-def test_testing_writes_nothing(client, vault, monkeypatch):
-    """A test button that saved would make trying an address a change to undo."""
+# --- choosing, which is a question and not a failure -----------------------
+
+
+def test_two_models_is_a_question_rather_than_a_failure(client, vault, monkeypatch):
+    """The list cannot be offered before the box has been reached."""
+    box(monkeypatch, models=[MODEL, "Qwen3.5-4B"])
+
+    body = connect(client, model=None).json()
+
+    assert body["outcome"] == "choose-model"
+    assert body["saved"] is False
+    assert body["models"] == [MODEL, "Qwen3.5-4B"], "verbatim, in the box's own order"
+    assert "choose which one" in body["status"]
+    # Nothing was written: a question is not a configuration.
+    assert client.get("/api/settings").json()["endpoint"]["configured"] is False
+
+
+def test_the_answer_to_that_question_connects(client, monkeypatch):
+    box(monkeypatch, models=[MODEL, "Qwen3.5-4B"])
+    assert connect(client, model=None).json()["outcome"] == "choose-model"
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["outcome"] == "connected"
+    assert body["saved"] is True
+
+
+def test_one_model_is_not_a_question(client, monkeypatch):
+    """Asking which of one would be ceremony. The id is still recorded verbatim."""
+    box(monkeypatch, models=[MODEL])
+
+    body = connect(client, model=None).json()
+
+    assert body["outcome"] == "connected"
+    assert body["model"] == MODEL
+
+
+def test_a_box_that_lists_nothing_says_to_type_the_name(client, monkeypatch):
+    box(monkeypatch, models=[])
+
+    body = connect(client, model=None).json()
+
+    assert body["outcome"] == "choose-model"
+    assert body["models"] == []
+    assert "Type the name in yourself" in body["status"]
+
+
+# --- one failure surface ---------------------------------------------------
+
+
+def test_a_failure_is_one_sentence_with_the_rest_behind_it(client, monkeypatch):
+    """A headline, a detail, and the steps. Not three competing red boxes."""
+    box(monkeypatch, refuse=True)
+
+    body = connect(client, model=None).json()
+
+    assert body["outcome"] == "failed"
+    assert body["status"] == "That computer did not answer."
+    assert "probably asleep" in body["detail"]
+    assert body["check"] is not None
+
+
+def test_nothing_is_written_when_it_does_not_work(client, vault, monkeypatch):
+    """Saving a configuration known not to work has no value."""
+    before = (vault.root / CONFIG_FILENAME).read_bytes()
+    box(monkeypatch, refuse=True)
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["saved"] is False
+    assert (vault.root / CONFIG_FILENAME).read_bytes() == before
+    assert client.get("/api/settings").json()["endpoint"]["configured"] is False
+
+
+def test_a_public_address_is_refused_in_its_own_words(client, vault, monkeypatch):
+    """The one refusal allowed to speak for itself: nothing has been sent yet.
+
+    It is composed from the address that was typed and this machine's own
+    resolver, at a moment when no request has gone anywhere and there is no
+    far-end text in existence to leak.
+    """
     box(monkeypatch)
     before = (vault.root / CONFIG_FILENAME).read_bytes()
 
-    client.post("/api/settings/endpoint/test", json=draft(base_url="http://127.0.0.1:1/v1"))
+    body = connect(client, base_url="https://93.184.216.34/v1", model=MODEL).json()
 
+    assert body["outcome"] == "failed"
+    assert body["status"] == "That address is not on your own network."
+    assert "outside private address space" in body["detail"]
+    assert "fork the project" in body["detail"]
     assert (vault.root / CONFIG_FILENAME).read_bytes() == before
-    assert client.get("/api/settings").json()["endpoint"]["configured"] is False
+
+
+def test_a_key_pasted_into_the_address_is_refused_and_named_as_disclosed(
+    client, monkeypatch
+):
+    box(monkeypatch)
+
+    body = connect(
+        client, base_url="https://me:hunter2@127.0.0.1/v1", model=MODEL
+    ).json()
+
+    assert body["outcome"] == "failed"
+    assert "username or password" in body["detail"]
+    assert "syncs to Dropbox" in body["detail"]
+
+
+def test_an_empty_address_is_the_one_thing_asked_for_by_name(client):
+    response = client.post("/api/settings/endpoint/connect", json={"base_url": "  "})
+
+    assert response.status_code == 400
+    assert "ending in /v1" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_rejected_key_is_its_own_sentence(client, monkeypatch, status):
+    """The distinction the whole endpoint design turns on, in one line."""
+    box(monkeypatch, status=status)
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["status"] == "That computer refused the password."
+    assert body["check"]["auth"] == "failed"
+    assert body["check"]["state"] == "unauthorised"
+
+
+def test_a_sleeping_box_and_a_rejected_key_never_read_the_same(client, monkeypatch):
+    box(monkeypatch, refuse=True)
+    asleep = connect(client, model=MODEL).json()
+    box(monkeypatch, status=401)
+    refused = connect(client, model=MODEL).json()
+
+    assert asleep["status"] != refused["status"]
+    assert asleep["check"]["state"] == "unreachable"
+    assert refused["check"]["state"] == "unauthorised"
+
+
+def test_a_box_that_throws_pictures_away_gets_its_own_sentence(client, monkeypatch):
+    """The failure this exists for: everything else looks perfect."""
+    box(monkeypatch, sees_images=False)
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["outcome"] == "failed"
+    assert body["status"] == "That computer cannot read words out of a picture."
+    assert body["saved"] is False, "a blind box is not a working one"
+    steps = _steps(body)
+    assert steps["grammar"] == "ok", "it answers text perfectly, which is the trap"
+    assert steps["vision"] == "failed"
+    assert "mlx_lm.server" in body["detail"]
+    assert "mmproj" in body["detail"]
+
+
+def test_a_box_that_ignores_the_schema_is_a_grammar_failure_not_a_vision_one(
+    client, monkeypatch
+):
+    box(monkeypatch, honours_schema=False)
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["status"] == "That computer does not answer in the shape the record needs."
+    steps = _steps(body)
+    assert steps["grammar"] == "failed"
+    assert steps["vision"] == "not-checked"
+
+
+def test_a_box_running_something_else_fails_the_model_step(client, monkeypatch):
+    """Asked for one model by name, offered another. Never quietly accepted."""
+    box(monkeypatch, models=["some-other-model"])
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["status"] == "That computer is running a different model."
+    assert _steps(body)["model"] == "failed"
+
+
+def test_no_credential_stops_before_anything_is_sent(client, monkeypatch, no_key):
+    box(monkeypatch)
+
+    body = connect(client, model=MODEL).json()
+
+    assert body["status"] == "No password is stored for that computer."
+    assert "health-agent set-key" in body["detail"], "its own words: nothing was sent"
+    assert _steps(body)["reachable"] == "not-checked"
+
+
+def test_every_step_is_listed_even_the_ones_never_reached(client, monkeypatch):
+    """A list that shortened itself would hide where it stopped."""
+    box(monkeypatch, refuse=True)
+
+    body = connect(client, model=MODEL).json()
+
+    assert [step["name"] for step in body["check"]["steps"]] == [
+        name for name, _ in endpoint_check.STEPS
+    ]
+
+
+def test_a_failure_carries_nothing_the_box_said(client, monkeypatch):
+    """Fixed sentences, selected by code. Same rule as /api/health."""
+    box(monkeypatch, status=401)
+
+    response = connect(client, model=MODEL)
+
+    assert KEY not in response.text
+    assert "rejected token" not in response.text
+    for length in range(12, len(KEY) + 1):
+        assert KEY[:length] not in response.text
+
+
+def test_a_forked_settings_file_refuses_the_write(client, vault, monkeypatch):
+    (vault.root / "config (1).toml").write_text("", encoding="utf-8")
+    before = (vault.root / CONFIG_FILENAME).read_bytes()
+    box(monkeypatch)
+
+    response = connect(client, model=MODEL)
+
+    assert response.status_code == 409
+    assert "config (1).toml" in response.json()["detail"]
+    assert (vault.root / CONFIG_FILENAME).read_bytes() == before
 
 
 # --- the write itself ------------------------------------------------------
@@ -734,7 +681,15 @@ def test_an_unusable_endpoint_table_is_reported_rather_than_shown_as_empty(
     assert config_mod.load(vault.root / CONFIG_FILENAME).sync_profile.value == "local"
 
 
-def test_saving_over_an_unusable_table_repairs_it(client, vault):
+def test_connecting_over_an_unusable_table_writes_what_it_owns_and_still_reports(
+    client, vault, monkeypatch
+):
+    """``ctx`` is not on this screen, so connecting cannot repair it.
+
+    What it must not do is report a clean success that changed nothing a person
+    can see: the four keys it owns are written, and the one it does not is still
+    named.
+    """
     (vault.root / CONFIG_FILENAME).write_text(
         'sync_profile = "local"\n'
         "\n[models.vlm]\n"
@@ -744,12 +699,11 @@ def test_saving_over_an_unusable_table_repairs_it(client, vault):
         encoding="utf-8",
     )
     client.app.state.record.reload_config()
+    box(monkeypatch)
 
-    # The bad key is not on this screen, so saving cannot fix it — and must say
-    # so rather than reporting a success that changed nothing a person can see.
-    body = client.post("/api/settings/endpoint", json=draft()).json()
+    body = connect(client, model=MODEL).json()
 
-    assert body["endpoint"]["problem"] is not None, "ctx is still wrong and still said"
+    assert body["settings"]["endpoint"]["problem"] is not None
     text = (vault.root / CONFIG_FILENAME).read_text(encoding="utf-8")
     assert URL in text and MODEL in text, "and what this screen does own was written"
 

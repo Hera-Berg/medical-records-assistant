@@ -94,11 +94,13 @@ says it passed too quickly rather than posing it.
 
 ## Photographing the inference endpoint
 
-The settings screen's connection test exists to tell apart states a developer on
-a working laptop never reaches: a box that refuses the key, one that answers
-text perfectly and silently throws every picture away, one that ignores the
-schema it was handed. Those are exactly the states where a person is stuck and
-reading the screen carefully, so they are photographed.
+Connect exists to tell apart states a developer on a working laptop never
+reaches: a box that refuses the key, one that answers text perfectly and
+silently throws every picture away, one that ignores the schema it was handed,
+one that offers four models and has to be asked which. Those are exactly the
+states where a person is stuck and reading the screen carefully, so they are
+photographed — including the two that are folded shut by default, because a
+disclosure nobody opens is a disclosure whose contents nobody has read.
 
 ```
 python frontend/tools/shots.py --endpoint-only --out /tmp/shots

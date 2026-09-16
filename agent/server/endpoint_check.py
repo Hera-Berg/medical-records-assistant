@@ -1,12 +1,20 @@
-"""Testing the inference endpoint from the settings screen.
+"""Connecting to the inference endpoint from the settings screen.
 
 This is a view over :mod:`agent.extract.probe`, which already does the work and
-already draws the distinctions that matter. What this adds is a **step list**:
-the probe answers with one state and a trail of checks, and the screen needs to
-show which of five things was true and which one stopped. "It could not be
-reached" and "it answered but would not take the key" send a person to two
-different places, and a single red box saying "connection failed" sends them to
-neither.
+already draws the distinctions that matter. What this adds is **one headline and
+a step list underneath it**: the probe answers with a state and a trail of
+checks, and the screen needs to say in one sentence what went wrong while still
+being able to show which of seven things were true. "It could not be reached"
+and "it answered but would not take the key" send a person to two different
+places, and a single red box saying "connection failed" sends them to neither —
+but seven rows of prose in front of someone who just wanted to type an address
+is the opposite mistake. So: a sentence, and the rest folded away.
+
+**Connecting is one action, not two.** :func:`connect` asks the box what it
+runs, runs the probe against it, and hands back a configuration to save only if
+every check passed. There is no route that saves an endpoint known not to work,
+because a saved endpoint that does not work is a queue that silently never
+drains.
 
 The vision step is the one this exists for. A server that accepts ``image_url``
 content parts and silently discards them answers every text prompt perfectly
@@ -25,13 +33,23 @@ URL the person typed into the form, the addresses this machine's own resolver
 returned for it, and model identity strings, which come from the ``id`` field of
 ``/v1/models`` rather than from any error path. All three are scrubbed anyway.
 
+There are exactly two exceptions and they share one property: **they happen
+before the first byte leaves this machine.** The address guard refuses a host
+that resolves outside private space, and the credential resolver refuses when
+there is no usable key — both compose their message from the URL that was typed,
+this machine's own resolver and this machine's own filesystem, and at the moment
+either speaks, nothing has been sent to anything and there is no far-end text in
+existence to leak. Their messages are worth passing through verbatim because
+they name the address, the file and the mode to fix. Everything after a request
+has gone out uses the fixed table below.
+
 The detail an operator needs beyond this is what ``health-agent probe`` prints,
 on a terminal, where no browser is involved.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from ..errors import (
@@ -158,6 +176,19 @@ _PASSED = {
     "vision": "It was sent a picture with words in it and read them back.",
 }
 
+#: The one sentence a failed step becomes. This is the whole of what a person
+#: sees unless they open the detail, so each says *what* is wrong in the words
+#: they would use, and never what to do about it — that is the detail's job.
+_HEADLINE = {
+    "address": "That address is not on your own network.",
+    "credential": "No password is stored for that computer.",
+    "reachable": "That computer did not answer.",
+    "authentication": "That computer refused the password.",
+    "model": "That computer is running a different model.",
+    "grammar": "That computer does not answer in the shape the record needs.",
+    "vision": "That computer cannot read words out of a picture.",
+}
+
 #: What each step says when it fails. Fixed: nothing the far end wrote appears.
 _FAILED = {
     "address": (
@@ -167,10 +198,13 @@ _FAILED = {
         "documents to a company to read. A name like "
         "macbook-pro.tailnet.ts.net is fine; it points at your own machine."
     ),
+    # No "below" or "above" anywhere in this table: the form has been
+    # rearranged once already and copy that points at a position is copy that
+    # quietly starts lying. Name the field instead.
     "credential": (
         "No password is stored for this computer, so there is nothing to send. "
-        "Set one below. It goes into this computer's keychain, never into your "
-        "settings file."
+        "Put one in the Password field. It goes into this computer's keychain, "
+        "never into your settings file."
     ),
     "reachable": (
         "No answer. The computer is probably asleep, or this machine is off the "
@@ -179,12 +213,13 @@ _FAILED = {
     ),
     "authentication": (
         "It answered, but refused the password. That usually means the password "
-        "on the computer has been changed since this one was stored. Set the new "
-        "one below — nothing is retried until you do, so it cannot lock you out."
+        "on the computer has been changed since this one was stored. Put the new "
+        "one in the Password field — nothing is retried until you do, so it "
+        "cannot lock you out."
     ),
     "model": (
         "It is running something other than the model you chose. Pick the one it "
-        "actually offers from the list above. The record checks this on every "
+        "actually offers from the Model list. The record checks this on every "
         "read, because which model produced a claim has to stay answerable in a "
         "year's time."
     ),
@@ -403,3 +438,165 @@ def _stopped_at(name: str, state: str, auth: str) -> CheckReport:
         else:
             steps.append(Step(step_name, title, NOT_CHECKED, "Not checked."))
     return CheckReport(state=state, steps=tuple(steps), auth=auth)
+
+
+# --- connecting, which is one action ---------------------------------------
+
+
+@dataclass(frozen=True)
+class ConnectResult:
+    """What one press of Connect found, and whether it is worth saving.
+
+    ``outcome`` is the whole branch a screen needs:
+
+    ``connected``    every check passed. The caller writes the configuration.
+    ``choose-model`` the box answered and offers more than one model, and
+                     nobody has said which. Not a failure — a question, and one
+                     that cannot be asked before the box has been reached.
+    ``failed``       something stopped it. ``status`` says what in a sentence,
+                     ``detail`` says what to do about it, and ``report`` carries
+                     every step for whoever wants to open it.
+    """
+
+    outcome: str
+    status: str
+    model: str = ""
+    models: tuple[str, ...] = ()
+    report: CheckReport | None = None
+    detail: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.outcome == "connected"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "outcome": self.outcome,
+            "ok": self.ok,
+            "status": redaction.scrub(self.status),
+            "model": redaction.scrub(self.model),
+            "models": [redaction.scrub(name) for name in self.models],
+            "detail": redaction.scrub(self.detail),
+            "check": self.report.to_dict() if self.report is not None else None,
+        }
+
+
+#: Said when the box answers but lists nothing. Rare, and a dead end unless the
+#: name can be typed, so the screen falls back to a text field on this.
+NO_MODELS_LISTED = (
+    "That computer answered but did not say which models it runs. Type the name "
+    "in yourself, exactly as that server spells it."
+)
+
+
+def _failed(
+    step: str, state: str, auth: str, detail: str = "", models: tuple[str, ...] = ()
+) -> ConnectResult:
+    return ConnectResult(
+        outcome="failed",
+        status=_HEADLINE[step],
+        models=models,
+        report=_stopped_at(step, state, auth),
+        detail=detail or _FAILED[step],
+    )
+
+
+def address_failure(detail: str) -> ConnectResult:
+    """A refusal raised while the address was still being parsed.
+
+    ``https://user:key@box/v1`` is the one that matters: a credential typed into
+    the address bar, which would land in ``config.toml`` and sync out of the
+    house. It is refused by the parser, before settings exist to connect with,
+    so it needs a way onto the same single failure surface as everything else.
+    """
+    return _failed("address", endpoint_state.MISCONFIGURED, "missing", detail)
+
+
+def _reached_failure(exc: BaseException, models: tuple[str, ...] = ()) -> ConnectResult:
+    """Classify a failure raised while asking the box what it runs.
+
+    By exception class, never by message. The two that speak before anything is
+    sent — the address guard and the credential resolver — hand their own text
+    on as the detail, because at that moment there is no far-end text to leak
+    and their sentences name the address, the file and the mode to fix.
+    """
+    if isinstance(exc, EndpointNotPrivate):
+        return _failed("address", endpoint_state.MISCONFIGURED, "missing", str(exc))
+    if isinstance(exc, CredentialError):
+        return _failed("credential", endpoint_state.MISCONFIGURED, "missing", str(exc))
+    if isinstance(exc, AuthRejected):
+        return _failed("authentication", endpoint_state.UNAUTHORISED, "failed", models=models)
+    if isinstance(exc, EndpointUnreachable):
+        return _failed("reachable", endpoint_state.UNREACHABLE, "ok", models=models)
+    return _failed("reachable", endpoint_state.MISCONFIGURED, "ok", models=models)
+
+
+def connect(
+    vault, settings: VlmSettings, skip_vision: bool = False
+) -> ConnectResult:
+    """Ask the box what it runs, then check it end to end.
+
+    In that order, and the order is the point: the model list cannot be offered
+    before the box has been reached, and the box cannot be checked against a
+    model until one has been picked from what it actually has. A screen that
+    asked for the model name first would be asking a person to know, verbatim,
+    a string this function can simply go and read.
+    """
+    # The address, before a credential is read and before anything is sent.
+    try:
+        settings.endpoint.verify()
+    except EndpointNotPrivate as exc:
+        return _failed("address", endpoint_state.MISCONFIGURED, "missing", str(exc))
+
+    try:
+        available = tuple(available_models(vault, settings))
+    except (AuthRejected, InferenceError) as exc:
+        return _reached_failure(exc)
+
+    chosen = settings.model
+    if not chosen:
+        if len(available) == 1:
+            # One answer to a question with one answer. Asking would be
+            # ceremony, and the id is recorded verbatim either way.
+            chosen = available[0]
+        elif available:
+            return ConnectResult(
+                outcome="choose-model",
+                status=(
+                    f"Connected. That computer runs "
+                    f"{_spell(len(available))} models — choose which one should read "
+                    f"your documents."
+                ),
+                models=available,
+            )
+        else:
+            return ConnectResult(
+                outcome="choose-model", status=NO_MODELS_LISTED, models=()
+            )
+
+    checked = replace(settings, model=chosen)
+    report = run(vault, checked, skip_vision=skip_vision)
+    if report.ok:
+        return ConnectResult(
+            outcome="connected",
+            status=f"Connected — reading with {chosen}.",
+            model=chosen,
+            models=available,
+            report=report,
+        )
+
+    failed = next((step for step in report.steps if step.state == FAILED), None)
+    name = failed.name if failed is not None else "reachable"
+    return ConnectResult(
+        outcome="failed",
+        status=_HEADLINE.get(name, _HEADLINE["reachable"]),
+        model=chosen,
+        models=available,
+        report=report,
+        detail=failed.detail if failed is not None else _FAILED["reachable"],
+    )
+
+
+def _spell(number: int) -> str:
+    words = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+    return words[number] if number < len(words) else str(number)

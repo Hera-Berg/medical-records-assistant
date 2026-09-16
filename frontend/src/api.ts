@@ -14,8 +14,7 @@
 import type {
   ArtifactMeta,
   CaptureResponse,
-  EndpointCheck,
-  EndpointModels,
+  ConnectResult,
   EntityDetail,
   FileContent,
   FileListing,
@@ -227,20 +226,24 @@ export const api = {
     }),
 
   /**
-   * Write the inference endpoint into `config.toml`.
+   * Point the record at the computer that reads your documents.
    *
-   * The address guard runs on the server before anything is written, so a
-   * public host comes back as a refusal with the reason in it. There is no
-   * client-side check standing in front of that: a guard the browser could be
-   * talked out of is not a guard.
+   * One call, because it is one intention. The server reaches the box, asks
+   * what it runs, checks it end to end — including whether it can actually read
+   * words out of a picture — and writes `config.toml` only if all of that
+   * passed. There is no route that saves an endpoint known not to work.
+   *
+   * The address guard runs server-side, first, before any credential is read.
+   * There is no check in front of it here: a guard the browser could be talked
+   * out of is not a guard.
    */
-  setEndpoint: (body: {
+  connectEndpoint: (body: {
     base_url: string;
-    model: string;
-    header: string;
-    scheme: string;
+    model?: string;
+    header?: string;
+    scheme?: string;
   }) =>
-    request<Settings>("/api/settings/endpoint", {
+    request<ConnectResult>("/api/settings/endpoint/connect", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -258,27 +261,6 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key }),
-    }),
-
-  /** What the box says it is running, verbatim. An id is not a name to retype. */
-  endpointModels: (body: { base_url: string; header: string; scheme: string }) =>
-    request<EndpointModels>("/api/settings/endpoint/models", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-
-  /** Run the startup probe against what is in the form. Writes nothing. */
-  testEndpoint: (body: {
-    base_url: string;
-    model: string;
-    header: string;
-    scheme: string;
-  }) =>
-    request<EndpointCheck>("/api/settings/endpoint/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
     }),
 };
 

@@ -188,9 +188,8 @@ def test_the_built_bundle_reaches_for_nothing_on_the_network(client):
 _POSTS_THAT_TOUCH_THE_KEY = (
     ("/api/settings/endpoint/key", {"key": KEY}),
     ("/api/settings/endpoint/key", {"key": "   "}),
-    ("/api/settings/endpoint/test", {"base_url": "http://127.0.0.1:9/v1", "model": "m"}),
-    ("/api/settings/endpoint/models", {"base_url": "http://127.0.0.1:9/v1"}),
-    ("/api/settings/endpoint", {"base_url": f"https://user:{KEY}@127.0.0.1/v1", "model": "m"}),
+    ("/api/settings/endpoint/connect", {"base_url": "http://127.0.0.1:9/v1", "model": "m"}),
+    ("/api/settings/endpoint/connect", {"base_url": f"https://user:{KEY}@127.0.0.1/v1"}),
 )
 
 

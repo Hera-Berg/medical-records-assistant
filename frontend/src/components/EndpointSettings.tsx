@@ -1,61 +1,43 @@
 /**
- * The computer that reads your documents: where it is, and whether it works.
+ * The computer that reads your documents: three fields and a button.
  *
- * Almost nothing here is new. The address guard, the key resolution, the
- * keychain write and the startup probe are all server-side and all older than
- * this screen. What this adds is that a person can point their record at their
- * own machine without editing a TOML file — and the editing was the dangerous
- * part, because the obvious place to put a key is the settings file you can
- * see, and that file is inside the folder that syncs.
+ * This is the screen a non-technical person meets first, and the version before
+ * this one asked them to understand HTTP authentication headers before they got
+ * to the address bar. Everything that made it a five-field form with two
+ * buttons and three ways of reporting a failure is still here — it is folded
+ * away, because folding is free and a wall of text is not.
  *
- * Four things are deliberate.
+ * **Three fields.** Address, password, model. The header name and the word in
+ * front of it live behind "Advanced", collapsed, and never opened for you: they
+ * matter to the person whose server demands something unusual and to nobody
+ * else, and showing them by default makes a three-field form look like a
+ * five-field one. The summary says "changed" when they are not the defaults, so
+ * a non-standard setting is never invisible.
  *
- * **The key field only writes.** It says "set" or "not set" and takes a new
- * value. There is no read path, no route that would answer one, and nothing on
- * screen that shows the key, a prefix of it or its length. Beside it is the
- * sentence saying why it cannot go in the settings file, because a rule that
- * only appears as a refusal teaches nothing.
+ * **One button.** Connect checks and then saves, because they are one
+ * intention. Two buttons for one intention is two chances to do one of them and
+ * believe the thing is set up. Nothing is written unless every check passed — a
+ * saved endpoint that does not work is a queue that silently never drains.
  *
- * **The model is chosen, not typed.** The id has to match what the box reports
- * exactly — it is checked on every read — and it has already differed from what
- * someone typed here once, by a vendor prefix. So the list is fetched from the
- * machine itself and stored verbatim. Typing is still possible, because the box
- * is asleep a good fraction of the time and a field you cannot fill while
- * offline is a field that traps you.
+ * **One failure surface.** A sentence saying what stopped it, with what to do
+ * about it under it and the step list one tap further. There were three: a red
+ * box, a separate verdict line and a table, all describing one event in three
+ * registers.
  *
- * **Testing and saving are separate, and testing writes nothing.** A test that
- * could only check what was already saved would make a person save a bad
- * address in order to discover it was bad. Editing any field marks an earlier
- * result stale rather than leaving a green tick under changed text.
+ * **One sentence of prose.** The rest is behind "What is this?". Trust comes
+ * from the sentence being true and short; the reader who most needs reassuring
+ * is the least likely to reach the end of three paragraphs of it.
  *
- * **Each step of the test is reported on its own line.** "Could not connect"
- * and "connected, refused the password" are different problems with different
- * answers, and the one that matters most is vision: a box that quietly discards
- * pictures passes every other check and ignores every photograph of a
- * prescription, which reads as the model being bad at reading.
+ * Unchanged, because it is load-bearing rather than presentational: the
+ * password field only writes, the reason a key may never go in the settings
+ * file is still said beside it, the private-address guard still runs before
+ * anything is saved, the model id still comes verbatim from the box's own
+ * `/v1/models`, and the check still includes vision.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { EndpointCheck, EndpointSettings as EndpointData, Settings } from "../types";
-
-interface Draft {
-  base_url: string;
-  model: string;
-  header: string;
-  scheme: string;
-}
-
-const draftOf = (endpoint: EndpointData): Draft => ({
-  base_url: endpoint.base_url,
-  model: endpoint.model,
-  header: endpoint.auth.header,
-  scheme: endpoint.auth.scheme,
-});
-
-/** What a test was run against, so editing anything marks the result stale. */
-const signature = (draft: Draft) =>
-  JSON.stringify([draft.base_url, draft.model, draft.header, draft.scheme]);
+import type { ConnectResult, EndpointSettings as EndpointData, Settings } from "../types";
 
 const RESULT_WORD: Record<string, string> = {
   ok: "Worked",
@@ -81,90 +63,62 @@ export function EndpointSettings({
   onChanged: () => void;
 }) {
   const endpoint = settings.endpoint;
-  const [draft, setDraft] = useState<Draft>(() => draftOf(endpoint));
-  const [saved, setSaved] = useState<string | null>(null);
+
+  const [address, setAddress] = useState(endpoint.base_url);
+  const [model, setModel] = useState(endpoint.model);
+  const [header, setHeader] = useState(endpoint.auth.header);
+  const [scheme, setScheme] = useState(endpoint.auth.scheme);
+
+  const [result, setResult] = useState<ConnectResult | null>(null);
+  const [resultFor, setResultFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const [models, setModels] = useState<string[] | null>(null);
-  const [modelsNote, setModelsNote] = useState<string | null>(null);
-  const [typing, setTyping] = useState(false);
-
-  const [check, setCheck] = useState<EndpointCheck | null>(null);
-  const [checkedAgainst, setCheckedAgainst] = useState<string | null>(null);
-
   const [keyValue, setKeyValue] = useState("");
   const [keyNote, setKeyNote] = useState<string | null>(null);
+  const [keyFailed, setKeyFailed] = useState(false);
 
-  // The saved values are the starting point, and they change under us whenever
-  // a save lands. Re-seeding on the saved signature rather than on the object
-  // keeps a half-typed URL from being wiped by an unrelated refresh.
-  const savedSignature = signature(draftOf(endpoint));
+  // Re-seeded when what is saved changes under us, and not otherwise: a
+  // half-typed address must survive an unrelated refresh.
+  const saved = JSON.stringify([
+    endpoint.base_url,
+    endpoint.model,
+    endpoint.auth.header,
+    endpoint.auth.scheme,
+  ]);
   useEffect(() => {
-    setDraft(draftOf(endpoint));
-  }, [savedSignature]);
+    setAddress(endpoint.base_url);
+    setModel(endpoint.model);
+    setHeader(endpoint.auth.header);
+    setScheme(endpoint.auth.scheme);
+  }, [saved]);
 
-  const dirty = signature(draft) !== savedSignature;
-  const stale = check !== null && checkedAgainst !== signature(draft);
+  const here = JSON.stringify([address, model, header, scheme]);
+  const changed = here !== saved;
+  // A result describes what it was fetched for. Editing anything makes it a
+  // statement about something else, so it stops being shown.
+  const stale = result !== null && resultFor !== here;
+  const live = stale ? null : result;
 
-  const edit = (patch: Partial<Draft>) => {
-    setDraft((current) => ({ ...current, ...patch }));
-    setSaved(null);
+  const advancedChanged =
+    header !== endpoint.defaults.header || scheme !== endpoint.defaults.scheme;
+
+  const connect = (withModel: string) => {
+    setBusy("connect");
     setError(null);
-  };
-
-  const apply = useCallback(
-    (next: Settings) => {
-      onSettings(next);
-      onChanged();
-    },
-    [onSettings, onChanged],
-  );
-
-  const fetchModels = () => {
-    setBusy("models");
-    setError(null);
+    const against = JSON.stringify([address, withModel, header, scheme]);
     api
-      .endpointModels({
-        base_url: draft.base_url,
-        header: draft.header,
-        scheme: draft.scheme,
-      })
-      .then((result) => {
-        setModels(result.models);
-        setModelsNote(result.message);
-        setTyping(result.models.length === 0);
-        // Nothing is chosen for the user. One offered model is still a choice,
-        // and a field that fills itself in is a field nobody reads.
-      })
-      .catch((exc: Error) => setError(exc.message))
-      .finally(() => setBusy(null));
-  };
-
-  const test = () => {
-    setBusy("test");
-    setError(null);
-    const against = signature(draft);
-    api
-      .testEndpoint(draft)
-      .then((result) => {
-        setCheck(result);
-        setCheckedAgainst(against);
-        if (result.settings) onSettings(result.settings);
-        onChanged();
-      })
-      .catch((exc: Error) => setError(exc.message))
-      .finally(() => setBusy(null));
-  };
-
-  const save = () => {
-    setBusy("save");
-    setError(null);
-    api
-      .setEndpoint(draft)
+      .connectEndpoint({ base_url: address, model: withModel, header, scheme })
       .then((next) => {
-        apply(next);
-        setSaved(next.endpoint.base_url);
+        setResult(next);
+        // What the box was asked, plus what it answered with: connecting
+        // without naming a model is answered by one, and the field fills in.
+        setResultFor(
+          next.model ? JSON.stringify([address, next.model, header, scheme]) : against,
+        );
+        if (next.model) setModel(next.model);
+        onSettings(next.settings);
+        onChanged();
       })
       .catch((exc: Error) => setError(exc.message))
       .finally(() => setBusy(null));
@@ -174,14 +128,19 @@ export function EndpointSettings({
     setBusy("key");
     setError(null);
     setKeyNote(null);
+    setKeyFailed(false);
     api
       .setEndpointKey(keyValue)
       .then((next) => {
-        apply(next);
+        onSettings(next);
+        onChanged();
         setKeyValue("");
         setKeyNote(keyStoredNote(next));
       })
-      .catch((exc: Error) => setError(exc.message))
+      .catch((exc: Error) => {
+        setError(exc.message);
+        setKeyFailed(true);
+      })
       .finally(() => setBusy(null));
   };
 
@@ -191,272 +150,279 @@ export function EndpointSettings({
     <section>
       <h2 className="text-lg font-semibold">The computer that reads your documents</h2>
       <p className="mt-1 max-w-2xl">{endpoint.explanation}</p>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-[color:var(--color-muted)]">
+          What is this?
+        </summary>
+        {endpoint.about.split("\n\n").map((paragraph) => (
+          <p key={paragraph.slice(0, 24)} className="mt-1 max-w-2xl">
+            {paragraph}
+          </p>
+        ))}
+      </details>
 
       {endpoint.problem ? (
-        <div className="mt-3 rounded-lg border border-[color:var(--color-alarm)] bg-[color:var(--color-alarm-soft)] p-3">
-          <p className="font-semibold">Your settings file has an entry it cannot use.</p>
-          <p className="mt-1">{endpoint.problem}</p>
-        </div>
-      ) : null}
-
-      {/*
-        Only while the form still matches the file. Once something has been
-        typed, "no computer is set up yet" sits directly above a filled-in
-        address and — after a test — a table of green ticks, which reads as the
-        screen disagreeing with itself. The "Not saved yet." marker beside Save
-        is what says it from that point on.
-      */}
-      {!endpoint.configured && !endpoint.problem && !dirty ? (
-        <p className="mt-3 rounded-lg border border-[color:var(--color-rule)] bg-[color:var(--color-shade)] p-3">
-          <span className="font-semibold">No computer is set up yet.</span> Everything you
-          add is still stored and kept — photographs, letters, notes, recordings. Until
-          this is set, nothing is read for you, so nothing arrives on the{" "}
-          <strong>Waiting for you</strong> screen. Anything captured in the meantime is
-          read when it is.
+        <p className="mt-3 rounded-lg border border-[color:var(--color-alarm)] bg-[color:var(--color-alarm-soft)] p-3">
+          <span className="font-semibold">
+            Your settings file has an entry it cannot use.
+          </span>{" "}
+          {endpoint.problem}
         </p>
       ) : null}
 
-      <div className="mt-4 grid gap-4 md:max-w-3xl">
+      <div className="mt-4 grid gap-3 md:max-w-2xl">
         <label className="block">
-          <span className="block font-semibold">Its address</span>
-          <span className="mt-0.5 block text-[color:var(--color-muted)]">
-            The web address of the model server on that machine, ending in{" "}
-            <code className="font-mono">/v1</code>. A Tailscale name such as{" "}
-            <code className="font-mono">macbook-pro.tailnet.ts.net</code> is the usual
-            answer.
-          </span>
+          <span className="block font-semibold">Address</span>
           <input
             type="url"
             inputMode="url"
             spellCheck={false}
             className="field mt-1 w-full font-mono"
-            value={draft.base_url}
+            value={address}
             placeholder="https://macbook-pro.tailnet.ts.net/v1"
-            onChange={(event) => edit({ base_url: event.target.value })}
+            onChange={(event) => setAddress(event.target.value)}
           />
         </label>
 
-        <div>
-          <span className="block font-semibold">Which model it runs</span>
-          <span className="mt-0.5 block text-[color:var(--color-muted)]">
-            Taken from the machine itself and stored exactly as it spells it. The record
-            checks this on every document it reads, so a name that is nearly right stops
-            the reading rather than being ignored — which is the point: which model
-            produced a claim has to stay answerable in a year's time.
-          </span>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            {models && models.length > 0 && !typing ? (
-              <select
-                className="field min-w-0 flex-1 font-mono"
-                value={draft.model}
-                onChange={(event) => edit({ model: event.target.value })}
-              >
-                <option value="">Choose one…</option>
-                {models.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-                {draft.model && !models.includes(draft.model) ? (
-                  <option value={draft.model}>
-                    {draft.model} — not offered by this computer
-                  </option>
-                ) : null}
-              </select>
-            ) : (
-              <input
-                type="text"
-                spellCheck={false}
-                className="field min-w-0 flex-1 font-mono"
-                value={draft.model}
-                placeholder="Qwen3.8-Flash-Next-oQ4e-mtp"
-                onChange={(event) => edit({ model: event.target.value })}
-              />
-            )}
-            <button
-              type="button"
-              className="btn"
-              onClick={fetchModels}
-              disabled={working || !draft.base_url}
-            >
-              {busy === "models" ? "Asking…" : "Fetch the list"}
-            </button>
-            {models && models.length > 0 ? (
-              <button type="button" className="btn" onClick={() => setTyping(!typing)}>
-                {typing ? "Choose from the list" : "Type it instead"}
-              </button>
-            ) : null}
-          </div>
-          {modelsNote ? (
-            <p className="mt-1 text-[color:var(--color-muted)]">{modelsNote}</p>
-          ) : null}
-        </div>
+        <PasswordField
+          data={endpoint}
+          value={keyValue}
+          onChange={setKeyValue}
+          onStore={storeKey}
+          busy={busy === "key"}
+          disabled={working}
+          note={keyNote}
+          alternatives={keyFailed ? endpoint.key_alternatives : null}
+        />
 
-        {/*
-          Two fields almost nobody touches, and the summary states both, so
-          closing this hides nothing — it only stops the common case paying for
-          the rare one.
-        */}
-        <details>
-          <summary className="cursor-pointer font-semibold">
-            How the password is sent{" "}
-            <span className="font-normal text-[color:var(--color-muted)]">
-              — {draft.header}: {draft.scheme ? `${draft.scheme} ` : ""}your password
-            </span>
-          </summary>
-          <p className="mt-1 text-[color:var(--color-muted)]">
-            Most servers want these left alone. Some want the password on its own with no
-            word in front of it — clear the second box for that.
-          </p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            <label className="block">
-              <span className="block text-[color:var(--color-muted)]">Header name</span>
-              <input
-                type="text"
-                spellCheck={false}
-                className="field mt-0.5 font-mono"
-                value={draft.header}
-                onChange={(event) => edit({ header: event.target.value })}
-              />
-            </label>
-            <label className="block">
-              <span className="block text-[color:var(--color-muted)]">
-                Word in front of it
-              </span>
-              <input
-                type="text"
-                spellCheck={false}
-                className="field mt-0.5 font-mono"
-                value={draft.scheme}
-                placeholder="(none)"
-                onChange={(event) => edit({ scheme: event.target.value })}
-              />
-            </label>
-          </div>
-        </details>
+        <ModelField
+          value={model}
+          offered={live?.models ?? []}
+          asked={live !== null}
+          onChange={setModel}
+        />
       </div>
+
+      <details className="mt-3 md:max-w-2xl">
+        <summary className="cursor-pointer font-semibold">
+          Advanced
+          {advancedChanged ? (
+            <span className="font-normal text-[color:var(--color-muted)]">
+              {" "}
+              — changed
+            </span>
+          ) : null}
+        </summary>
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          How your password is handed to that computer. Almost every server wants these
+          exactly as they are; change them only if yours has told you to. Some want the
+          password on its own with no word in front of it — clear the second box for
+          that.
+        </p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <label className="block">
+            <span className="block text-[color:var(--color-muted)]">Header name</span>
+            <input
+              type="text"
+              spellCheck={false}
+              className="field mt-0.5 font-mono"
+              value={header}
+              onChange={(event) => setHeader(event.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[color:var(--color-muted)]">
+              Word in front of it
+            </span>
+            <input
+              type="text"
+              spellCheck={false}
+              className="field mt-0.5 font-mono"
+              value={scheme}
+              placeholder="(none)"
+              onChange={(event) => setScheme(event.target.value)}
+            />
+          </label>
+        </div>
+      </details>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="btn"
-          onClick={test}
-          disabled={working || !draft.base_url || !draft.model}
-        >
-          {busy === "test" ? "Testing…" : "Test this connection"}
-        </button>
-        <button
-          type="button"
           className="btn btn-primary"
-          onClick={save}
-          disabled={working || !dirty || !draft.base_url || !draft.model}
+          onClick={() => connect(model)}
+          disabled={working || !address.trim()}
         >
-          {busy === "save" ? "Saving…" : "Save"}
+          {busy === "connect" ? "Connecting…" : "Connect"}
         </button>
-        {dirty ? (
-          <span className="text-[color:var(--color-warn)]">Not saved yet.</span>
-        ) : null}
-        {saved && !dirty ? (
+        {changed && endpoint.configured && !working ? (
           <span className="text-[color:var(--color-muted)]">
-            Saved to your settings file. Your password was not written to it.
+            Connect to check and save this.
           </span>
         ) : null}
       </div>
 
-      {/*
-        A panel with a sentence of our own above it, not a bare red paragraph.
-        The refusals this can carry are the server's, and they are written to be
-        read — but they start mid-thought ("the inference endpoint … resolves
-        to …") because they were written for a terminal, and the longest of them
-        is the address guard's, which is the one a person is most likely to meet
-        and least likely to have expected.
-      */}
       {error ? (
-        <div className="mt-3 rounded-lg border border-[color:var(--color-alarm)] bg-[color:var(--color-alarm-soft)] p-3">
-          <p className="font-semibold">That was not saved.</p>
-          <p className="mt-1">{error}</p>
-        </div>
+        <p className="mt-3">
+          <span className="font-semibold text-[color:var(--color-alarm)]">
+            That did not work.
+          </span>{" "}
+          {error}
+        </p>
       ) : null}
 
-      <Result check={check} stale={stale} endpoint={endpoint} />
-
-      <h3 className="mt-6 border-t border-[color:var(--color-rule)] pt-4 font-semibold">
-        Its password
-      </h3>
-      <p className="mt-1 max-w-2xl text-[color:var(--color-muted)]">
-        {endpoint.key_explanation}
-      </p>
-      <p className="mt-2">
-        <KeyStatus data={endpoint} />
-      </p>
-      <div className="mt-2 flex flex-wrap items-end gap-2">
-        <label className="block">
-          <span className="block text-[color:var(--color-muted)]">
-            {endpoint.key.state === "configured"
-              ? "Replace it with a new one"
-              : "Set the password"}
-          </span>
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            className="field mt-0.5 w-72 max-w-full font-mono"
-            value={keyValue}
-            placeholder="••••••••"
-            onChange={(event) => setKeyValue(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn"
-          onClick={storeKey}
-          disabled={working || !keyValue.trim()}
-        >
-          {busy === "key" ? "Storing…" : "Store it in the keychain"}
-        </button>
-      </div>
-      <p className="mt-1 text-[color:var(--color-muted)]">
-        Once stored it is never shown again, here or anywhere else. To change it, put a
-        new one in — there is nothing to read back.
-      </p>
-      {keyNote ? <p className="mt-1">{keyNote}</p> : null}
+      <Status endpoint={endpoint} result={live} />
     </section>
   );
 }
 
-/** Whether a password is available, and which place answered. Never the value. */
-function KeyStatus({ data }: { data: EndpointData }) {
-  if (data.key.state === "configured") {
-    return (
-      <>
-        <span className="font-semibold">Stored.</span>{" "}
-        <span className="text-[color:var(--color-muted)]">
-          Found in the {data.key.source}.
-          {data.key.source && data.key.source.startsWith("environment")
-            ? " That beats the keychain, so storing a new one below will not change what" +
-              " is sent until it is unset."
-            : ""}
-        </span>
-      </>
-    );
-  }
-  if (data.key.state === "unusable") {
-    return (
-      <>
-        <span className="font-semibold text-[color:var(--color-alarm)]">
-          There is one, but it cannot be used.
-        </span>{" "}
-        {data.key.detail}
-      </>
-    );
-  }
+/**
+ * The model, read off the box rather than typed.
+ *
+ * Empty and disabled until Connect has reached the machine, because before then
+ * there is nothing true to put in it. The id has to match exactly — it is
+ * checked on every document read — and the one string a person is most likely
+ * to get subtly wrong is the one this can simply go and fetch.
+ */
+function ModelField({
+  value,
+  offered,
+  asked,
+  onChange,
+}: {
+  value: string;
+  offered: string[];
+  asked: boolean;
+  onChange: (next: string) => void;
+}) {
+  // A box that answered but listed nothing leaves typing as the only way in.
+  const mustType = asked && offered.length === 0;
   return (
-    <>
-      <span className="font-semibold">Not set.</span>{" "}
-      <span className="text-[color:var(--color-muted)]">
-        Nothing will be read until there is one.
-      </span>
-    </>
+    <label className="block">
+      <span className="block font-semibold">Model</span>
+      {mustType ? (
+        <input
+          type="text"
+          spellCheck={false}
+          className="field mt-1 w-full font-mono"
+          value={value}
+          placeholder="exactly as that server spells it"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <select
+          className="field mt-1 w-full font-mono"
+          value={value}
+          disabled={offered.length === 0}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {offered.length === 0 ? (
+            <option value={value}>
+              {value || "Connect first — this is read from the computer"}
+            </option>
+          ) : (
+            <>
+              <option value="">Choose one…</option>
+              {offered.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+              {value && !offered.includes(value) ? (
+                <option value={value}>{value} — not offered by this computer</option>
+              ) : null}
+            </>
+          )}
+        </select>
+      )}
+    </label>
+  );
+}
+
+/**
+ * Set-only. There is no read path, here or on the server.
+ *
+ * The reason it may never go in the settings file sits beside it rather than
+ * arriving later as a refusal: the obvious place for a person to put a key is
+ * the file they can see, and that file is inside the folder that syncs.
+ */
+function PasswordField({
+  data,
+  value,
+  onChange,
+  onStore,
+  busy,
+  disabled,
+  note,
+  alternatives,
+}: {
+  data: EndpointData;
+  value: string;
+  onChange: (next: string) => void;
+  onStore: () => void;
+  busy: boolean;
+  disabled: boolean;
+  note: string | null;
+  alternatives: string | null;
+}) {
+  const stored = data.key.state === "configured";
+  return (
+    <div>
+      <span className="block font-semibold">Password</span>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          className="field min-w-0 flex-1 font-mono"
+          value={value}
+          placeholder={stored ? "stored — type a new one to replace it" : "not set"}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={onStore}
+          disabled={disabled || !value.trim()}
+        >
+          {busy ? "Storing…" : "Store"}
+        </button>
+      </div>
+      <p className="mt-0.5 text-[color:var(--color-muted)]">
+        {data.key.state === "unusable" ? (
+          <>
+            <span className="font-semibold text-[color:var(--color-alarm)]">
+              There is one, but it cannot be used.
+            </span>{" "}
+            {data.key.detail}
+          </>
+        ) : stored ? (
+          <>
+            Stored in the {data.key.source}, never in your settings file.
+            {data.key.source?.startsWith("environment")
+              ? " That beats the keychain, so storing a new one here changes nothing until it is unset."
+              : ""}
+          </>
+        ) : (
+          "Kept in this computer's keychain, never in your settings file."
+        )}
+      </p>
+      <details className="mt-0.5">
+        <summary className="cursor-pointer text-[color:var(--color-muted)]">
+          Why not in my settings file?
+        </summary>
+        <p className="mt-1 max-w-2xl">{data.key_explanation}</p>
+      </details>
+      {alternatives ? (
+        <details className="mt-1" open>
+          <summary className="cursor-pointer text-[color:var(--color-muted)]">
+            No keychain on this machine?
+          </summary>
+          <p className="mt-1 max-w-2xl">{alternatives}</p>
+        </details>
+      ) : null}
+      {note ? <p className="mt-1">{note}</p> : null}
+    </div>
   );
 }
 
@@ -464,7 +430,7 @@ function keyStoredNote(next: Settings): string {
   const where = next.endpoint.key.source ?? "the keychain";
   const resumed = next.resumed ?? 0;
   const shadowed = where.startsWith("environment")
-    ? ` It is stored, but ${where} still answers first, so that is what is being sent — unset it to use the one you have just stored.`
+    ? ` It is stored, but ${where} still answers first — unset it to use the one you have just stored.`
     : "";
   const drained =
     resumed > 0
@@ -474,88 +440,101 @@ function keyStoredNote(next: Settings): string {
 }
 
 /**
- * The test, step by step.
+ * One line, and everything else folded underneath it.
  *
- * A table because it is list-shaped, and one row per step including the steps
- * that were never reached: a list that shortened itself would make "it stopped
- * here" look the same as "this is not checked on this machine".
+ * Success is a single sentence naming what is doing the reading. A failure is a
+ * single sentence naming what stopped, with what to do about it under it and
+ * the full step list one tap further — the steps matter, but they are seven
+ * rows of prose and they are not what a person needs in the first second.
  */
-function Result({
-  check,
-  stale,
+function Status({
   endpoint,
+  result,
 }: {
-  check: EndpointCheck | null;
-  stale: boolean;
   endpoint: EndpointData;
+  result: ConnectResult | null;
 }) {
-  if (!check) {
-    return (
-      <div className="mt-3 text-[color:var(--color-muted)]">
-        <p>
-          Not tested from here yet. Testing changes nothing and saves nothing — it asks
-          the computer a short list of questions in order and tells you which one it
-          stopped at.
+  if (!result) {
+    if (endpoint.configured) {
+      return (
+        <p className="mt-3 text-[color:var(--color-muted)]">
+          Set up, reading with <span className="font-mono">{endpoint.model}</span>.
+          {endpoint.last_known.state !== "unknown"
+            ? ` Last time anything tried: ${endpoint.last_known.message}`
+            : ""}
         </p>
-        {/*
-          What the app already knows, which is not nothing: the worker probes
-          the box on its own, and a screen that said "not tested yet" while a
-          banner two inches above said the key had been rejected would be the
-          app disagreeing with itself.
-        */}
-        {endpoint.configured && endpoint.last_known.state !== "unknown" ? (
-          <p className="mt-1">
-            <span className="font-semibold">Last time anything tried:</span>{" "}
-            {endpoint.last_known.message}
-          </p>
-        ) : null}
-      </div>
+      );
+    }
+    return (
+      <p className="mt-3 text-[color:var(--color-muted)]">
+        Not set up yet. Everything you add is still stored and kept — nothing is read
+        for you until this connects.
+      </p>
     );
   }
+
+  const failed = result.outcome === "failed";
+  const lead = failed ? "Not connected." : result.ok ? "Connected." : "Almost.";
   return (
     <div className="mt-3">
-      {stale ? (
-        <p className="mb-2 rounded-lg border border-[color:var(--color-warn)] bg-[color:var(--color-warn-soft)] px-3 py-2">
-          <span className="font-semibold">This result is out of date.</span> Something
-          above has been changed since the test ran. Test again.
-        </p>
-      ) : (
-        <p className="mb-2">
-          <span className="font-semibold">
-            {check.ok ? "It works." : "It does not work yet."}
-          </span>{" "}
-          {check.message}
-        </p>
-      )}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Result</th>
-              <th scope="col">What was checked</th>
-            </tr>
-          </thead>
-          <tbody>
-            {check.steps.map((step) => (
-              <tr key={step.name}>
-                <td className="whitespace-nowrap">
-                  <span className="font-semibold" style={{ color: RESULT_INK[step.state] }}>
-                    {RESULT_WORD[step.state]}
-                  </span>
-                </td>
-                <td>
-                  <span className="block">{step.title}</span>
-                  {step.detail ? (
-                    <span className="mt-0.5 block text-[color:var(--color-muted)]">
-                      {step.detail}
-                    </span>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p>
+        <span
+          className="font-semibold"
+          style={{ color: failed ? "var(--color-alarm)" : "var(--color-accent)" }}
+        >
+          {lead}
+        </span>{" "}
+        {withoutLead(result.status)}
+      </p>
+      {failed && result.detail ? <p className="mt-1 max-w-2xl">{result.detail}</p> : null}
+      {result.check ? (
+        <details className="mt-1">
+          {/* An action, not a label: "What was checked" is also the second
+              column's heading, and the same four words twice on one page reads
+              as a mistake. */}
+          <summary className="cursor-pointer text-[color:var(--color-muted)]">
+            See what was checked
+          </summary>
+          <div className="table-wrap mt-1">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Result</th>
+                  <th scope="col">What was checked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.check.steps.map((step) => (
+                  <tr key={step.name}>
+                    <td className="whitespace-nowrap">
+                      <span
+                        className="font-semibold"
+                        style={{ color: RESULT_INK[step.state] }}
+                      >
+                        {RESULT_WORD[step.state]}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="block">{step.title}</span>
+                      {step.detail ? (
+                        <span className="mt-0.5 block text-[color:var(--color-muted)]">
+                          {step.detail}
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
     </div>
   );
+}
+
+/** The verdict word is already in front of it; never say "Connected" twice. */
+function withoutLead(status: string): string {
+  const rest = status.replace(/^Connected\s*[—.-]?\s*/, "").trim();
+  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : status;
 }

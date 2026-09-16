@@ -674,6 +674,11 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
         where = credentials_mod.store(value)
     except CredentialError as exc:
         print(f"error: {exc}", file=out)
+        # A terminal is not a settings screen: there is no disclosure to put
+        # these behind, and someone running this on a headless box is exactly
+        # who needs them.
+        if str(exc) == credentials_mod.KEYCHAIN_MISSING:
+            print(f"          {credentials_mod.keychain_alternatives()}", file=out)
         return EXIT_PROBLEMS
 
     print(f"stored    in the OS {where}", file=out)

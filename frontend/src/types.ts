@@ -412,7 +412,9 @@ export interface KeyState {
 }
 
 export interface EndpointSettings {
+  /** One sentence. The rest is in `about`, behind a disclosure. */
   explanation: string;
+  about: string;
   configured: boolean;
   base_url: string;
   model: string;
@@ -420,6 +422,8 @@ export interface EndpointSettings {
   defaults: { header: string; scheme: string };
   key: KeyState;
   key_explanation: string;
+  /** Shown only when storing a key fails for want of a keychain. */
+  key_alternatives: string;
   last_known: Health["endpoint"];
   /** Set when `[models.vlm]` is present but will not load. */
   problem: string | null;
@@ -447,14 +451,28 @@ export interface EndpointCheck {
   model_reported: string | null;
   message: string;
   steps: EndpointStep[];
-  settings?: Settings;
 }
 
-export interface EndpointModels {
+/**
+ * What one press of Connect found.
+ *
+ * `outcome` is the whole branch: `connected` wrote the configuration,
+ * `choose-model` is a question that could not be asked before the box was
+ * reached, and `failed` carries one sentence plus everything behind it.
+ *
+ * There is no separate "test" and no separate "save". Two buttons for one
+ * intention is two chances to do one of them and believe it is set up.
+ */
+export interface ConnectResult {
+  outcome: "connected" | "choose-model" | "failed";
+  ok: boolean;
+  saved: boolean;
+  status: string;
+  model: string;
   models: string[];
-  reached: boolean;
-  state: EndpointState;
-  message: string;
+  detail: string;
+  check: EndpointCheck | null;
+  settings: Settings;
 }
 
 export interface Settings {

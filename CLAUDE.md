@@ -473,22 +473,28 @@ GET  /api/files/content?path=   a text file, for reading in place
 DELETE /api/files?path=         remove one file or one empty folder
 GET  /api/settings              storage profile, inference endpoint, key state
 POST /api/settings/sync-profile where the folder already is
-POST /api/settings/endpoint     write base_url, model and header shape
-POST /api/settings/endpoint/key store the key in the OS keychain. Write-only.
-POST /api/settings/endpoint/models   ask the box what it runs, for the picker
-POST /api/settings/endpoint/test     run the startup probe, step by step
+POST /api/settings/endpoint/connect  reach the box, check it, save it if it works
+POST /api/settings/endpoint/key      store the key in the OS keychain. Write-only.
 ```
 
-The endpoint settings write **four keys** of `config.toml` by the same surgical
-line rewrite `sync_profile` uses: comments and every unrelated value survive.
-**The address guard runs at save time**, not at first use — a refusal that
-arrives days later, when a photograph fails to be read, is one nobody can
-connect to what they typed. The key never goes through `config.toml` and never
-comes back out of any route: `/api/settings` reports `configured | not set |
-unusable` and the *place* a key was found, which is a place and not a secret.
-The test route's step list is written in `agent/server/endpoint_check.py` and
-selected by a code, so no sentence the inference box composed reaches the
-browser — the same rule `/api/health` follows.
+**Connecting is one action.** `connect` asks the box what it runs, runs the
+startup probe against it — vision included — and writes `config.toml` only if
+every check passed. There is no route that saves an endpoint known not to work:
+that produces a screen saying it is configured above a queue that silently never
+drains. It writes **four keys** by the same surgical line rewrite `sync_profile`
+uses, so comments and every unrelated value survive.
+
+The address guard runs first, before a credential is read and before anything is
+sent. The key never goes through `config.toml` and never comes back out of any
+route: `/api/settings` reports `configured | not set | unusable` and the *place*
+a key was found, which is a place and not a secret.
+
+Every sentence the connect route can put on screen is written in
+`agent/server/endpoint_check.py` and selected by a code, so nothing the box
+composed reaches the browser — the same rule `/api/health` follows. The two
+exceptions are the address guard's refusal and the credential resolver's, both
+of which speak before the first byte leaves the machine, when there is no
+far-end text in existence to leak.
 
 `/api/files` is the folder browser behind the **Files** screen — the folder is the
 record, so the app shows it. Deletion is tiered by what the path *is*, and the tiers
