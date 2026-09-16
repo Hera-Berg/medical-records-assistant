@@ -65,6 +65,17 @@ def citation(citer: Citer, key: str, description: str = "Recorded claim") -> dic
     return _citation(resolved)
 
 
+def citation_of(resolved: Citation) -> dict[str, Any]:
+    """An already-resolved citation as JSON.
+
+    The other half of :func:`citation`, for callers that hold the resolved
+    object rather than a key and a citer — the query layer resolves every
+    passage's footnote while it is retrieving, so re-resolving it here would be
+    a second chance to disagree with itself.
+    """
+    return _citation(resolved)
+
+
 def _citation(resolved: Citation) -> dict[str, Any]:
     is_artifact = not resolved.key.startswith("ev-")
     return {

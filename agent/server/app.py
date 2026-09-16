@@ -32,6 +32,7 @@ from . import endpoint_state, static
 from .index import Index
 from .routes import (
     artifact,
+    ask,
     capture,
     files,
     health,
@@ -124,6 +125,7 @@ def create_app(
 
     for module in (
         health,
+        ask,
         capture,
         record,
         review,

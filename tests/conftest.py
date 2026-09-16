@@ -170,3 +170,94 @@ __all__ = [
     "proposal",
     "reject",
 ]
+
+
+# --- phase 10: asking the record --------------------------------------------
+
+
+class FakeBox:
+    """A stand-in for the inference client that records what it was asked.
+
+    The query tests care as much about *what reached the model* as about what
+    came back — that a rejected reading is in no byte of the request, that the
+    answering call never happens when retrieval found nothing, that exactly one
+    expansion round runs — so every call is kept and can be asserted on.
+
+    It speaks the one method :mod:`agent.query` uses and nothing else. A fake
+    with a wider surface than the thing it stands in for is a fake that lets
+    code under test drift away from the real client unnoticed.
+    """
+
+    MODEL = "fake-box/qwen"
+
+    def __init__(self, sentences=None, terms=(), truncated=False, error=None, content=None):
+        self.sentences = sentences
+        self.terms = tuple(terms)
+        self.truncated = truncated
+        self.error = error
+        self.content = content
+        self.closed = False
+        self.calls: list[dict] = []
+
+    # -- the surface `agent.query` uses ---------------------------------
+
+    def complete(self, messages, schema=None, schema_name="", max_tokens=0):
+        import json
+
+        from agent.llm.client import Completion
+
+        self.calls.append(
+            {
+                "schema_name": schema_name,
+                "messages": [dict(message) for message in messages],
+                "max_tokens": max_tokens,
+                "text": json.dumps([dict(m) for m in messages], ensure_ascii=False),
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        if schema_name.endswith("search_terms"):
+            body = json.dumps({"terms": list(self.terms)})
+        elif self.content is not None:
+            body = self.content
+        else:
+            body = json.dumps({"sentences": list(self.sentences or [])})
+        return Completion(
+            content=body,
+            model=self.MODEL,
+            raw={},
+            latency_s=0.0,
+            finish_reason="length" if self.truncated else "stop",
+            sampling={"max_tokens": max_tokens},
+        )
+
+    def close(self) -> None:
+        """Part of the client's surface: the route closes what it opened."""
+        self.closed = True
+
+    # -- what the tests ask it ------------------------------------------
+
+    @property
+    def answering_calls(self) -> list[dict]:
+        return [call for call in self.calls if not call["schema_name"].endswith("search_terms")]
+
+    @property
+    def term_calls(self) -> list[dict]:
+        return [call for call in self.calls if call["schema_name"].endswith("search_terms")]
+
+    def everything_sent(self) -> str:
+        return "\n".join(call["text"] for call in self.calls)
+
+    def record_sent(self) -> str:
+        """Everything sent *except* the question the person typed.
+
+        The distinction matters for the rejected-content tests. A question is
+        the user's own words, this second, and sending them to their own box is
+        the whole request; the rule is about the *record* never carrying a
+        retracted reading back out. Splitting on the prompt's own heading is
+        what lets a test assert the strong version of that.
+        """
+        return "\n".join(call["text"].split("QUESTION")[0] for call in self.calls)
+
+
+__all__.append("FakeBox")
