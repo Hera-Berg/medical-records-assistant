@@ -204,3 +204,38 @@ def test_the_choice_is_per_machine_and_never_in_config_toml(vault, ready_store):
     text = (vault.root / "config.toml").read_text()
     assert "this-computer" not in text and "reads_on" not in text
     assert not choice.path().is_relative_to(vault.root)
+
+
+def _claim_read_by(provenance):
+    from dataclasses import replace as dc_replace
+
+    from agent.projection import claims as claims_mod
+    from agent.server import serialise
+
+    from .conftest import claim as authored
+
+    event = authored("elbook-yar0", "med:perindopril", "dose", "5mg daily")
+    event = dc_replace(event, provenance=provenance)
+    parsed = claims_mod.parse(event)
+    return serialise.read_by(parsed)
+
+
+def test_a_claim_says_what_read_it_on_which_device():
+    facts = _claim_read_by(
+        {"model": manifest.ALIAS, "model_rev": manifest.ALIAS, "runtime_kind": "bundled", "artifact": "a3f91c"}
+    )
+    assert facts == {
+        "model": manifest.ALIAS,
+        "runtime": "bundled",
+        "device": "elbook-yar0",
+        "sentence": "Read by Qwen3.5-4B Q4_K_M running on elbook-yar0.",
+    }
+
+
+def test_a_claim_read_elsewhere_or_before_phase_11_says_only_what_is_recorded():
+    remote = _claim_read_by({"model": "Qwen3.8-Flash-Next", "runtime_kind": "endpoint", "artifact": "a3f91c"})
+    assert remote["sentence"] == "Read by Qwen3.8-Flash-Next on a computer connected from elbook-yar0."
+    older = _claim_read_by({"model": "qwen3.5:9b", "artifact": "a3f91c"})
+    assert older["sentence"] == "Read by qwen3.5:9b."
+    for facts in (remote, older):
+        assert "degraded" not in facts["sentence"].lower()

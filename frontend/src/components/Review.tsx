@@ -464,6 +464,15 @@ function Diff({ item }: { item: InboxItem }) {
           <dd>{proposed.occurred_at.exact ? longDate(proposed.occurred_at.iso) : proposed.occurred_at.render}</dd>
         </>
       ) : null}
+      {proposed.read_by ? (
+        /* Which model read the page, stated as a fact beside the value you are
+           deciding on. Not a warning and not a grade: the evidence tier says
+           what the document is; this says what read it. */
+        <>
+          <dt className="text-[color:var(--color-muted)]">Read by</dt>
+          <dd className="text-[color:var(--color-muted)]">{proposed.read_by.sentence}</dd>
+        </>
+      ) : null}
     </dl>
   );
 }

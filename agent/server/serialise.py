@@ -38,6 +38,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..runtime import manifest
 from ..projection import claims as claims_mod
 from ..projection import entities as entities_mod
 from ..projection import reconcile, temporal
@@ -114,6 +115,34 @@ def fuzzy_date(value: FuzzyDate | None) -> dict[str, Any] | None:
     }
 
 
+def read_by(item: Claim) -> dict[str, Any] | None:
+    """What read the document this claim came from, as recorded — never a verdict.
+
+    Observations from the event's own provenance: the model identity, what kind
+    of reader ran it, and the device that appended it. Nothing here says whether
+    that reader was good enough; ``MODELS.md``, "Recording which reader read
+    it". Kept apart from the evidence tier, which describes the document.
+
+    ``None`` for a correction, which a person typed, and for anything with no
+    recorded model.
+    """
+    if item.is_correction:
+        return None
+    provenance = item.provenance or {}
+    model = provenance.get("model_rev") or provenance.get("model")
+    if not isinstance(model, str) or not model:
+        return None
+    kind = provenance.get("runtime_kind")
+    name = f"{manifest.VISION_MODEL} {manifest.VISION_QUANT}" if model == manifest.ALIAS else model
+    if kind == "bundled":
+        sentence = f"Read by {name} running on {item.device}."
+    elif kind == "endpoint":
+        sentence = f"Read by {name} on a computer connected from {item.device}."
+    else:
+        sentence = f"Read by {name}."
+    return {"model": model, "runtime": kind, "device": item.device, "sentence": sentence}
+
+
 def claim(item: Claim, citer: Citer, description: str | None = None) -> dict[str, Any]:
     """One claim, with the four timestamps kept apart.
 
@@ -155,6 +184,7 @@ def claim(item: Claim, citer: Citer, description: str | None = None) -> dict[str
         "ingested_ts": item.ingested_ts,
         "artifact": item.artifact,
         "citation": citation(citer, item.cite, described),
+        "read_by": read_by(item),
     }
 
 

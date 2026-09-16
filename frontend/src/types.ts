@@ -62,6 +62,12 @@ export interface Claim {
   ingested_ts: string | null;
   artifact: string | null;
   citation: Citation;
+  /**
+   * What read the document, as recorded: model, kind of reader, device. A fact,
+   * never a judgement of quality, and never the evidence tier. Null for a
+   * correction you typed.
+   */
+  read_by: { model: string; runtime: string | null; device: string; sentence: string } | null;
 }
 
 export interface Slot {

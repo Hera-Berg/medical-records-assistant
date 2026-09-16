@@ -202,6 +202,12 @@ export function Entity({
                             <TierMark tier={reading.evidence_tier} />{" "}
                             {reading.value.literal} —{" "}
                             <Cite citation={reading.citation} navigate={navigate} />
+                            {reading.read_by ? (
+                              <span className="text-[color:var(--color-muted)]">
+                                {" "}
+                                {reading.read_by.sentence}
+                              </span>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
@@ -250,7 +256,14 @@ export function Entity({
                 <td>{slot.winner ? <When claim={slot.winner} /> : <Dash />}</td>
                 <td>
                   {slot.winner ? (
-                    <Cite citation={slot.winner.citation} navigate={navigate} />
+                    <>
+                      <Cite citation={slot.winner.citation} navigate={navigate} />
+                      {slot.winner.read_by ? (
+                        <span className="block text-[color:var(--color-muted)]">
+                          {slot.winner.read_by.sentence}
+                        </span>
+                      ) : null}
+                    </>
                   ) : (
                     <Dash />
                   )}
