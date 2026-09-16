@@ -43,10 +43,12 @@ write plain files and let the sync client do its job.
 - **Backend**: Python 3.11+, FastAPI, uvicorn, bound to `127.0.0.1` only.
 - **Frontend**: Vite + React + TypeScript + Tailwind, built to static files and served by FastAPI at
   `/`. Single origin, no dev proxy in production.
-- **Models**: see `MODELS.md`, which is normative. Summary: the vision-language model runs on a
-  remote OpenAI-compatible endpoint (self-hosted MLX box over Tailscale); `faster-whisper` runs
-  locally so voice capture works with the tailnet down. Both behind `agent/llm/` and `agent/asr/` —
-  never import a model-specific SDK outside those modules.
+- **Models**: see `MODELS.md`, which is normative. Summary: the vision-language model runs either on
+  this computer — a `llama-server` the app downloads, verifies and manages, the default — or on another
+  computer the user owns, over an OpenAI-compatible endpoint on their tailnet. The choice is per
+  machine. `faster-whisper` always runs locally so voice capture works with no network. Both behind
+  `agent/llm/` and `agent/asr/`, with the managed process in `agent/runtime/` — never import a
+  model-specific SDK outside those modules.
 - **Document text**: `pdfplumber` for text-layer PDFs and `pytesseract` as a second opinion on
   images. This is *not* the primary reader — the VLM is. Deterministic text extraction runs
   alongside it as a cross-check. See "dual-path extraction" in `MODELS.md`.
@@ -296,6 +298,42 @@ separator, never wrapped in brackets.** A value can itself contain brackets —
 an answer read off one came back with the record's own provenance pulled into
 the sentence.
 
+Added in phase 11:
+
+**Where documents are read is chosen per machine**, at `~/.config/health-agent/reader` beside the
+device identity, never in `config.toml`. "This computer" written into a synced file is false on every
+other machine that reads it. The remote endpoint's details stay in `config.toml`. A vault that already
+has `[models.vlm]` starts on another computer; a new vault starts on this one; a demo vault reads
+nowhere and downloads nothing. The default is written the first time the server starts, so it cannot
+flip later because a synced config gained a table.
+
+**Binaries and weights are downloaded, pinned and verified — never committed, never compiled.** One
+manifest in code carries URL, exact size and sha256 for the `llama-server` build and every model file,
+per platform. Git history is forever, and this project's durability claim is about the vault, not the
+repo. Files live outside the vault; a data directory inside it is refused.
+
+**The download is the one outbound connection that is not to the user's own machines**, so it never
+starts without a tap on a screen that has said the exact size, the hosts, where files go and that no
+part of the record is sent. Allowlisted hosts, https, checked per redirect hop, resumable, and verified
+before a byte is used.
+
+**Record the facts, derive the judgement.** The `degraded-tier` label is retired, not renamed.
+`extraction.completed` carries a `runtime` block — `kind`, `engine`, file hashes, elapsed time — and
+views derive whatever they say about quality from those. A quality assessment written into an
+append-only log cannot be revised when the set of readers changes. `kind` is `bundled | endpoint`,
+never "this computer": the event's own `device` already says which machine.
+
+**Identity before the key, on loopback too.** Any web page can send a request to `127.0.0.1` and
+llama-server answers cross-origin, so each launch gets a fresh key through the child's environment,
+never argv, never disk. It is handed to the client as an explicit credential — never through the
+resolver chain, which would fall through to the keychain and send the remote box's key to whatever is
+on the port — and only after the process on the port is shown to be this app's child.
+
+**The reader sleeps when idle**: 15 minutes by default, configurable per machine, never while a job is
+queued or a request is in flight, and the state says "sleeping" rather than hiding a slower first read.
+
+**macOS and Windows are pinned and unverified** until someone runs them. Say so wherever it matters.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -541,6 +579,11 @@ GET  /api/settings              storage profile, inference endpoint, key state
 POST /api/settings/sync-profile where the folder already is
 POST /api/settings/endpoint/connect  reach the box, check it, save it if it works
 POST /api/settings/endpoint/key      store the key in the OS keychain. Write-only.
+POST /api/settings/reader       read on this computer, or on another computer; sleep-after minutes
+GET  /api/reader                the bundled reader: files, download progress, state, measured speed
+POST /api/reader/download       start or continue the one-time download. Never automatic.
+POST /api/reader/cancel         stop a download, keeping what has arrived
+POST /api/reader/retry          start a reader that stopped after repeated crashes
 ```
 
 **Connecting is one action.** `connect` asks the box what it runs, runs the
@@ -671,7 +714,10 @@ Do not start a phase before the previous one's tests pass.
 8. **Consultation summary + print view.**
 9. **Wearable bulk import.** Fitbit/Apple Health export parsing, summary-only events.
 10. **Querying the record.** Not before phase 9. See below.
-11. **The `indication` predicate.** What a medication is *for*, read off the
+11. **Reading on this computer.** A managed `llama-server` and `Qwen3.5-4B`, downloaded and verified
+    on first run, as the default reader. See "Where documents are read" in `MODELS.md`. Not the default
+    until the bundled reader meets the recall bar on the eval corpus in its own right.
+12. **The `indication` predicate.** What a medication is *for*, read off the
     documents that say it. Its own piece of work — see "Next: the `indication`
     predicate".
 

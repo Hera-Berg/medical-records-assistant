@@ -2,21 +2,144 @@
 
 Normative. `CLAUDE.md` defers to this file for anything model-related.
 
-Two models run locally. Neither ever reaches the network beyond the local endpoint, and neither ever
-writes to `wiki/`.
+Two models. Neither ever reaches the network beyond an endpoint on a machine the user owns, and
+neither ever writes to `wiki/`.
 
 | Role | Runs on | Default | Purpose |
 |---|---|---|---|
-| Vision-language | **Remote** — MLX box over Tailscale | `Qwen3.8-Flash-Next` (oQ4e MLX) | Read artefacts, propose claims, draft summaries |
-| Speech | **Local** — the laptop | `faster-whisper` `small` int8 | Voice notes → transcript |
+| Vision-language | **This computer** (default) — a managed `llama-server` on loopback | `Qwen3.5-4B` Q4_K_M + mmproj | Read artefacts, propose claims |
+| Vision-language | **Another computer** (a choice) — MLX box over Tailscale | `Qwen3.8-Flash-Next` (oQ4e MLX) | The same, faster |
+| Speech | **This computer**, always | `faster-whisper` `small` int8 | Voice notes → transcript |
 
-**The split is deliberate.** ASR stays local because it is small (~500 MB), because voice notes are
-the most time-sensitive capture and must work in a waiting room with no tailnet, and because it
-avoids shipping audio over the wire at all. The VLM moves to the box because it is the part that
-actually needs the hardware, and because moving it removes model contention from the laptop entirely.
+**Where documents are read is a choice per machine, not per vault.** See "Where documents are read"
+below. Installing the app and dragging in a photo must work with no endpoint, no key and no
+Tailscale; a fast box is an option for people who have one, not a prerequisite.
 
-Assume the endpoint is unreachable a good fraction of the time — the box sleeps, the laptop drops off
-the tailnet, you're on a plane. Everything below follows from that.
+**Speech stays local whichever reader is chosen.** It is small (~500 MB), voice notes are the most
+time-sensitive capture and must work in a waiting room with no tailnet, and keeping it local avoids
+shipping audio over the wire at all.
+
+Assume a remote endpoint is unreachable a good fraction of the time — the box sleeps, the laptop drops
+off the tailnet, you're on a plane — and assume the local reader is asleep a good fraction of the time
+too, because it unloads when idle. Everything below follows from that.
+
+## Where documents are read
+
+Two options, chosen on each machine, stored at `~/.config/health-agent/reader` beside the device
+identity and **never in `config.toml`**. That file syncs to every machine, so "read on this computer"
+written from the laptop would be a false statement on the desktop — the same reasoning that put device
+identity outside the vault. The remote endpoint's details stay in `config.toml`, because the box is the
+same box from every machine.
+
+- **Read on this computer** — the default for a new vault. A `llama-server` binary and the
+  `Qwen3.5-4B` weights, managed by the app. Nothing to configure.
+- **Read on another computer** — the endpoint path described in the rest of this file.
+
+An existing vault with a `[models.vlm]` table starts on **another computer**, so upgrading changes
+nothing for someone already reading on a box. The default is written to the per-machine file the first
+time the server starts, so it cannot silently flip later because a synced config gained a table.
+A demo vault reads nowhere, downloads nothing, and starts nothing.
+
+There is **no automatic fallback** between the two. A job waits for the reader the machine chose. A
+smaller model quietly standing in because the box was asleep is exactly the substitution that made a
+"degraded" marker necessary, and it is not built.
+
+### The bundled reader
+
+`agent/llm/` does not know it exists. The client speaks OpenAI HTTP to a base URL and the address guard
+permits loopback, so the bundled reader is a process at `http://127.0.0.1:{port}/v1` and the client
+is handed settings pointing at it.
+
+**Nothing is committed to the repository and nothing is compiled on the user's machine.** The
+`llama-server` binary is downloaded like the weights: pinned to one llama.cpp build per platform, by
+exact size and sha256, from a manifest in `agent/runtime/manifest.py`. Git history is forever and the
+project's durability claim is about the vault, not the repo. `llama-cpp-python` is not used — bundling
+the binary keeps the OpenAI-HTTP seam intact.
+
+| Platform | Binary | Verified in development |
+|---|---|---|
+| Linux x64 | `llama-…-bin-ubuntu-x64.tar.gz` | yes |
+| macOS arm64 | `llama-…-bin-macos-arm64.tar.gz` (Metal) | **no** |
+| macOS x64 | `llama-…-bin-macos-x64.tar.gz` | **no** |
+| Windows x64 | `llama-…-bin-win-cpu-x64.zip` | **no** |
+
+The unverified rows are pinned and untested, and say so. Code existing for a platform is not evidence
+that it works there.
+
+**Weights and binaries live outside the vault** — `$XDG_DATA_HOME/health-agent`, `~/Library/Application
+Support/health-agent`, or `%LOCALAPPDATA%\health-agent`. A data directory that resolves inside the vault
+is refused: 3.6 GB of model would sync to Dropbox.
+
+### Downloading
+
+The one-time download is the only outbound connection this app makes other than to an inference
+endpoint the user configured. It is therefore held to rules of its own:
+
+- **Never automatic.** It starts from an explicit action on a screen that has already said the exact
+  size (from the manifest, not an estimate), which hosts it contacts, where the files go, and that no
+  part of the record is sent. An interrupted download says "Continue" and waits for a tap.
+- **Allowlisted hosts, https only, checked on every redirect hop.** Hugging Face and GitHub release
+  assets and their CDN hosts, and nothing else.
+- **Resumable.** A `.part` file and a `Range` request; a server that ignores `Range` restarts from zero
+  rather than appending the wrong bytes.
+- **Verified before use.** sha256 over the whole file, then an atomic rename. A mismatch deletes the
+  partial file and says so; there is no retry loop. A later start re-hashes a file whose size or
+  modification time has changed since it was verified.
+- **Space and memory are checked first.** Not enough free disk is a refusal before a byte is fetched.
+  Under 8 GB of total RAM is a warning that names the remote option — not a refusal.
+- **"I already have the files" is supported** by placing them in the data directory; they are
+  verified exactly as a download would be. An air-gapped machine is a legitimate configuration.
+
+### Running it
+
+One `llama-server` per machine, owned by a lock in the data directory. A second process that wants the
+reader while the server holds it is refused with a sentence, rather than loading a second 3.5 GB copy.
+
+- **Flags are not left to defaults.** `--host 127.0.0.1`, a free port, `--parallel 1` (the default
+  splits the context across slots and silently shrinks each request's room), `--jinja` (the thinking
+  toggle is a template kwarg), `--no-webui`, `--no-slots`, `--offline`, `-c` from `models.vlm.ctx`, and
+  `--alias` set to `qwen3.5-4b-q4_k_m@{first 12 of the weights sha256}`, so the identity string changes
+  exactly when the bytes do.
+- **Not port 8080.** It is llama-server's default and the most contended port on a developer's machine;
+  another llama-server may well be answering there.
+- **A key, even on loopback.** Any web page in any browser tab can send a request to `127.0.0.1`, and
+  llama-server answers cross-origin. So each launch gets a fresh random key, handed to the child through
+  `LLAMA_API_KEY` — never on the command line, where `ps` shows it to every user — and never written
+  anywhere. It reaches the client through an explicit credential, never through the resolver chain,
+  which would fall through to the keychain and send the *remote* box's key to whatever is on the port.
+- **Identity before the key.** In the pinned build only `/health` answers without a key — `/v1/models`
+  and `/props` do not — so identity before the key is *process* identity, not something a port says
+  about itself: the child this app spawned is still alive, its own output says it is listening on the
+  chosen port, and on Linux the listening socket on that port belongs to the child's pid. Only then is
+  the key released to the client. Anything else answering on that port is refused having been sent
+  nothing. After the key, the first authenticated request must report the pinned alias as `model` and
+  the pinned build as `system_fingerprint`; a disagreement stops the reader. On macOS and Windows the
+  socket-ownership check is not available and the other two stand alone.
+- **The full startup probe runs on the first start in a process**, grammar and vision both. Weights
+  without the projector load fine, answer text fine, and ignore every image. A wake from sleep, with
+  the same verified files and the same flags, checks `/props` reports vision among its modalities
+  rather than paying for a second image read.
+- **Crashes restart with backoff**, and three within ten minutes stop the reader with a state saying
+  so and naming the log file, rather than restarting for ever. A child killed by a signal is reported
+  as most likely out of memory.
+- **It sleeps when idle** — after 15 minutes by default, configurable per machine — and never while a
+  job is queued or a request is in flight. The state says "sleeping — wakes when you add something",
+  because a first read that takes ten seconds longer than the next one must not look like a fault.
+- **It stops when the app stops.** On Linux the child is also told to die with its parent; on Windows it
+  is placed in a kill-on-close job object; on macOS, which has neither, a pidfile lets the next start
+  stop an orphan after checking it is this app's binary.
+- **Its log is outside the vault**, in the data directory, and is never run verbose: verbose output
+  includes prompts.
+
+### Honest about speed
+
+A 4B model at Q4 on a laptop CPU takes 30–90 seconds a document; on Apple Silicon with Metal it is
+more like 10–30. The interface says so before the first read and, once there are readings, says what
+this machine actually measured — "usually about 70 seconds here, 6 waiting". A queue that is slow must
+never look like a queue that is broken.
+
+A question asked of the record goes before the next queued document, not behind the whole queue. It can
+still wait for the document being read, and the screen says that too.
 
 ## Vision-language model
 
@@ -38,9 +161,9 @@ Two server settings are not optional for this project:
 prefill is exactly this project's workload. If extraction is slow, test with it off before
 optimising anything else.
 
-Keep `Qwen3.5-4B` (Apache-2.0, GGUF) configured as the local offline fallback. Do not go below 4B
-there: the 2B and 0.8B variants will load on anything and produce fluent wrong doses, which is the
-one output this project cannot tolerate.
+`Qwen3.5-4B` (Apache-2.0, GGUF) is the bundled reader — see "Where documents are read". Do not go
+below 4B there: the 2B and 0.8B variants will load on anything and produce fluent wrong doses, which is
+the one output this project cannot tolerate.
 
 **Verify vision actually works at startup.** The client speaks plain OpenAI
 `/v1/chat/completions` with `image_url` content parts. Support for those parts is less uniform across
@@ -186,15 +309,35 @@ Because the box's model is not content-addressable the way a local GGUF is, keep
 `models.registry` table in the event log: an event recording each observed model identity string and
 when it was first and last seen.
 
-### Local fallback
+### Recording which reader read it
 
-Optional, off by default, and worth building only after the remote path works: `Qwen3.5-4B` at
-`UD-Q4_K_XL` via llama.cpp on the laptop, for extraction while away from the tailnet. If built, it
-carries its own model identity in provenance and its claims are marked `degraded-tier` so a later
-re-extraction against the 9B is easy to find and diff.
+An earlier draft specified a local *fallback* whose claims were marked `degraded-tier`. That label is
+retired, and it is not replaced by another label. **Record the facts, derive the judgement.**
+"Degraded" is relative to what other readers exist, which changes, and a line in an append-only log
+can never be revised — it is a quality assessment frozen at write time, which is the same mistake as
+trusting the consequence tier a payload carries instead of recomputing it from the predicate.
 
-The single-slot constraint only applies in that configuration. In the normal split — ASR local, VLM
-remote — nothing contends, and Whisper `small` at ~500 MB is the laptop's entire model footprint.
+So every `extraction.completed` carries a `runtime` block of observations:
+
+| Field | Bundled reader | Another computer |
+|---|---|---|
+| `kind` | `bundled` | `endpoint` |
+| `engine` | `llama.cpp b10997` | `null` |
+| `files` | `{filename: sha256}` for weights and projector | `null` |
+| `elapsed_s` | wall time for the whole artefact | the same |
+
+`kind` names *what* ran, never *where relative to the reader of the log*. "This computer" is false on
+every other machine that syncs the folder; `bundled` plus the event's own `device` is true everywhere.
+`claim.proposed` provenance carries `runtime_kind`, so a claim says what read it without a join. The
+review item and the entity's source list show it — "read by Qwen3.5-4B on elwood-laptop" — separately
+from the evidence tier, which describes the document and never the reader. It is not on the
+consultation summary.
+
+Whether the default reader is good enough is answered by the eval corpus, not by a label: the bundled
+reader meets the same 100% recall bar in its own right before it ships as the default.
+
+Speech and the bundled reader do not read at the same time in the background worker: a pass
+transcribes what is waiting first, and only then asks the reader for anything.
 
 ### Context
 
@@ -342,7 +485,17 @@ the page.
 
 ## Speech
 
-`faster-whisper` (CTranslate2), `small` with `compute_type=int8` on the constrained tier. Roughly
+`faster-whisper` (CTranslate2), `small` with `compute_type=int8` on the constrained tier.
+
+**The weights are fetched by the same download as the reader**, pinned by sha256 in the same manifest,
+and loaded from that local directory. Loading `small` by name makes `faster-whisper` fetch it from the
+Hugging Face hub on first use — an unannounced network call with no pin — so a name is only ever
+loaded from a cache already on disk, never fetched. `faster-whisper` is a default dependency, not an
+extra: "install and it works" has to include voice notes.
+
+**Decoding is PyAV first, `ffmpeg` on `PATH` as the fallback.** PyAV arrives with `faster-whisper` and
+is ffmpeg's own libraries, so it reads the same containers a browser or phone produces — the reason
+`ffmpeg` was chosen in the first place still holds, and nothing needs installing. Roughly
 500 MB resident, and it beats `base` on medical vocabulary by enough to matter. Do not drop to
 `tiny` — the drug-name error rate makes the transcripts actively misleading rather than merely rough.
 
@@ -413,6 +566,13 @@ mmproj_sha256 = "..."
 Local artefacts are pinned by `sha256`. The remote model cannot be, so it is pinned by the identity
 string the server reports and verified on every call.
 
+**The bundled reader's pins live in code, not in `config.toml`.** `agent/runtime/manifest.py` names each
+file's URL at a fixed revision, its exact size and its sha256, and a pin a person can edit to anything
+would defeat the verification it exists for. The pins are recorded in every `extraction.completed`
+(`runtime.files`), which is what makes "which bytes read this" answerable a year later. Changing a pin
+is a code change and a new release, and — because the alias carries the weights hash — a new model
+identity, so documents read under the old one are distinguishable from those read under the new.
+
 Every `extraction.completed` event records the model name, quant, both hashes, and the prompt hash.
 When a model is swapped, `POST /api/rebuild --reextract` re-runs everything and produces a **diff
 report**, not a silent overwrite: claims that changed, claims that appeared, claims that vanished.
@@ -431,10 +591,11 @@ prompt change, before the swap is accepted.
 missed medication is invisible and is precisely the failure this project exists to prevent. Report
 recall and precision separately and never trade recall for precision.
 
-**Run the corpus on both tiers** if the local fallback is built. The 4B and 9B results go in the same
-report. If 4B recall on medications, doses or allergies falls below 9B on any fixture, that fixture
-becomes a required review case at the fallback tier — the answer is to route it to a human, never to
-quietly accept the worse result because the box was unreachable.
+**Run the corpus against both readers.** The bundled reader is the default, so it meets the 100%
+recall bar on medications, doses and allergies in its own right — not relative to the remote box. If it
+misses a medication, a dose or an allergy on any fixture, that is a stop: the result goes to a person
+to decide, and the bar is never quietly lowered to let the default ship. Where both readers have been
+run, their results go in the same report.
 
 Five tests belong here rather than in the fixture corpus:
 
