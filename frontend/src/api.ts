@@ -13,6 +13,7 @@
 
 import type {
   ArtifactMeta,
+  AskResponse,
   CaptureResponse,
   ConnectResult,
   EntityDetail,
@@ -207,6 +208,27 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+    }),
+
+  /**
+   * Ask a question about the record.
+   *
+   * POST for a read, deliberately: the question is content — "what did the
+   * clinic say about my results" — and a GET would put it in the URL, in
+   * browser history and in any proxy's log.
+   *
+   * Sends the conversation so far as plain words. The server re-derives what
+   * each earlier question was about; a client that could send that derivation
+   * could send one no question ever produced.
+   *
+   * Nothing this route touches is written. Asking appends no event, changes no
+   * claim, and leaves no record of having been asked.
+   */
+  ask: (question: string, history: { question: string; answer: string }[] = []) =>
+    request<AskResponse>("/api/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question, history }),
     }),
 
   settings: () => request<Settings>("/api/settings"),

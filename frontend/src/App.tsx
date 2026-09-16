@@ -13,11 +13,18 @@
  * would be read as current. The summary screen writes too, but only a document:
  * it records that a sheet was prepared and never changes a claim.
  *
- * There is also no assistant to ask. Answering questions about the record is
- * phase 10 and it arrives with retrieval, citation-per-sentence and a refusal
- * classifier in front of it; a chat box wired to the model before those exist
- * is the one screen this project must not ship, because it would answer health
- * questions fluently and cite nothing.
+ * Asking the record is here too, and has its own tab rather than sitting inside
+ * capture: it is a different mode, not a way of putting something in. It is
+ * called "Ask your record" and never "chat" — the word promises advice, and the
+ * first thing anyone types under that promise is "should I be worried about
+ * this", which this application refuses. The label is the cheapest place to
+ * stop the question being asked.
+ *
+ * What made it safe to build is what took until phase 10 to exist: retrieval
+ * that is deterministic code, a citation on every sentence or no sentence, and
+ * a refusal classifier in front of the whole thing. A chat box wired to the
+ * model without those is the one screen this project must not ship, because it
+ * would answer health questions fluently and cite nothing.
  *
  * **The heading is owned by whichever screen knows the answer.** The shell sets
  * a default from the route; an entity or an artefact replaces it once loaded,
@@ -30,6 +37,7 @@ import { api } from "./api";
 import { Link, useRoute } from "./router";
 import type { Health } from "./types";
 import { Artifact } from "./components/Artifact";
+import { Ask } from "./components/Ask";
 import { Attention } from "./components/Attention";
 import { Boundary } from "./components/Boundary";
 import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./components/Capture";
@@ -141,6 +149,8 @@ export function App() {
         setHeader={setHeader}
       />
     );
+  } else if (first === "ask") {
+    screen = <Ask navigate={navigate} onBoxState={refresh} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
   } else if (first === "settings") {
@@ -265,6 +275,13 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "files") {
     return { title: "Your folder", subtitle: "Reading…" };
+  }
+  if (first === "ask") {
+    return {
+      title: "Ask your record",
+      subtitle:
+        "Questions about what is in your record — what you take, when something started, what a letter said. Every line of the answer says which of your documents it came from.",
+    };
   }
   if (first === "review") {
     return {

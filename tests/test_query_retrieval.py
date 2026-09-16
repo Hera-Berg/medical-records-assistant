@@ -75,9 +75,14 @@ def lines(answer):
 
 
 def test_an_entity_is_found_by_name():
+    """And every passage says what kind of thing it is about.
+
+    "Penicillin — reaction: rash" reads as a medication with a side effect
+    unless something says it is an allergy, and nothing else in the prompt does.
+    """
     answer = ask("what dose of perindopril am I on")
 
-    assert any("Perindopril — dose: 5mg daily" in line for line in lines(answer))
+    assert any("Perindopril (medication) — dose: 5mg daily" in line for line in lines(answer))
 
 
 def test_a_kind_question_finds_the_whole_shelf_and_nothing_else():
@@ -107,8 +112,8 @@ def test_a_predicate_question_finds_the_slot_across_entities():
     answer = ask("what doses am I on")
 
     found = lines(answer)
-    assert any("Perindopril — dose" in line for line in found)
-    assert any("Atorvastatin — dose" in line for line in found)
+    assert any("Perindopril (medication) — dose" in line for line in found)
+    assert any("Atorvastatin (medication) — dose" in line for line in found)
 
 
 def test_a_recency_question_finds_the_rows_in_that_window():
@@ -270,3 +275,102 @@ def test_retrieval_reads_the_projection_and_not_the_event_stream():
     answer = ask("what allergies do I have", record(events))
 
     assert "swelling" not in " ".join(lines(answer))
+
+
+# -- what reading the rendered answers turned up -----------------------------
+
+
+def test_the_source_is_separated_from_the_value_unambiguously():
+    """A value can contain brackets, so the source cannot be wrapped in them.
+
+    "started: November 2024 (prescriber-issued, around November 2024 (±15
+    days))" has no unambiguous end to the value, and an answer read off it came
+    back saying "started as November 2024 (prescriber-issued, around November
+    2024" — the record's own provenance pulled into the sentence as if it were
+    part of the date.
+    """
+    events = [ingested(DEVICE, "a3f91c", ts=on_day(1))]
+    started = claim(DEVICE, "med:perindopril", "started", "November 2024", ts=on_day(2),
+                    artifact="a3f91c",
+                    occurred={"value": "2024-11-02", "precision": "month",
+                              "uncertainty_days": 15})
+    events += [started, confirm(DEVICE, started.id, ts=on_day(3))]
+
+    answer = ask("when did I start perindopril", record(events))
+    line = next(p.line for p in answer.retrieval.passages if p.kind == retrieve_mod.FACT)
+
+    value, separator, source = line.partition(" · ")
+    assert separator, line
+    assert value.endswith("November 2024")
+    assert "prescriber-issued" in source
+
+
+def test_a_lifecycle_line_is_written_in_the_words_the_interface_uses():
+    """These passages are read by a person as well as by the model.
+
+    "status is stale" is the record talking to itself. The screen shows what an
+    answer was drawn from, so the same sentence has to work for the patient.
+    """
+    answer = ask("what am I taking")
+
+    state = next(p for p in answer.retrieval.passages if p.kind == retrieve_mod.LIFECYCLE)
+    assert "status is" not in state.text
+    assert "still on your list" in state.text
+
+
+def test_a_question_about_the_record_itself_does_not_match_the_timeline_wording():
+    """The timeline writes its own rows, and they are not record content.
+
+    "What does my record say about alcohol" matched three unrelated rows, on the
+    words "record" and "about" — one from the app's own phrasing ("was added to
+    the record") and one from an ordinary English sentence in a note. That reads
+    as a considered answer to a question the record cannot answer.
+    """
+    events = [
+        ingested(DEVICE, "a3f91c", ts=on_day(1)),
+        note(DEVICE, ts=on_day(2), text="Asked about the statin dose again."),
+    ]
+
+    answer = ask("what does my record say about alcohol", record(events))
+
+    assert answer.retrieval.is_empty
+    assert answer.state == "empty"
+
+
+def test_a_timeline_row_restating_a_fact_already_shown_is_dropped():
+    """One claim, one passage. The row and the fact are the same claim twice."""
+    answer = ask("what dose of perindopril am I on")
+
+    facts = {p.event_id for p in answer.retrieval.passages if p.kind != retrieve_mod.ROW}
+    rows = {p.event_id for p in answer.retrieval.passages if p.kind == retrieve_mod.ROW}
+    assert not (facts & rows)
+
+
+def test_a_practitioner_gets_no_lifecycle_line():
+    """"Dr Nguyen — how it stands: still on your list" means nothing."""
+    answer = ask("what did Dr Nguyen recommend")
+
+    for passage in answer.retrieval.passages:
+        if passage.subject_id == "person:dr-nguyen":
+            assert passage.kind != retrieve_mod.LIFECYCLE
+
+
+def test_naming_a_drug_does_not_also_retrieve_every_other_drug():
+    """"What dose of perindopril am I taking" names one medication.
+
+    "Taking" is how somebody says "medication", so it reads as a kind word — and
+    expanding it buried the one drug's dose under every other drug on the list.
+    A question that names something on the shelf is not a question about the
+    shelf.
+    """
+    answer = ask("what dose of perindopril am I taking")
+
+    subjects = {p.subject_id for p in answer.retrieval.passages if p.subject_id}
+    assert subjects == {"med:perindopril"}
+
+
+def test_a_question_that_names_nothing_still_gets_the_whole_shelf():
+    answer = ask("what medications am I taking")
+
+    subjects = {p.subject_id for p in answer.retrieval.passages if p.subject_id}
+    assert {"med:perindopril", "med:atorvastatin"} <= subjects

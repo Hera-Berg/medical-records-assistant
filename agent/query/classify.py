@@ -252,6 +252,11 @@ _KIND_WORDS: tuple[tuple[str, str], ...] = (
     ("specialist", "person"), ("specialists", "person"),
     ("practitioner", "person"), ("practitioners", "person"),
     ("clinician", "person"), ("consultant", "person"), ("surgeon", "person"),
+    # "Who prescribed them", "who told me to stop", "who is my GP". A question
+    # beginning "who" is a question about a person, and without this one it
+    # retrieved nothing at all — the record holds the practitioner and the
+    # letter, and answered "nothing in your record covers that".
+    ("who", "person"),
 )
 
 #: Words that name a slot rather than a subject.
@@ -308,6 +313,23 @@ _CHANGE_WORDS = frozenset(
 )
 
 _COUNT_PHRASES = ("how many", "how often", "how much of the time", "number of times")
+
+#: Words about the act of asking, which are never content in a health record.
+#:
+#: Dropped from the literal terms, and the reason is sharper than "they are
+#: common". The timeline writes its own rows — "An audio recording was added to
+#: the record" — so a question containing the word "record" matches the *app's*
+#: phrasing rather than anything in the folder. "What does my record say about
+#: alcohol" came back with three unrelated rows for exactly that reason, which
+#: is worse than an empty answer: it looks like a considered one.
+_META_WORDS = frozenset(
+    """
+    record records document documents file files folder added say says said
+    saying tell telling told show shows showed mention mentions mentioned
+    anything everything something thing things entry entries know contain
+    contains read
+    """.split()
+)
 
 #: A follow-up says nothing about what it is about. These are the words that
 #: point back rather than forward.
@@ -492,7 +514,7 @@ def _terms(question: str, taken: Sequence[str]) -> tuple[str, ...]:
     spent = {word for phrase in taken for word in words(phrase)}
     found: list[str] = []
     for word in content_words(question):
-        if word in spent or word in found or len(word) < 3:
+        if word in spent or word in found or word in _META_WORDS or len(word) < 3:
             continue
         found.append(word)
     return tuple(found[:8])

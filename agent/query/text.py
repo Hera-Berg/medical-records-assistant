@@ -37,15 +37,28 @@ _FOLD = str.maketrans(
 
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 
-#: Words that carry no retrieval signal. Kept short on purpose: a long stop list
-#: starts removing words that matter in a medical record ("off", "on", "up"),
-#: and the cost of leaving a word in is one term that matches nothing.
+#: Words that carry no retrieval signal.
+#:
+#: Function words only, and the boundary is deliberate: **"off", "on" and "up"
+#: are not here**, because they are the difference between "on 5mg", "came off
+#: the statin" and "the dose went up" — a stop list long enough to be tidy would
+#: take exactly the words a medical record turns on.
+#:
+#: The cost of leaving a word in is normally one term that matches nothing. It
+#: was not, once: "about" matched a note reading "Asked about the statin dose
+#: again", so a question about something the record does not hold came back with
+#: an unrelated row, which reads as a considered answer rather than as a miss.
+#: Anything added here has to be a word that cannot be content in a health
+#: record in any sentence.
 STOPWORDS = frozenset(
     """
-    a an and any are as at be been by can did do does for from had has have how
-    i im in is it its me my of on or our so than that the their them then there
-    these they this those to was were what whats when where which who whom why
-    will with you your
+    a about after again all also am an and any are as at be because been before
+    being between both but by can could did do does doing during each for from
+    further had has have having how i if im in into is it its just me more most
+    my no nor not now of once only or other our own same should so some such
+    than that the their them then there these they this those through to too
+    under until very was we well were what whats when where which while who
+    whom why will with would you your
     """.split()
 )
 

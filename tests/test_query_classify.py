@@ -272,3 +272,16 @@ def test_refusal_for_is_the_whole_gate_and_reads_nothing_else():
     assert refusal_for("should I be worried") == classify_mod.SERIOUSNESS
     assert refusal_for("what am I taking") is None
     assert refusal_for("") is None
+
+
+def test_a_who_question_is_a_question_about_a_person():
+    """"Who prescribed them" retrieved nothing at all before this.
+
+    The record holds the practitioner and the letter they wrote, and the answer
+    was "nothing in your record covers that" — a record saying it is silent
+    about something it is not silent about.
+    """
+    parsed = parse("and who prescribed them")
+
+    assert "person" in parsed.kinds
+    assert classify_mod.PERSON in parsed.shapes

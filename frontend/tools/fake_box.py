@@ -27,6 +27,15 @@ Modes:
                   what a real server's error looks like and what must never
                   reach the browser
 ``mismatched``    offers and answers as a different model than it is asked for
+``ungrounded``    answers a question with a citation it was never given, which
+                  is the sentence the app must drop before anyone reads it
+
+Questions (phase 10) are answered from the extracts the request actually
+carried: the box parses them back out and restates them, so the citations in a
+screenshot are real citations to real artefacts and the grounding rule is being
+exercised rather than mimed. It cannot do otherwise — it knows nothing about the
+record except what it was sent, which is the same constraint the real model is
+under.
 
 The mode can be changed while it runs by POSTing to ``/mode`` — that is how one
 run of the screenshot script photographs every failure without restarting. The
@@ -50,7 +59,12 @@ PROBE_TEXT = "ZQ7 VERIFY 42"
 MODEL = "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"
 OTHER_MODEL = "llama-3.2-1b-instruct"
 
-MODES = ("working", "blind", "unconstrained", "unauthorised", "mismatched")
+MODES = ("working", "blind", "unconstrained", "unauthorised", "mismatched", "ungrounded")
+
+#: The schema names ``agent.query`` asks under. Matched rather than assumed, so
+#: this box answers a question as a question and an extraction as an extraction.
+ANSWER_SCHEMA = "health_record_answer"
+TERMS_SCHEMA = "health_record_search_terms"
 
 
 class Box:
@@ -156,8 +170,97 @@ def make_handler(box: Box):
     return Handler
 
 
+def _extracts(body: dict) -> list[tuple[str, str]]:
+    """The ``[key] Title: value`` lines this request carried, as ``(key, line)``.
+
+    Parsed back out of the prompt rather than invented. A box that answered from
+    anything else would be photographing a mock instead of the pipeline.
+    """
+    found: list[tuple[str, str]] = []
+    for message in body.get("messages", []):
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        for raw in content.splitlines():
+            line = raw.strip()
+            if not line.startswith("[") or "] " not in line:
+                continue
+            key, _, rest = line[1:].partition("] ")
+            if key and rest:
+                found.append((key, rest))
+    return found
+
+
+def _sentence(rest: str) -> str:
+    """One extract restated as a sentence. Deliberately plain.
+
+    This is a stand-in for a 9B model and it is not pretending to write like
+    one: what the screenshots need to show is a sentence, its source and the
+    document behind it, and prose that flattered the fake would make the shot
+    less honest rather than more.
+    """
+    # The source is separated by " \u00b7 " precisely so that it can be cut off
+    # without guessing where the value ends — a value can contain brackets.
+    said = rest.split(" \u00b7 ")[0].strip()
+    subject, separator, tail = said.partition(" \u2014 ")
+    name = subject.split(" (")[0].strip()
+    if not separator or ": " not in tail:
+        return f"Your record says: {said}"
+    predicate, _, value = tail.partition(": ")
+    if " " in predicate:
+        # A phrase rather than a slot name — "how it stands". "gives your
+        # Perindopril how it stands as" is not English in any model's voice.
+        return f"Your {name} is {value.strip()}."
+    return f"Your record gives your {name} {predicate} as {value.strip()}."
+
+
+def _answer(body: dict, mode: str) -> str:
+    """A grounded answer to a question, built from the extracts it was sent."""
+    extracts = _extracts(body)
+    if not extracts:
+        return json.dumps({"sentences": []})
+    if mode == "ungrounded":
+        # Fluent, confident, and citing a document that was never in front of
+        # it. The app has to drop this rather than show it with a caveat.
+        return json.dumps(
+            {
+                "sentences": [
+                    {
+                        "text": "Your record shows this has been stable for some time.",
+                        "source": "ffffff",
+                    }
+                ]
+            }
+        )
+    return json.dumps(
+        {
+            "sentences": [
+                {"text": _sentence(rest), "source": key}
+                for key, rest in extracts[:3]
+            ]
+        }
+    )
+
+
 def _completion(body: dict, mode: str, model: str) -> dict:
     """What this box answers, given what it was asked and how it is behaving."""
+    schema_name = (
+        (body.get("response_format") or {}).get("json_schema", {}).get("name", "")
+    )
+    if schema_name == ANSWER_SCHEMA and mode != "unconstrained":
+        return _envelope(_answer(body, mode), model)
+    if schema_name == TERMS_SCHEMA and mode != "unconstrained":
+        # Search terms, taken off the question itself: a real model would do
+        # better, and anything cleverer here would be this file guessing at the
+        # record instead of the app retrieving from it.
+        words = [
+            word
+            for message in body.get("messages", [])
+            if isinstance(message.get("content"), str)
+            for word in message["content"].split("QUESTION")[-1].split()
+            if len(word) > 4
+        ]
+        return _envelope(json.dumps({"terms": words[:3]}), model)
     if body.get("response_format"):
         # A server honouring guided decoding returns the schema it was given.
         # One that does not narrates — which is what breaks every extraction.

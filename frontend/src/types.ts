@@ -669,3 +669,64 @@ export interface SummaryList {
   summaries: SummaryRow[];
   as_of: string;
 }
+
+/* ------------------------------------------------------------ asking (phase 10) */
+
+/**
+ * One sentence of an answer, and the document it rests on.
+ *
+ * The citation is not optional and there is no variant of this without one. A
+ * sentence the server could not attribute is dropped before the answer is sent,
+ * so the type says what the wire actually carries: there is no "unsourced
+ * sentence" shape for a screen to have to decide how to render.
+ */
+export interface AnswerSentence {
+  text: string;
+  citation: Citation;
+}
+
+/** One entry retrieval matched, in the parts the screen renders separately. */
+export interface FoundEntry {
+  title: string;
+  text: string;
+  /** The record's tier, rendered by the screen in the patient's words. */
+  tier: Tier | null;
+  corrected: boolean;
+  when: string;
+  subject_id: string | null;
+  citation: Citation;
+}
+
+/**
+ * What came back from one question.
+ *
+ * `state` is the whole vocabulary of outcomes and each has its own sentence in
+ * `message`: `answered`, `empty` (your record does not cover it), `refused`
+ * (a question about meaning, not about the record), `offline` (no box, so no
+ * written answer), `unattributed`, `cut-off`, `unreadable`, `no-question`,
+ * `too-long`. `empty` and `unattributed` are deliberately different: one says
+ * the record is silent, the other says the answer was.
+ */
+export interface AskResponse {
+  question: string;
+  state:
+    | "answered"
+    | "empty"
+    | "refused"
+    | "offline"
+    | "unattributed"
+    | "cut-off"
+    | "unreadable"
+    | "no-question"
+    | "too-long";
+  message: string;
+  sentences: AnswerSentence[];
+  tally: string;
+  refusal: string | null;
+  refusal_next: string;
+  found: FoundEntry[];
+  found_total: number;
+  box: string | null;
+  turns_left: number;
+  as_of: string;
+}

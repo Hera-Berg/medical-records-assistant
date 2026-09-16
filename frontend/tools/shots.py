@@ -438,6 +438,161 @@ def endpoint_shots(play, out: Path, work: Path) -> None:
         print(f"  (worked in {work})")
 
 
+# --- asking the record ------------------------------------------------------
+
+
+def ask_shots(play, out: Path, work: Path) -> None:
+    """Every state the question screen can hold, each one genuinely reached.
+
+    Builds its own world for the same reason ``--endpoint-only`` does: the
+    states worth photographing need a machine on the other end behaving in a
+    particular way — answering, refusing the key, citing a document it was never
+    given — and none of them is reachable by clicking around on a laptop with a
+    sleeping box.
+
+    Nothing between the browser and that box is stubbed. The classifier, the
+    retrieval, the citation check and the drop of an unattributable sentence are
+    all the application, and the citations in these shots point at artefacts
+    that are really in the demo vault.
+    """
+    vault, home, server, box_server, box, origin = endpoint_world(work)
+    browser = None
+    url = f"http://127.0.0.1:{BOX_PORT}/v1"
+    try:
+        wait_for(origin)
+        browser = play.chromium.launch()
+        context = browser.new_context(viewport=DESKTOP)
+        page = context.new_page()
+
+        # 1. The screen before anything is asked: what it is for, and what it
+        #    will not do, above five questions in the shapes it handles.
+        page.goto(f"{origin}/ask")
+        page.wait_for_selector("text=For example:")
+        shoot(page, out, "50-ask-empty")
+
+        # 2. The box is asleep — nothing has been connected yet, and that is a
+        #    real state of a fresh vault rather than a posed one. Retrieval runs
+        #    without it and the entries it found are all cited.
+        page.get_by_role("button", name="What allergies do I have?").click()
+        page.wait_for_selector("text=What your record holds about this")
+        shoot(page, out, "51-ask-no-box")
+
+        # --- connect the box, and ask it things --------------------------
+        write_key(home)
+        page.goto(f"{origin}/settings")
+        page.wait_for_selector("text=The computer that reads your documents")
+        page.get_by_role("textbox", name="Address").fill(url)
+        press_connect(page)
+
+        # 3. A good answer. Every sentence carries the document it came from,
+        #    and the entries behind it fold away underneath.
+        page.goto(f"{origin}/ask")
+        ask(page, "What dose of perindopril am I taking?")
+        shoot(page, out, "52-ask-answered")
+
+        # 4. The same answer with its sources opened.
+        page.get_by_text("What this was read from").click()
+        page.wait_for_timeout(200)
+        shoot(page, out, "53-ask-sources-open")
+
+        # 5. A follow-up, which inherits the subject of the question before it.
+        ask(page, "And when did that start?")
+        shoot(page, out, "54-ask-follow-up")
+
+        # 6. A question the record does not cover. The model is not asked at
+        #    all — this sentence is never a fallback to what it happens to know.
+        page.goto(f"{origin}/ask")
+        ask(page, "What is the capital of France?")
+        shoot(page, out, "55-ask-empty-retrieval")
+
+        # 7. A question about meaning, refused by the classifier before
+        #    anything is read, pointing at the thing that does help.
+        page.goto(f"{origin}/ask")
+        ask(page, "Is my thyroid result serious?")
+        shoot(page, out, "56-ask-refused")
+
+        # 8. A question aimed straight at content the user rejected. The demo
+        #    seeds a mis-heard "alcohol dependence" that was rejected; none of
+        #    it may appear here, under this phrasing or any other.
+        page.goto(f"{origin}/ask")
+        ask(page, "What does my record say about alcohol?")
+        shoot(page, out, "57-ask-rejected-content")
+
+        # 9. An answer that cites a document it was never shown. The app drops
+        #    the sentence and says so, rather than printing it with a caveat.
+        set_mode("ungrounded")
+        page.goto(f"{origin}/ask")
+        ask(page, "What dose of perindopril am I taking?")
+        shoot(page, out, "58-ask-unattributable")
+        set_mode("working")
+
+        # 10. The key rotated. Different from a sleeping box, here as
+        #     everywhere: this one needs a person.
+        set_mode("unauthorised")
+        page.goto(f"{origin}/ask")
+        ask(page, "What allergies do I have?")
+        shoot(page, out, "59-ask-unauthorised")
+
+        # Put the box back, through the screen that actually does it. The state
+        # is sticky — this route records a failure and deliberately never
+        # records a success, because answering a text question proves nothing
+        # about whether the box can read a photograph — so reconnecting is the
+        # real way back, and it runs the real probe. Done here so what follows
+        # is not photographed under a banner left over from this shot.
+        set_mode("working")
+        page.goto(f"{origin}/settings")
+        page.wait_for_selector("text=The computer that reads your documents")
+        press_connect(page)
+
+        # 11. The conversation's third question, where it says so and stops.
+        page.goto(f"{origin}/ask")
+        ask(page, "What am I taking?")
+        ask(page, "And the doses?")
+        ask(page, "And who prescribed them?")
+        shoot(page, out, "60-ask-conversation-full")
+
+        small = context.new_page()
+        small.set_viewport_size(PHONE)
+        small.goto(f"{origin}/ask")
+        small.wait_for_selector("text=For example:")
+        small.get_by_role("button", name="What allergies do I have?").click()
+        small.wait_for_timeout(1500)
+        shoot(small, out, "61-ask-phone")
+        small.close()
+
+        context.close()
+    finally:
+        if browser is not None:
+            browser.close()
+        try:
+            box_server.shutdown()
+            box_server.server_close()
+        except OSError:
+            pass
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)
+        print(f"  (worked in {work})")
+
+
+def ask(page, question: str) -> None:
+    """Type one question and wait for the answer to land."""
+    page.get_by_role("textbox", name="Ask your record").fill(question)
+    page.get_by_role("button", name="Ask", exact=True).click()
+    # Waits for the one sentence every in-flight question puts on the page, and
+    # no outcome leaves there. Deliberately not "wait for the Ask button to come
+    # back": the third question of a conversation leaves it disabled, which is
+    # the cap working, and a wait written that way would hang on it.
+    page.wait_for_function(
+        "() => !document.body.innerText.includes('Reading your record')",
+        timeout=30000,
+    )
+    page.wait_for_timeout(300)
+
+
 def main() -> int:
     from playwright.sync_api import sync_playwright
 
@@ -471,6 +626,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--ask-only",
+        action="store_true",
+        help=(
+            "photograph the question screen. Ignores --origin: like "
+            "--endpoint-only it starts its own server on a throwaway demo "
+            "vault, with an isolated config home and its own fake inference "
+            "box on loopback"
+        ),
+    )
+    parser.add_argument(
         "--waiting-only",
         action="store_true",
         help=(
@@ -491,6 +656,11 @@ def main() -> int:
     with sync_playwright() as play:
         if args.endpoint_only:
             endpoint_shots(play, out, work)
+            print(f"\n{len(list(out.glob('*.png')))} screenshots in {out}")
+            return 0
+
+        if args.ask_only:
+            ask_shots(play, out, work)
             print(f"\n{len(list(out.glob('*.png')))} screenshots in {out}")
             return 0
 

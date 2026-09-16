@@ -96,6 +96,13 @@ export function Sidebar({
 
       <nav className="flex flex-wrap gap-0.5 px-2 pb-3 md:block md:gap-1 md:pb-0">
         <Item to="/" label="Timeline" path={path} navigate={navigate} exact icon={<Clock />} />
+        <Item
+          to="/ask"
+          label="Ask your record"
+          path={path}
+          navigate={navigate}
+          icon={<Question />}
+        />
         <Item to="/record" label="Your record" path={path} navigate={navigate} icon={<Book />} />
         <Item
           to="/review"
@@ -181,6 +188,18 @@ function Sheet() {
       <path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17V3a.5.5 0 0 1 .5-.5Z" />
       <path d="M12 2.5V6h3" />
       <path d="M7.5 9.5h5M7.5 12.5h5" />
+    </svg>
+  );
+}
+
+/* A question mark, because that is what this one takes. Deliberately not a
+   speech bubble: the rail should not promise a conversation with somebody. */
+function Question() {
+  return (
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M7.9 7.8a2.2 2.2 0 1 1 2.6 2.4v1.3" strokeLinecap="round" />
+      <path d="M10.5 14.3h.01" strokeLinecap="round" strokeWidth="1.9" />
     </svg>
   );
 }

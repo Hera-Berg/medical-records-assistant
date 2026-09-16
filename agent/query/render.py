@@ -103,6 +103,13 @@ BOX_MESSAGES: dict[str, str] = {
         "answer written out. Everything below is from your record and was found "
         "without it."
     ),
+    # Its own sentence, because it is its own thing: nobody was asked and
+    # nothing failed. Reporting a deliberate choice as "no computer is set up"
+    # sends someone to fix a setting that is already correct.
+    "asked-not-to": (
+        "Not contacting the computer that writes answers, because you asked not "
+        "to. Everything below is from your record."
+    ),
 }
 
 

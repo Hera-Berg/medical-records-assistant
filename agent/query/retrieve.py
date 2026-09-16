@@ -45,6 +45,7 @@ from typing import Iterable, Mapping, Sequence
 from ..projection import Projection
 from ..projection.citations import Citation, Citer
 from ..projection.claims import Claim
+from ..projection import entities as entities_mod
 from ..projection.entities import Entity
 from ..projection.reconcile import REJECTED, Slot
 from ..projection.timeline import Row
@@ -86,6 +87,10 @@ class Passage:
 
     key: str
     kind: str
+    #: The event this came off. Two passages can share a citation — a script
+    #: says several things — so this is what tells "the same fact twice" from
+    #: "two facts off one document".
+    event_id: str
     subject_id: str | None
     title: str
     text: str
@@ -114,12 +119,24 @@ class Passage:
 
     @property
     def provenance(self) -> str:
-        """"(prescriber-issued, 4 June 2026)", for the prompt."""
+        """"· prescriber-issued, 4 June 2026", for the prompt.
+
+        Set off by a separator rather than wrapped in brackets, and that is not
+        a style choice. A value can itself contain brackets — "November 2024
+        (±15 days)" — so "value (tier, date)" has no unambiguous end to the
+        value, and a reader working left to right takes the source into the
+        answer. Found by reading a rendered answer that said "started as
+        November 2024 (prescriber-issued, around November 2024"; the same
+        sentence would come back from a real model given the same line.
+        """
         parts = ["you corrected this" if self.corrected else (self.tier or "")]
-        if self.when:
+        # Not when the title is already the date. A timeline row is headed by
+        # its date, and "27 August 2026: … · prescriber-issued, 27 August 2026"
+        # reads as two different dates to anyone skimming.
+        if self.when and self.when != self.title:
             parts.append(self.when)
         joined = ", ".join(part for part in parts if part)
-        return f" ({joined})" if joined else ""
+        return f" \u00b7 {joined}" if joined else ""
 
     @property
     def line(self) -> str:
@@ -217,8 +234,40 @@ def _when(claim: Claim) -> str:
     return ""
 
 
+#: What kind of thing an entity is, in a word. Put in every passage title
+#: because the model cannot otherwise tell: "Penicillin — reaction: rash" reads
+#: as a medication with a side effect unless something says it is an allergy,
+#: and that is precisely the confusion this record exists to prevent.
+KIND_NOUNS = {
+    "med": "medication",
+    "allergy": "allergy",
+    "problem": "problem",
+    "person": "person",
+}
+
+#: The record's status word, in the words the interface uses everywhere else.
+#: These passages are read twice — by the model, and by the person looking at
+#: what an answer was drawn from — and "status is stale" is the record talking
+#: to itself. `stale` carries its own explanation because the word alone reads
+#: as a fault, and it is not one: the entry stays on the list.
+STATUS_WORDS = {
+    entities_mod.ACTIVE: "still on your list",
+    entities_mod.STALE: (
+        "still on your list, and nothing has confirmed it since it was expected "
+        "to run out"
+    ),
+    entities_mod.STOPPED: "stopped",
+    entities_mod.CONFLICTED: "two sources disagree about it",
+}
+
+
 def _title(entity: Entity, predicate: str) -> str:
-    return f"{entity.name} — {predicate.replace('_', ' ')}"
+    kind = KIND_NOUNS.get(entity.subject.kind, entity.subject.kind)
+    # The `name` slot's value *is* the name, so printing "Hypertension — name"
+    # in front of it says the same word three times. The kind still gets said.
+    if predicate == "name":
+        return f"{entity.name} ({kind})"
+    return f"{entity.name} ({kind}) — {predicate.replace('_', ' ')}"
 
 
 def _passage(
@@ -235,6 +284,7 @@ def _passage(
     return Passage(
         key=claim.cite,
         kind=kind,
+        event_id=claim.event_id,
         subject_id=entity.id,
         title=_title(entity, claim.predicate),
         text=f"{claim.value.literal}{suffix}",
@@ -308,12 +358,21 @@ def _lifecycle_passages(
     the entity rather than re-derived, so the answer and the page agree by
     construction.
     """
+    # Not for a person. "Dr Nguyen — current state: status is active" is a
+    # sentence about a filing state that means nothing about a practitioner,
+    # and a passage the answer cannot use is a passage spending prompt budget.
+    if entity.subject.kind == "person":
+        return []
     anchor = _anchor_claim(entity)
     if anchor is None:
         return []
     citation = citer.cite(anchor.cite, "Recorded claim")
-    lines: list[str] = [f"status is {entity.status}"]
-    if entity.stale:
+    lines: list[str] = [STATUS_WORDS.get(entity.status, entity.status)]
+    # `status` carries the most urgent of several states, so a conflicted
+    # medication that is *also* out of supply says only "conflicted". The
+    # staleness is the thing a clinician would ask about, so it is said
+    # separately rather than lost to the precedence.
+    if entity.stale and entity.status != entities_mod.STALE:
         lines.append("nothing has confirmed it since it was expected to run out")
     if entity.last_confirmed is not None:
         lines.append(f"last confirmed {entity.last_confirmed.render()}")
@@ -326,8 +385,9 @@ def _lifecycle_passages(
         Passage(
             key=anchor.cite,
             kind=LIFECYCLE,
+            event_id=anchor.event_id,
             subject_id=entity.id,
-            title=f"{entity.name} — current state",
+            title=f"{entity.name} ({KIND_NOUNS.get(entity.subject.kind, '')}) — how it stands",
             text="; ".join(lines),
             tier=entity.evidence_tier or anchor.evidence_tier,
             corrected=False,
@@ -345,8 +405,9 @@ def _lifecycle_passages(
             Passage(
                 key=report.claim.cite,
                 kind=LIFECYCLE,
+                event_id=report.claim.event_id,
                 subject_id=entity.id,
-                title=f"{entity.name} — reported stopped",
+                title=f"{entity.name} ({KIND_NOUNS.get(entity.subject.kind, '')}) — reported stopped",
                 text=(
                     f"you reported stopping this ({report.tier}"
                     + (f", {report.when.render()}" if report.when is not None else "")
@@ -385,6 +446,7 @@ def _row_passage(row: Row, citer: Citer, facet: str, rank: int, position: int) -
     return Passage(
         key=row.cite,
         kind=ROW,
+        event_id=row.event_id,
         subject_id=row.subject_id,
         title=when,
         text=row.text + (f" ({row.reading_text})" if row.reading_text else ""),
@@ -424,6 +486,13 @@ def _entities_for(question: Question, projection: Projection) -> list[tuple[str,
 
     for subject_id in question.entities:
         add(subject_id, classify_mod.ENTITY)
+
+    # A named entity settles what the question is about, and the kind word was
+    # only how they said it: "what dose of perindopril am I taking" contains
+    # "taking", and expanding that to every medication buried one drug's dose in
+    # a list of eleven. The shelf is for questions that name nothing on it.
+    if found:
+        return found[:MAX_ENTITIES]
 
     for kind in question.kinds:
         for subject_id in sorted(projection.entities):
@@ -672,12 +741,24 @@ def _predicate_passages(entity: Entity, slot: Slot, citer: Citer) -> list[Passag
 
 
 def _dedupe(passages: Sequence[Passage]) -> list[Passage]:
-    """One passage per distinct line, keeping the first (best-ranked) one."""
+    """One passage per distinct line, keeping the first (best-ranked) one.
+
+    And one further cut: a **timeline row for a claim already shown as a fact**
+    is dropped. The row and the fact are the same claim rendered twice — the
+    timeline's way of saying it and the entity page's — and sending both spends
+    the prompt budget on a duplicate while inviting the answer to state the same
+    thing in two sentences with two footnotes to one document. Rows still stand
+    on their own where no fact covers them, which is every artefact row, every
+    note, and every claim whose entity was not retrieved.
+    """
     seen: set[tuple[str, str, str]] = set()
+    covered = {p.event_id for p in passages if p.kind != ROW}
     kept: list[Passage] = []
     for passage in passages:
         identity = (passage.key, passage.title, passage.text)
         if identity in seen:
+            continue
+        if passage.kind == ROW and passage.event_id in covered:
             continue
         seen.add(identity)
         kept.append(passage)

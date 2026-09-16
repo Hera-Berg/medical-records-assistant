@@ -44,6 +44,12 @@ verbatim; nothing on the sheet is written by a model. ``--preview`` composes it
 and writes nothing, which is the way to see what a sheet will say before an
 event and two files exist.
 
+``ask`` answers a question about the record, from the record. It appends
+nothing and writes nothing — a query is not an event, and there is deliberately
+no local log of what was asked. With no box reachable it still prints what
+deterministic retrieval found, each entry cited, because that is most of the
+value and all of the citations.
+
 ``set-key`` writes the inference credential to the OS keychain. It never writes
 one to ``config.toml``, which lives in the vault and syncs with it.
 
@@ -69,6 +75,7 @@ from .summary import store as summary_store
 from . import demo as demo_mod
 from . import ingest as ingest_mod
 from . import projection as projection_mod
+from . import query as query_mod
 from . import vault as vault_mod
 from .extract import (
     evaluate as evaluate_mod,
@@ -78,7 +85,8 @@ from .extract import (
     session,
 )
 from .llm import credentials as credentials_mod
-from .errors import CredentialError, HealthAgentError
+from .query import render as query_render
+from .errors import CredentialError, EndpointNotConfigured, HealthAgentError
 from .vault import Vault
 
 EXIT_OK = 0
@@ -658,6 +666,110 @@ def cmd_transcribe(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_ask(args: argparse.Namespace, out: TextIO) -> int:
+    """Answer one question about the record, from the record.
+
+    Writes nothing. Not the wiki, not the log, and no record of having been
+    asked — see :mod:`agent.query`.
+
+    The terminal gets footnotes rather than links, in the same shape the wiki
+    uses, because the folder has to outlive the app: a citation somebody can
+    follow by hand into ``raw/`` is worth more than one that needs a server.
+    """
+    vault = Vault.open(args.vault)
+    as_of = projection_mod.parse_as_of(args.as_of)
+    record = query_mod.Record.of(vault.read().events, as_of)
+
+    client = None
+    box = "asked-not-to" if args.offline else "not-configured"
+    if not args.offline:
+        try:
+            client = session.open_client(vault)
+        except EndpointNotConfigured:
+            box = "not-configured"
+        except HealthAgentError as exc:
+            box = query_mod.box_for(exc)
+            print(f"note      {exc}", file=out)
+
+    try:
+        answer = query_mod.ask(args.question, record, client=client, box=box)
+    finally:
+        if client is not None:
+            client.close()
+
+    if args.json:
+        json.dump(_ask_payload(answer), out, indent=2, sort_keys=True)
+        print("", file=out)
+        return EXIT_OK
+
+    if answer.state == query_render.REFUSED:
+        print(answer.message, file=out)
+        print("", file=out)
+        print(answer.refusal_next, file=out)
+        return EXIT_OK
+
+    if answer.sentences:
+        for sentence in answer.sentences:
+            print(f"{sentence.text}[^{sentence.key}]", file=out)
+    else:
+        print(answer.message, file=out)
+
+    if answer.tally:
+        print("", file=out)
+        print(answer.tally, file=out)
+
+    # What was found, when there is no written answer. Never instead of one:
+    # an answer that was written and cited stands on its own.
+    if not answer.sentences and answer.retrieval is not None:
+        label = "found"
+        for passage in answer.retrieval.passages[:12]:
+            print(
+                f"{label:<9} {passage.title}: {passage.text}"
+                f"{passage.provenance}[^{passage.key}]",
+                file=out,
+            )
+            label = ""
+
+    cited = answer.sources
+    if cited:
+        print("", file=out)
+        for citation in cited:
+            print(citation.definition(), file=out)
+    return EXIT_OK
+
+
+def _ask_payload(answer) -> dict[str, Any]:
+    """The answer as an object, for a script that wants to read it.
+
+    Deliberately the same shape the HTTP route sends, minus what only a browser
+    needs. Two shapes for one answer is two places for the citation rule to be
+    got wrong.
+    """
+    return {
+        "question": answer.question,
+        "state": answer.state,
+        "message": answer.message,
+        "sentences": [
+            {
+                "text": sentence.text,
+                "cite": sentence.key,
+                "source": sentence.citation.text,
+                "path": sentence.citation.target,
+            }
+            for sentence in answer.sentences
+        ],
+        "tally": answer.tally,
+        "refusal": answer.refusal,
+        "box": answer.box,
+        "found": [
+            {"title": p.title, "text": p.text, "cite": p.key, "tier": p.tier}
+            for p in (answer.retrieval.passages if answer.retrieval else ())
+        ],
+        "model": answer.model,
+        "prompt_hash": answer.prompt_hash,
+    }
+
+
 def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     """Write the inference credential to the OS keychain.
 
@@ -1059,6 +1171,29 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--json", action="store_true", help="machine-readable output")
     _add_vault(transcribe)
     transcribe.set_defaults(func=cmd_transcribe)
+
+    ask = subparsers.add_parser(
+        "ask",
+        help="ask a question about your record, answered only from your record",
+    )
+    ask.add_argument("question", help="the question, in your own words")
+    ask.add_argument(
+        "--offline",
+        action="store_true",
+        help=(
+            "do not contact the inference box at all; print what deterministic "
+            "retrieval found, each entry cited"
+        ),
+    )
+    ask.add_argument(
+        "--as-of",
+        default=None,
+        dest="as_of",
+        help="the moment to read the record at; defaults to now",
+    )
+    ask.add_argument("--json", action="store_true", help="machine-readable output")
+    _add_vault(ask)
+    ask.set_defaults(func=cmd_ask)
 
     set_key = subparsers.add_parser(
         "set-key",
