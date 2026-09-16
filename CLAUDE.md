@@ -231,6 +231,58 @@ tier for `med:perindopril`) attaches to that entity as well. Anomalies are regen
 so they need no persistence, but they must be surfaced: `/api/health` in phase 5 and the review
 inbox in phase 7 both report the count, so they cannot scroll past unseen.
 
+Added in phase 10:
+
+**Retrieval reads the projection, never the event stream.** Reconciliation is
+what applies the rejection suppression, so building only from reconciled slots,
+assembled entities and timeline rows is what makes "rejected content appears in
+no answer" hold by construction rather than by this layer remembering to check.
+The same rule `agent/server/serialise.py` follows, for the same reason.
+
+**And a second withholding over free text, keyed on `(wording, artefact)`.** A
+rejection retracts a claim, not a recording, so a transcript can still carry the
+words — legitimately, on the timeline, where the record shows everything it
+holds. An answer is produced on demand by a question aimed at it and then read
+aloud, so a passage carrying a rejected reading's own wording is withheld,
+silently, because naming it would point straight at it. Keyed on the artefact as
+well as the wording, exactly as the suppression key is: a *different* document
+saying the same thing is new evidence and the user's to decide again.
+
+**Interpretation is refused at the question, by a table of phrasings.** The hard
+part of that table is not what it catches but what it must let through: "is my
+thyroid result serious" is refused and "what am I taking for my blood pressure"
+is not, and both live in the same file with the counterexamples beside them.
+
+**The one expansion round is one because it is a function call.** The model is
+shown the question and the titles of wiki pages — nothing read out of an artefact
+— and returns words, folded to plain text before use, so a "term" written to look
+like a path arrives as the words in it. The vault syncs from a third party and
+nothing in it may steer what gets read next.
+
+**A conversation may carry three questions, and a follow-up inherits the
+previous turn's subject but not its predicate.** "When was that" is asking about
+a date; carrying "dose" into it would answer the first question twice, which is
+what a model refining across rounds looks like from the inside. Prior turns are
+dropped first when the prompt is tight: the current question's evidence outranks
+the conversation's memory. What the architecture forbids is the model refining
+across rounds, not the conversation having a memory.
+
+**There is no local record of the questions, and no setting that creates one.**
+It would be the one file accumulating what the patient asked, inside a folder
+that syncs to a third party, and questions disclose more than the record does. A
+setting someone can turn on is a file that can exist.
+
+**A failed question updates what the box's state is; a successful one does not.**
+Answering a text question proves the box is reachable and the key is good, and
+proves nothing about whether it can read a photograph. "Working" here means the
+startup probe passed, vision included.
+
+**Every value a passage carries is separated from its provenance by a
+separator, never wrapped in brackets.** A value can itself contain brackets —
+"November 2024 (±15 days)" — so `value (tier, date)` has no unambiguous end, and
+an answer read off one came back with the record's own provenance pulled into
+the sentence.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -466,6 +518,7 @@ GET  /api/artifact/{hash}       original bytes, correct mime, inline disposition
 GET  /api/review                pending queue, grouped by consequence tier
 POST /api/review/{event_id}     confirm | reject | correct
 POST /api/summary               generate consultation summary
+POST /api/ask                   one question about the record; writes nothing
 GET  /print/{summary_id}        print-optimised A4 HTML
 POST /api/rebuild               wipe wiki/ + index, replay events
 GET  /api/files?path=           one folder in the vault, or one file's description
@@ -504,6 +557,12 @@ artefact, `events/` **never at any tier of confirmation**, and `config.toml` nev
 A UI that can unlink a shard is a UI that can destroy the record; removing the vault
 is the file manager's job. Every path is checked by shape and again after symlink
 resolution.
+
+`/api/ask` is the one route that runs inference while somebody waits, and that is
+deliberate: the answer *is* the request, and there is nothing to queue it into
+because answers are ephemeral. POST rather than GET for a read, because the
+question is content and a GET puts it in browser history and in every proxy log.
+It appends nothing, and there is no record of what was asked — see phase 10.
 
 `/api/capture` must return before any inference runs. The user is in a waiting room; never block the
 UI on a 9B model.
@@ -612,11 +671,19 @@ headaches?" Not "what does this result mean" and not "should I be worried".
 
 Architecture: **deterministic retrieval, single grounded generation.** Not an agent loop.
 
-1. Resolve entities mentioned in the question against the wiki index in code — exact and normalised
-   string match, plus code-system lookup. No model call.
+1. Classify the question's *shape* in code and retrieve accordingly. An entity mention resolves by
+   exact and normalised string match plus the salt table — but many questions name no entity, and
+   retrieval handles those too: by kind ("what allergies do I have"), by person ("what did Dr Nguyen
+   recommend"), by predicate ("what doses changed"), by recency ("what happened last month"), by
+   kind of document ("what did the blood test say"). A question carries several of these at once and
+   they union rather than competing. No model call.
 2. Retrieve the matching entity files and the events that produced them, bounded to a fixed budget.
-3. One generation pass with that context and the question. No planning, no tool calls, no
-   multi-turn refinement.
+3. If that retrieves nothing or too little: **one** bounded expansion where the model proposes
+   *search terms* — never file paths, never which files to open — and code retrieves against them
+   deterministically. Exactly one round.
+4. One generation pass with that context and the question. No planning, no tool calls, no
+   multi-turn refinement. A conversation may carry three questions; prior turns feed the classifier
+   and the context, and are dropped first when the prompt is tight.
 
 Rules, all enforced in code rather than requested in the prompt:
 
@@ -628,10 +695,21 @@ Rules, all enforced in code rather than requested in the prompt:
 - **Refuse interpretation, by classifier not by vibes.** Questions asking what something means,
   whether something is serious, or what to do get a fixed response pointing at the consultation
   summary feature. Draw the line at the question, before retrieval, where it is cheap and legible.
-- **Queries are not events.** Asking a question changes nothing and appends nothing to the log except
-  an optional local access record. A query must never create or modify a claim.
+- **Queries are not events.** Asking a question changes nothing and appends nothing — not to the log,
+  and not to any local access record either. That file was considered and deliberately not built: it
+  would be the one place the patient's own questions accumulate, inside a folder that syncs to a
+  third party, and questions disclose more than the record does. Not behind a setting, because a
+  setting someone can turn on is a file that can exist. A query must never create or modify a claim.
 - **Answers are ephemeral.** Never written to `wiki/`. The wiki contains what artefacts support, not
   what the model once said about them.
+- **Rejected content appears in no answer, under any phrasing.** Two mechanisms, both in code: the
+  projection has already suppressed the claim, and any remaining free text carrying a rejected
+  reading's own wording is withheld. Test it with a question aimed directly at rejected content, and
+  assert the wording is in no byte of the request that leaves the machine — a model cannot leak what
+  it was never given.
+- **The box being unreachable degrades, it does not fail.** Retrieval is deterministic and runs with
+  no network, so the answer becomes what the record holds, each entry cited. Unreachable and
+  unauthorised stay different sentences here as everywhere else.
 
 If this ever starts wanting a tool loop, that is a signal the retrieval layer is too weak, not that
 the system needs a planner.
