@@ -45,6 +45,8 @@ from .routes import (
 from .serving import API_HEADERS
 from .state import RecordState, under_pytest
 from .worker import Worker
+from ..runtime import choice as choice_mod
+from ..runtime import supervisor
 
 
 def check_endpoint(vault) -> bool:
@@ -55,6 +57,10 @@ def check_endpoint(vault) -> bool:
     somewhere public — which is a refusal to start, not a warning and not a
     toggle buried in settings.
     """
+    if session.reads_here(vault):
+        # Loopback, chosen by this app, on a port nothing configured. There is
+        # no address here for anyone to have pasted a commercial API into.
+        return False
     try:
         settings = session.settings_for(vault)
     except EndpointNotConfigured:
@@ -97,6 +103,11 @@ def create_app(
         finally:
             if built.state.worker is not None:
                 built.state.worker.stop()
+            # The reader is a child process holding gigabytes. It goes when the
+            # server goes, whether or not anything ever woke it.
+            reader = supervisor.install(None)
+            if reader is not None:
+                reader.shutdown()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -109,7 +120,18 @@ def create_app(
     )
 
     state = RecordState(vault, clock=clock)
-    if not configured:
+    if session.reads_here(vault):
+        # Written once, so a synced config.toml gaining a [models.vlm] table from
+        # another machine cannot move this one's documents to a box.
+        if not under_pytest():
+            choice_mod.settle(vault)
+        reader = supervisor.get(vault)
+        reader.has_work = lambda: bool(state.queue().ready(state.now()))
+        status = reader.status()
+        state.set_endpoint(
+            endpoint_state.from_reader(status.state, status.reason, None)
+        )
+    elif not configured:
         state.set_endpoint(endpoint_state.not_configured())
 
     app.state.record = state

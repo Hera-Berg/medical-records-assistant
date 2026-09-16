@@ -33,6 +33,20 @@ from .conftest import claim, confirm, ingested, on_day
 KEY = "sk-not-a-real-key-2f8a11c0"
 
 
+
+@pytest.fixture(autouse=True)
+def _reads_on_another_computer():
+    """These tests are about a remote box, so this machine reads on one.
+
+    Since phase 11 a vault with no ``[models.vlm]`` table reads on this computer
+    by default. The states below — not configured, unreachable, a rejected key —
+    are the remote path's, and the reader on this computer has its own tests in
+    ``test_worker_local_reader.py``.
+    """
+    from agent.runtime import choice
+
+    choice.save(choice.ANOTHER_COMPUTER)
+
 @pytest.fixture(autouse=True)
 def forget_secrets():
     yield

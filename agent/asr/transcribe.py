@@ -181,6 +181,10 @@ class Transcript:
     compute_type: str = DEFAULT_COMPUTE_TYPE
     hotwords: tuple[str, ...] = ()
     settings: dict[str, Any] = field(default_factory=dict)
+    #: What produced the words, as observations: which weights, pinned or not,
+    #: and which decoder. Beside the settings rather than in them — changing
+    #: where identical weights were loaded from must not re-transcribe history.
+    runtime: dict[str, Any] | None = None
     #: Why there is no transcript, when there is none. A reported state: a
     #: missing library, a missing decoder, a file that would not decode. Never
     #: an exception reaching a capture path.
@@ -204,6 +208,7 @@ class Transcript:
             "duration_s": self.duration_s,
             "hotwords": list(self.hotwords),
             "settings": dict(self.settings),
+            "runtime": dict(self.runtime) if self.runtime else None,
             "unavailable": self.unavailable,
         }
 
@@ -283,16 +288,39 @@ class Speech(Protocol):
         ...
 
 
-#: Loaded models, by ``(name, compute_type)``. Loading ``small`` takes seconds
-#: and allocates half a gigabyte; a queue of ten recordings must not do it ten
-#: times. Held for the life of the process, which for the worker is the life of
-#: the server, and never more than one entry in practice.
-_LOADED: dict[tuple[str, str], Any] = {}
+#: Loaded models, by ``(name, compute_type)``, with what was observed about where
+#: they came from. Loading ``small`` takes seconds and allocates half a gigabyte;
+#: a queue of ten recordings must not do it ten times. Held for the life of the
+#: process, which for the worker is the life of the server, and never more than
+#: one entry in practice.
+_LOADED: dict[tuple[str, str], tuple[Any, dict[str, Any]]] = {}
 _LOAD_LOCK = threading.Lock()
 
+#: The name whose weights are pinned in :mod:`agent.runtime.manifest`.
+PINNED_MODEL = "small"
 
-def _load(model: str, compute_type: str) -> Any:
-    """The real model, imported lazily and loaded once. Absence is a reported state."""
+NOT_DOWNLOADED = (
+    "the speech model has not been downloaded to this computer yet, so this "
+    "recording is stored but not typed up. Nothing has been lost: download it "
+    "from Settings, or run `health-agent reader download`, and it is typed up "
+    "then."
+)
+
+
+def pinned_directory(model: str) -> Path | None:
+    """The verified local copy of *model*'s weights, if this is the pinned one."""
+    if model != PINNED_MODEL:
+        return None
+    from ..runtime import manifest, store as store_mod  # noqa: PLC0415 - import cycle
+
+    store = store_mod.Store()
+    if not store.is_ready((manifest.SPEECH,)):
+        return None
+    return store.files_dir / manifest.SPEECH.id
+
+
+def _load(model: str, compute_type: str) -> tuple[Any, dict[str, Any]]:
+    """The real model and where it came from. Absence is a reported state."""
     with _LOAD_LOCK:
         cached = _LOADED.get((model, compute_type))
         if cached is not None:
@@ -302,22 +330,51 @@ def _load(model: str, compute_type: str) -> Any:
         return loaded
 
 
-def _load_uncached(model: str, compute_type: str) -> Any:
+def _load_uncached(model: str, compute_type: str) -> tuple[Any, dict[str, Any]]:
+    """Load pinned weights from disk, or a copy already cached. **Never fetch.**
+
+    ``WhisperModel("small")`` downloads from the Hugging Face hub the first time
+    it is called — an outbound connection nobody agreed to, to a host nothing
+    checked, for bytes nothing pinned. So a name is only ever loaded with
+    ``local_files_only``: a cache someone already has keeps working, and a
+    machine with neither is told to download the pinned copy.
+    """
     try:
         from faster_whisper import WhisperModel  # noqa: PLC0415 - optional dependency
     except ImportError:
         raise audio_mod.DecodeUnavailable(
             "faster-whisper is not installed, so recordings are stored but not "
-            "typed up. The audio is safe in raw/ and nothing is lost: install "
-            "with `pip install 'health-agent[speech]'` and run "
-            "`health-agent transcribe`."
+            "typed up. The audio is safe in raw/ and nothing is lost: reinstall "
+            "with `pip install health-agent` and run `health-agent transcribe`."
         ) from None
+
+    pinned = pinned_directory(model)
+    if pinned is not None:
+        from ..runtime import manifest  # noqa: PLC0415 - import cycle
+
+        try:
+            engine = WhisperModel(str(pinned), device="cpu", compute_type=compute_type)
+        except Exception as exc:  # noqa: BLE001 - reported, never raised at a caller
+            raise audio_mod.DecodeUnavailable(
+                f"the speech model could not be loaded: {exc}"
+            ) from None
+        return engine, {
+            "kind": "bundled",
+            "engine": "faster-whisper",
+            "files": {
+                item.name: f"sha256:{item.sha256}" for item in manifest.SPEECH.files
+            },
+        }
+
     try:
-        return WhisperModel(model, device="cpu", compute_type=compute_type)
-    except Exception as exc:  # noqa: BLE001 - reported, never raised at a caller
-        raise audio_mod.DecodeUnavailable(
-            f"the speech model {model!r} could not be loaded: {exc}"
-        ) from None
+        engine = WhisperModel(
+            model, device="cpu", compute_type=compute_type, local_files_only=True
+        )
+    except Exception:  # noqa: BLE001 - not cached locally is the ordinary case
+        raise audio_mod.DecodeUnavailable(NOT_DOWNLOADED) from None
+    # Loaded by name from a cache already on this machine. Nothing pins those
+    # bytes, and the record says so rather than implying it.
+    return engine, {"kind": "cache", "engine": "faster-whisper", "files": None}
 
 
 def _classify(segment: Any) -> str | None:
@@ -372,7 +429,11 @@ def transcribe(
 
     try:
         with audio_mod.working_copy(path) as copy:
-            engine = speech if speech is not None else _load(model, compute_type)
+            if speech is not None:
+                engine, runtime = speech, {"kind": "injected"}
+            else:
+                engine, runtime = _load(model, compute_type)
+            runtime = {**runtime, "decoder": copy.decoder}
             raw_segments, info = engine.transcribe(
                 copy.path,
                 language=language,
@@ -431,6 +492,7 @@ def transcribe(
                 compute_type=compute_type,
                 hotwords=tuple(hotwords),
                 settings=settings,
+                runtime=runtime,
             )
     except audio_mod.DecodeUnavailable as exc:
         return replace(empty, unavailable=str(exc))

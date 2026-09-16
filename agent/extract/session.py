@@ -18,6 +18,8 @@ from ..errors import EndpointNotConfigured
 from ..llm import redaction
 from ..llm.client import Client
 from ..llm.settings import ModelSettings, parse as parse_settings
+from ..runtime import choice as choice_mod
+from ..runtime import supervisor
 
 
 def settings_for(vault) -> ModelSettings:
@@ -46,17 +48,52 @@ def settings_for(vault) -> ModelSettings:
         ) from exc
 
 
-def open_client(vault, transport=None, resolver=None) -> Client:
-    """A client for this vault's configured endpoint.
+def reads_here(vault) -> bool:
+    """Whether this machine reads this vault's documents itself.
 
-    Does not contact the box. The address guard runs on the first call and on
-    every call after it, so constructing this is safe even with the box asleep —
-    which matters, because the CLI builds one before deciding what to do.
+    A demo vault never does: it seeds a record, not a connection to a model, and
+    it must not be the thing that starts a 3.5 GB process or asks for a download.
+    """
+    if vault.is_demo:
+        return False
+    return choice_mod.load(vault).reads_here
+
+
+def open_client(vault, transport=None, resolver=None, wake: bool = True) -> Client:
+    """A client for whichever computer reads this vault's documents on this machine.
+
+    **Another computer**: the configured endpoint. Does not contact the box. The
+    address guard runs on the first call and on every call after it, so
+    constructing this is safe even with the box asleep — which matters, because
+    the CLI builds one before deciding what to do.
+
+    **This computer**: the reader is started if it is asleep and *wake* is true,
+    and the client is handed the reader's own key through an explicit
+    credential. Never through the resolver chain — see
+    :class:`agent.llm.client.Client`. A reader that cannot run raises
+    :class:`agent.errors.ReaderUnavailable`, which is an
+    :class:`~agent.errors.EndpointUnreachable`: everything that already waits
+    for a sleeping box waits for it the same way.
     """
     redaction.install()
+    if not reads_here(vault):
+        return Client(
+            settings_for(vault).vlm,
+            vault_root=vault.root,
+            transport=transport,
+            resolver=resolver,
+        )
+
+    reader = supervisor.get(vault)
+    if wake:
+        reader.ensure_ready()
+    settings = reader.settings()
+    port = settings.endpoint.port
     return Client(
-        settings_for(vault).vlm,
+        settings,
         vault_root=vault.root,
         transport=transport,
         resolver=resolver,
+        credential=lambda: reader.credential_for(port),
+        runtime=reader.runtime_facts(),
     )

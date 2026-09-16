@@ -23,11 +23,13 @@ to ``.agent/jobs.jsonl`` whether or not the endpoint answers.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, ContextManager, Sequence
 
 from ..errors import (
     AuthRejected,
@@ -190,6 +192,18 @@ class Extractor:
         self.locale = locale
         redaction.install()
 
+    def _runtime(self, started: float) -> dict[str, Any]:
+        """What read this artefact, and how long it took, as observations.
+
+        The client says what it talks to; the wall time is measured here, over
+        the whole artefact rather than one page's request, because "about 70
+        seconds a document on this machine" is the number a person waiting for
+        a queue needs.
+        """
+        facts = dict(getattr(self.client, "runtime", None) or {"kind": "endpoint"})
+        facts["elapsed_s"] = round(time.monotonic() - started, 3)
+        return facts
+
     # -- reading one artefact ---------------------------------------------
 
     def _artifact(self, short: str) -> citations_mod.Artifact | None:
@@ -205,6 +219,7 @@ class Extractor:
         Appends nothing itself. The caller decides when to write, which is what
         lets a dry run produce exactly what a real run would.
         """
+        started = time.monotonic()
         log_events = list(events) if events is not None else list(self.vault.read().events)
         artifact = citations_mod.index_artifacts(log_events).get(short)
         if artifact is None:
@@ -221,7 +236,7 @@ class Extractor:
             # A recording is read from its transcript, not from its bytes. The
             # audio never goes over the wire: the local speech model already
             # turned it into words, and words are what this model reads.
-            return self._run_transcript(short, artifact, log_events)
+            return self._run_transcript(short, artifact, log_events, started)
 
         path = self._path(artifact)
         if path is None or not path.exists():
@@ -307,6 +322,7 @@ class Extractor:
             image_notes=[page.describe() for page in document.pages],
             deterministic=deterministic.describe(),
             seen_models=propose.observed_models(log_events),
+            runtime=self._runtime(started),
         )
         state = _state_of(extraction)
         reading = _reading_of(extraction)
@@ -335,6 +351,7 @@ class Extractor:
         short: str,
         artifact: citations_mod.Artifact,
         log_events: Sequence[Event],
+        started: float,
     ) -> Outcome:
         """Read one recording's transcript as text.
 
@@ -439,6 +456,7 @@ class Extractor:
             already=already,
             seen_models=propose.observed_models(log_events),
             audio_spans=spans,
+            runtime=self._runtime(started),
             extra={
                 "reader": "transcript",
                 # Which transcript these claims were read from. A better speech
@@ -587,8 +605,20 @@ def drain(
     limit: int | None = None,
     moment: datetime | None = None,
     only: Sequence[str] | None = None,
+    lock: Callable[[], ContextManager[Any]] = contextlib.nullcontext,
+    should_yield: Callable[[], bool] = lambda: False,
 ) -> DrainReport:
     """Work the queue until it is empty, parked, or *limit* jobs have run.
+
+    *lock* is held around every write — the queue's lines and the log's events —
+    and **never around the model call**. A capture appends under the same lock,
+    and ``CLAUDE.md`` is explicit that a capture returns before any inference
+    runs: holding the lock across a read would make a photograph dropped into
+    the window wait out a minute of someone else's document on a laptop CPU.
+
+    *should_yield* is asked before each job. The reader on this computer has one
+    slot, and a person waiting for an answer to a question goes before the next
+    queued document rather than behind the whole queue.
 
     The three failure kinds do three different things, which is the point of
     keeping them apart all the way from the client: an auth rejection parks
@@ -629,7 +659,10 @@ def drain(
             continue
         if limit is not None and len(outcomes) >= limit:
             break
-        running = queue.started(job)
+        if should_yield():
+            break
+        with lock():
+            running = queue.started(job)
         try:
             outcome = extractor.run(job.artifact)
         except AuthRejected as exc:
@@ -637,14 +670,15 @@ def drain(
             # this one job. Recordings are excluded: they are read locally, and
             # a rejected key has nothing to do with them.
             reason = redaction.scrub(str(exc))
-            parked = queue.park_for_auth(
-                reason,
-                artifacts=[
-                    short
-                    for short in artifacts
-                    if not is_speech(artifacts[short].mime) or short in transcribed
-                ],
-            )
+            with lock():
+                parked = queue.park_for_auth(
+                    reason,
+                    artifacts=[
+                        short
+                        for short in artifacts
+                        if not is_speech(artifacts[short].mime) or short in transcribed
+                    ],
+                )
             return DrainReport(
                 outcomes=tuple(outcomes),
                 appended=appended,
@@ -652,7 +686,8 @@ def drain(
                 parked_reason=reason,
             )
         except (EndpointUnreachable, RateLimited) as exc:
-            queue.failed(running, redaction.scrub(str(exc)), moment=now)
+            with lock():
+                queue.failed(running, redaction.scrub(str(exc)), moment=now)
             outcomes.append(
                 Outcome(job.artifact, jobs_mod.UNREACHABLE, reason=redaction.scrub(str(exc)))
             )
@@ -660,7 +695,8 @@ def drain(
         except (ModelIdentityMismatch, EndpointNotPrivate) as exc:
             # Neither is retryable and neither is the queue's fault. A person
             # has to change a config file or a server.
-            queue.update(running, jobs_mod.NEEDS_ATTENTION, redaction.scrub(str(exc)))
+            with lock():
+                queue.update(running, jobs_mod.NEEDS_ATTENTION, redaction.scrub(str(exc)))
             outcomes.append(
                 Outcome(
                     job.artifact,
@@ -670,21 +706,23 @@ def drain(
             )
             continue
         except InferenceError as exc:
-            queue.failed(running, redaction.scrub(str(exc)), moment=now)
+            with lock():
+                queue.failed(running, redaction.scrub(str(exc)), moment=now)
             outcomes.append(
                 Outcome(job.artifact, jobs_mod.UNREACHABLE, reason=redaction.scrub(str(exc)))
             )
             continue
 
-        for event in outcome.events:
-            vault.append(event)
-            appended += 1
-        if outcome.state == jobs_mod.UNREADABLE:
-            queue.unreadable(running, outcome.reason or "the model could not read it")
-        elif outcome.state == jobs_mod.NEEDS_ATTENTION:
-            queue.update(running, jobs_mod.NEEDS_ATTENTION, outcome.reason)
-        else:
-            queue.finished(running, key=None)
+        with lock():
+            for event in outcome.events:
+                vault.append(event)
+                appended += 1
+            if outcome.state == jobs_mod.UNREADABLE:
+                queue.unreadable(running, outcome.reason or "the model could not read it")
+            elif outcome.state == jobs_mod.NEEDS_ATTENTION:
+                queue.update(running, jobs_mod.NEEDS_ATTENTION, outcome.reason)
+            else:
+                queue.finished(running, key=None)
         outcomes.append(outcome)
 
     return DrainReport(

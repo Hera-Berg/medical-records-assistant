@@ -16,12 +16,16 @@ requires-python = ">=3.11"
 # followed by `health-agent serve` has to work on a machine with Python and
 # nothing else. python-multipart is what FastAPI needs to accept a file upload,
 # which is the whole of /api/capture.
+# faster-whisper is here rather than an extra since phase 11: "install and it
+# works" has to include voice notes. It brings PyAV, which is ffmpeg's own
+# libraries and decodes recordings with nothing else installed.
 dependencies = [
     "httpx>=0.27",
     "pillow>=10",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",
+    "faster-whisper>=1.1",
 ]
 
 [project.optional-dependencies]
@@ -35,11 +39,9 @@ ocr = ["pytesseract>=0.3"]
 # The default credential store. Without it the env var and the credentials file
 # still work; see MODELS.md, "Credentials".
 keychain = ["keyring>=24"]
-# Local speech. Optional in the same way the deterministic readers are: without
-# it a recording is still captured, stored and kept for ever — it simply is not
-# typed up, and says so. Needs ffmpeg on PATH as well, which is not a Python
-# package and so cannot be declared here.
-speech = ["faster-whisper>=1.1"]
+# Kept so `pip install 'health-agent[speech]'` from older instructions still
+# resolves. Speech is a default dependency now.
+speech = []
 
 [project.scripts]
 health-agent = "agent.cli:main"

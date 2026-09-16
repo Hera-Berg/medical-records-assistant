@@ -30,6 +30,18 @@ thread happened to be scheduled first is a test that fails on a slower machine
 for reasons nobody can reproduce. A test that wants this behaviour calls
 :meth:`Worker.run_once` directly and synchronously.
 
+**The reader on this computer is woken for work, not for polling.** A pass
+with nothing ready to read leaves a sleeping reader asleep and reports it as
+sleeping. The one exception is the first pass after the server starts, which
+starts the reader and runs the full probe — vision included — so its state is
+known before the first document arrives, exactly as a remote box's is. Each
+document is its own pass, so a question someone is waiting on goes before the
+next document rather than behind the queue.
+
+**The record lock is never held across a read.** Captures append under the
+same lock, and a capture returns before any inference runs; see
+:func:`agent.extract.runner.drain`.
+
 **Speech drains first, locally, and unconditionally.** Recordings are read by
 ``faster-whisper`` on this machine, so nothing about typing up a voice note
 needs the box — and until phase 6 the loop was structured so that it did anyway:
@@ -44,6 +56,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import replace
 from typing import Any
 
 from ..asr import runner as speech_mod
@@ -53,8 +66,11 @@ from ..extract import probe as probe_mod
 from ..extract import runner as runner_mod
 from ..extract import session
 from ..ingest import mime as mime_mod
+from ..events.envelope import format_ts
 from ..llm import redaction
 from ..projection import citations as citations_mod
+from ..runtime import states as reader_states
+from ..runtime import supervisor
 from . import endpoint_state
 from .state import RecordState
 
@@ -68,6 +84,11 @@ IDLE_SECONDS = 2.0
 #: :mod:`agent.extract.jobs` already spaces out individual retries; this stops
 #: the loop itself from spinning against a closed socket.
 UNREACHABLE_SECONDS = 30.0
+
+#: How often a pass looks again at a reader on this computer that has nothing to
+#: do or cannot run yet. Cheap — a few ``stat`` calls — and short enough that a
+#: finished download or a first capture is noticed promptly.
+LOCAL_WAIT_SECONDS = 5.0
 
 #: How often reachability is re-checked while the queue is empty, so that
 #: ``/api/health`` does not go on reporting a state from an hour ago.
@@ -181,6 +202,14 @@ class Worker:
             return IDLE_SECONDS if transcribed else PROBE_SECONDS
 
         try:
+            local = session.reads_here(self.state.vault)
+        except HealthAgentError as exc:
+            self.last_error = redaction.scrub(str(exc))
+            return IDLE_SECONDS if transcribed else PROBE_SECONDS
+        if local:
+            return self._run_local(transcribed)
+
+        try:
             with session.open_client(self.state.vault) as client:
                 if not self._probed:
                     self._run_probe(client)
@@ -207,6 +236,65 @@ class Worker:
                 self._stall()
                 return IDLE_SECONDS if transcribed else PROBE_SECONDS
             return IDLE_SECONDS if transcribed else UNREACHABLE_SECONDS
+
+    def _run_local(self, transcribed: bool) -> float:
+        """One pass against the reader on this computer."""
+        reader = supervisor.get(self.state.vault)
+        status = reader.status()
+        now = format_ts(self.state.now())
+
+        if status.state in (reader_states.NOT_DOWNLOADED, *reader_states.TERMINAL):
+            # Nothing to wake. A download finishing, or a person pressing try
+            # again, is picked up on a later pass without a restart.
+            self.state.set_endpoint(endpoint_state.from_reader(status.state, status.reason, now))
+            return IDLE_SECONDS if transcribed else LOCAL_WAIT_SECONDS
+
+        with self.state.lock:
+            queue = self.state.queue()
+            runner_mod.enqueue_unread(self.state.vault, queue)
+            ready = queue.ready(self.state.now())
+        if self._probed and not ready and status.state != reader_states.READY:
+            self.state.set_endpoint(endpoint_state.from_reader(status.state, status.reason, now))
+            return IDLE_SECONDS
+
+        try:
+            with reader.in_use(), session.open_client(self.state.vault) as client:
+                if not self._probed:
+                    self._run_probe(client)
+                    self._probed = True
+                    probed = self.state.endpoint
+                    if probed.state != endpoint_state.WORKING:
+                        # Blind or unconstrained: the same sentences a remote
+                        # box gets, said about this computer.
+                        self.state.set_endpoint(
+                            replace(probed, where=endpoint_state.THIS_COMPUTER)
+                        )
+                        return self._stall() if probed.is_terminal else LOCAL_WAIT_SECONDS
+                    self.state.set_endpoint(
+                        endpoint_state.from_reader(
+                            reader_states.READY, "ready", now, model=client.settings.model
+                        )
+                    )
+                else:
+                    self.state.set_endpoint(
+                        endpoint_state.from_reader(
+                            reader_states.READY, "ready", now, model=client.settings.model
+                        )
+                    )
+                if not ready:
+                    return IDLE_SECONDS if transcribed else LOCAL_WAIT_SECONDS
+                return self._drain(client, reader=reader)
+        except (InferenceError, HealthAgentError) as exc:
+            # A reader that stopped reports a stop; one that is starting reports
+            # that. Neither stalls the loop: a person pressing "try again", or a
+            # restart finishing, is picked up on the next pass by itself.
+            self.last_error = redaction.scrub(str(exc))
+            self.state.record_endpoint_error(exc)
+            if self.state.endpoint.where != endpoint_state.THIS_COMPUTER:
+                self.state.set_endpoint(
+                    replace(self.state.endpoint, where=endpoint_state.THIS_COMPUTER)
+                )
+            return IDLE_SECONDS if transcribed else LOCAL_WAIT_SECONDS
 
     def _drain_speech(self) -> bool:
         """Type up every recording that is waiting. Returns whether any ran.
@@ -280,7 +368,7 @@ class Worker:
         report = probe_mod.run(client, skip_vision=not self.probe_vision)
         self.state.record_probe(report)
 
-    def _drain(self, client) -> float:
+    def _drain(self, client, reader=None) -> float:
         with self.state.lock:
             queue = self.state.queue()
             runner_mod.enqueue_unread(self.state.vault, queue)
@@ -291,9 +379,19 @@ class Worker:
         extractor = runner_mod.Extractor(
             self.state.vault, client, locale=self.state.vault.config.locale
         )
-        with self.state.lock:
-            report = runner_mod.drain(self.state.vault, extractor, queue)
-            self.state.invalidate()
+        report = runner_mod.drain(
+            self.state.vault,
+            extractor,
+            queue,
+            # One document a pass on this computer, so the next pass can let a
+            # waiting question go first. A remote box keeps draining.
+            limit=1 if reader is not None else None,
+            lock=lambda: self.state.lock,
+            should_yield=(lambda: reader.questions_waiting > 0) if reader is not None else (lambda: False),
+        )
+        self.state.invalidate()
+        if reader is not None and report.outcomes and not report.is_parked:
+            return 0.0
 
         if report.is_parked:
             self.state.set_endpoint(

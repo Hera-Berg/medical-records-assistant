@@ -28,6 +28,7 @@ comment where it would be.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends
@@ -37,6 +38,7 @@ from ...errors import EndpointNotConfigured, HealthAgentError
 from ...extract import session
 from ...query import classify as classify_mod
 from ...query.retrieve import Passage, Retrieval
+from ...runtime import supervisor
 from .. import endpoint_state, serialise
 from ..deps import get_state
 from ..state import RecordState
@@ -56,30 +58,37 @@ def ask(
     )
     history = _history(body.get("history"))
 
-    client = None
-    box = state.endpoint.state
-    try:
-        client = session.open_client(state.vault)
-    except EndpointNotConfigured:
-        box = endpoint_state.NOT_CONFIGURED
-        state.set_endpoint(endpoint_state.not_configured())
-    except HealthAgentError as exc:
-        # A public address, an unreadable credential file: configured wrongly
-        # rather than asleep, and the sentence the answer carries says so.
-        box = query_mod.box_for(exc)
-        state.record_endpoint_error(exc)
+    with contextlib.ExitStack() as held:
+        client = None
+        box = state.endpoint.state
+        try:
+            if session.reads_here(state.vault):
+                # A person is waiting. Documents in the queue wait behind this
+                # question, and the reader stays awake until it is answered.
+                held.enter_context(supervisor.get(state.vault).question())
+            client = session.open_client(state.vault)
+        except EndpointNotConfigured:
+            box = endpoint_state.NOT_CONFIGURED
+            state.set_endpoint(endpoint_state.not_configured())
+        except HealthAgentError as exc:
+            # A public address, an unreadable credential file: configured wrongly
+            # rather than asleep, and the sentence the answer carries says so. A
+            # reader on this computer that is not downloaded is unreachable here,
+            # and the question is answered from the record alone.
+            box = query_mod.box_for(exc)
+            state.record_endpoint_error(exc)
 
-    try:
-        answer = query_mod.ask(
-            str(body.get("question") or ""),
-            record,
-            client=client,
-            history=history,
-            box=box,
-        )
-    finally:
-        if client is not None:
-            client.close()
+        try:
+            answer = query_mod.ask(
+                str(body.get("question") or ""),
+                record,
+                client=client,
+                history=history,
+                box=box,
+            )
+        finally:
+            if client is not None:
+                client.close()
 
     if answer.error is not None:
         # What the box did is shared state: the sidebar and /api/health report

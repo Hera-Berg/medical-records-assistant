@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..runtime import states as reader_states
+
 #: The box answers, accepts the key, runs the pinned model, and reads images.
 WORKING = "working"
 #: Asleep, or this machine is off the tailnet. Transient. Retry silently.
@@ -41,6 +43,23 @@ BLIND = "vision-not-working"
 NOT_CONFIGURED = "not-configured"
 #: Nothing has asked yet. The state at startup, before the first probe lands.
 UNKNOWN = "unknown"
+
+# The reader on this computer has states a remote box does not. Each is its own
+# word for the same reason unreachable and unauthorised are: they send a person
+# to different places, or tell them to go nowhere at all.
+
+#: Its files are not here. Needs a person to start the download.
+NOT_DOWNLOADED = "not-downloaded"
+#: Idle and unloaded to free memory. Wakes by itself. Not a fault.
+SLEEPING = "sleeping"
+#: Loading, or restarting after a crash. Transient.
+STARTING = "starting"
+#: Stopped and staying stopped — repeated crashes, the wrong build, no vision.
+#: Needs a person.
+STOPPED = "stopped"
+
+THIS_COMPUTER = "this-computer"
+ANOTHER_COMPUTER = "another-computer"
 
 AUTH_OK = "ok"
 AUTH_FAILED = "failed"
@@ -100,6 +119,7 @@ MESSAGES: dict[str, str] = {
         "The endpoint could not be used. Run `health-agent probe` for the "
         "detail, which is not shown here because it can quote what was sent."
     ),
+    **reader_states.MESSAGES,
 }
 
 
@@ -112,6 +132,9 @@ class EndpointState:
     reason: str = "unknown"
     model: str | None = None
     checked_ts: str | None = None
+    #: Which computer this state is about. The interface says nothing about
+    #: keys or addresses for the reader on this computer, which has neither.
+    where: str = ANOTHER_COMPUTER
 
     @property
     def is_terminal(self) -> bool:
@@ -120,7 +143,7 @@ class EndpointState:
         ``unauthorised`` and ``misconfigured`` need a person. ``unreachable``
         does not — that is the difference the whole module exists to keep.
         """
-        return self.state in (UNAUTHORISED, MISCONFIGURED, BLIND)
+        return self.state in (UNAUTHORISED, MISCONFIGURED, BLIND, STOPPED)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -133,6 +156,7 @@ class EndpointState:
             "message": MESSAGES.get(self.reason, MESSAGES["endpoint-unusable"]),
             "model": self.model,
             "checked_ts": self.checked_ts,
+            "where": self.where,
         }
 
 
@@ -204,11 +228,64 @@ _FROM_ERROR: dict[str, tuple[str, str, str]] = {
 }
 
 
+#: The reader's own states to ours. A reader that is ``ready`` is only
+#: ``working`` once the probe has said so — see :func:`from_reader`.
+_FROM_READER = {
+    reader_states.NOT_DOWNLOADED: NOT_DOWNLOADED,
+    reader_states.SLEEPING: SLEEPING,
+    reader_states.STARTING: STARTING,
+    reader_states.READY: WORKING,
+    reader_states.STOPPED: STOPPED,
+    reader_states.ELSEWHERE: STOPPED,
+    reader_states.UNSUPPORTED: STOPPED,
+}
+
+#: Reader reasons that are a state of their own rather than a stop.
+_READER_REASON_STATES = {
+    "not-downloaded": NOT_DOWNLOADED,
+    "downloading": NOT_DOWNLOADED,
+    "sleeping": SLEEPING,
+    "starting": STARTING,
+    "restarting": STARTING,
+    "ready": WORKING,
+}
+
+
+def from_reader(state: str, reason: str, checked_ts: str | None, model: str | None = None) -> EndpointState:
+    """The state of the reader on this computer, in the vocabulary health reports.
+
+    ``auth`` is ``ok`` throughout: the reader's key is made by this app for each
+    launch, and "missing" would send a person looking for a key that does not
+    exist.
+    """
+    return EndpointState(
+        state=_FROM_READER.get(state, STOPPED),
+        auth=AUTH_OK,
+        reason=reason if reason in MESSAGES else "failed-to-start",
+        model=model,
+        checked_ts=checked_ts,
+        where=THIS_COMPUTER,
+    )
+
+
+def from_reader_error(exc: BaseException, checked_ts: str) -> EndpointState:
+    reason = getattr(exc, "reason", "failed-to-start")
+    return EndpointState(
+        state=_READER_REASON_STATES.get(reason, STOPPED),
+        auth=AUTH_OK,
+        reason=reason if reason in MESSAGES else "failed-to-start",
+        checked_ts=checked_ts,
+        where=THIS_COMPUTER,
+    )
+
+
 def from_error(exc: BaseException, checked_ts: str) -> EndpointState:
     """The state an inference failure implies, chosen by exception class.
 
     The exception's own text is discarded here rather than carried and scrubbed.
     """
+    if type(exc).__name__ == "ReaderUnavailable":
+        return from_reader_error(exc, checked_ts)
     for klass in type(exc).__mro__:
         found = _FROM_ERROR.get(klass.__name__)
         if found is not None:

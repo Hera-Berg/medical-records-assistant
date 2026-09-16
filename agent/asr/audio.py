@@ -20,11 +20,16 @@ including when the process is interrupted mid-read. It holds a verbatim copy of
 someone's voice describing their health; leaving it in ``/tmp`` because a model
 threw is not acceptable.
 
-``ffmpeg`` does the decoding rather than a Python audio library, because it is
-the only thing that reliably reads every container a browser or a phone will
-produce. If it is absent that is a **reported state**, exactly like a missing
-``pdfplumber``: the transcript is unavailable with a sentence saying what to
-install, never a crash and never an exception reaching a capture path.
+**PyAV decodes first, and ``ffmpeg`` on ``PATH`` is the fallback.** ffmpeg was
+chosen because it is the only thing that reliably reads every container a
+browser or a phone will produce — WebM/Opus from Chrome, MP4/AAC from Safari.
+PyAV *is* ffmpeg's libraries, bound into Python, and it arrives with
+``faster-whisper``; so the reason for choosing ffmpeg still holds, and a person
+who installed this app does not also have to install a system program before a
+voice note is typed up. If neither can read a file, that is a **reported
+state**, exactly like a missing ``pdfplumber``: the transcript is unavailable
+with a sentence saying what happened, never a crash and never an exception
+reaching a capture path.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import wave
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +64,47 @@ class WorkingCopy:
 
     path: Path
     seconds: float | None = None
+    #: ``pyav`` or ``ffmpeg``. Recorded beside the transcript, never in the
+    #: settings digest: the same samples reach the model either way, and
+    #: re-transcribing every recording because the decoder changed would be work
+    #: that produces nothing.
+    decoder: str = "ffmpeg"
+
+
+def _decode_with_pyav(source: Path, target: Path) -> float | None:
+    """Decode to 16 kHz mono PCM with PyAV. Returns seconds, or ``None`` if unavailable.
+
+    Raises :class:`DecodeUnavailable` for a file PyAV has and cannot read, so a
+    broken recording is not handed to ffmpeg to fail a second time in different
+    words — unless ffmpeg is there, in which case the caller tries it anyway.
+    """
+    try:
+        import av  # noqa: PLC0415 - optional, arrives with faster-whisper
+    except ImportError:
+        return None
+
+    frames = 0
+    with wave.open(str(target), "wb") as out:
+        out.setnchannels(CHANNELS)
+        out.setsampwidth(2)
+        out.setframerate(SAMPLE_RATE)
+        with av.open(str(source)) as container:
+            streams = [s for s in container.streams if s.type == "audio"]
+            if not streams:
+                raise DecodeUnavailable("this recording holds no audio stream")
+            resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+            for frame in container.decode(streams[0]):
+                for converted in resampler.resample(frame):
+                    data = converted.to_ndarray().tobytes()
+                    out.writeframes(data)
+                    frames += len(data) // 2
+            for converted in resampler.resample(None):
+                data = converted.to_ndarray().tobytes()
+                out.writeframes(data)
+                frames += len(data) // 2
+    if frames == 0:
+        raise DecodeUnavailable("this recording decoded to no audio at all")
+    return round(frames / SAMPLE_RATE, 3)
 
 
 def ffmpeg_path() -> str | None:
@@ -101,18 +148,32 @@ def working_copy(source: Path) -> Iterator[WorkingCopy]:
     The temporary directory is the system's, never the vault's, and it goes away
     with the context whatever happened inside it.
     """
-    ffmpeg = ffmpeg_path()
-    if ffmpeg is None:
-        raise DecodeUnavailable(
-            "ffmpeg is not installed, so this recording could not be decoded for "
-            "the speech model. The recording itself is safe in raw/ and nothing "
-            "has been lost: install ffmpeg and run `health-agent transcribe` to "
-            "type it up."
-        )
-
     directory = tempfile.mkdtemp(prefix="health-agent-asr-")
     target = Path(directory) / "audio.wav"
+    ffmpeg = ffmpeg_path()
     try:
+        try:
+            seconds = _decode_with_pyav(source, target)
+        except Exception as exc:  # noqa: BLE001 - PyAV raises its own error family
+            if ffmpeg is None:
+                if isinstance(exc, DecodeUnavailable):
+                    raise
+                raise DecodeUnavailable(f"this recording could not be decoded: {exc}") from None
+            seconds = None
+        else:
+            if seconds is not None:
+                yield WorkingCopy(path=target, seconds=seconds, decoder="pyav")
+                return
+
+        if ffmpeg is None:
+            raise DecodeUnavailable(
+                "nothing on this computer can decode this recording: the PyAV "
+                "library that comes with the speech model is missing, and ffmpeg "
+                "is not installed. The recording itself is safe in raw/ and "
+                "nothing has been lost: reinstall with `pip install "
+                "health-agent`, or install ffmpeg, then run `health-agent "
+                "transcribe` to type it up."
+            )
         result = subprocess.run(
             [
                 ffmpeg,

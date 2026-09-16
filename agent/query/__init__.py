@@ -57,6 +57,7 @@ from ..errors import (
     EndpointUnreachable,
     InferenceError,
     ModelIdentityMismatch,
+    ReaderUnavailable,
     RateLimited,
 )
 from ..events.envelope import Event
@@ -115,6 +116,13 @@ class Record:
 
 
 def box_for(exc: BaseException) -> str:
+    reason = getattr(exc, "reason", None)
+    if isinstance(exc, ReaderUnavailable):
+        if reason in ("not-downloaded", "downloading"):
+            return "reader-not-downloaded"
+        if reason in ("starting", "restarting", "sleeping"):
+            return "reader-starting"
+        return "reader-stopped"
     for kind, word in _BOX_FOR:
         if isinstance(exc, kind):
             return word

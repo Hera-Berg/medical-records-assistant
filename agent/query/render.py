@@ -117,6 +117,23 @@ BOX_MESSAGES: dict[str, str] = {
         "answer written out. Everything below is from your record and was found "
         "without it."
     ),
+    # The reader on this computer is not asleep on a network and has no
+    # password, so it gets its own words rather than borrowing the box's.
+    "reader-not-downloaded": (
+        "The files that write answers on this computer have not been downloaded "
+        "yet, so there is no answer written out. Everything below is from your "
+        "record and was found without them."
+    ),
+    "reader-starting": (
+        "The reader on this computer was still starting, so there is no answer "
+        "written out. Ask again in a moment. Everything below is from your record "
+        "and was found without it."
+    ),
+    "reader-stopped": (
+        "The reader on this computer has stopped, and Settings says why, so "
+        "there is no answer written out. Everything below is from your record "
+        "and was found without it."
+    ),
     # Its own sentence, because it is its own thing: nobody was asked and
     # nothing failed. Reporting a deliberate choice as "no computer is set up"
     # sends someone to fix a setting that is already correct.

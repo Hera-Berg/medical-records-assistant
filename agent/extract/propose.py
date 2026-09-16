@@ -49,7 +49,7 @@ _RESERVED = frozenset(
         "stripped_reasoning", "latency_s", "usage", "prompt_version",
         "prompt_hashes", "images", "deterministic_read", "artifact_kind",
         "readable", "unreadable_reason", "document_date", "claims_proposed",
-        "rejected", "notes",
+        "rejected", "notes", "runtime",
     }
 )
 
@@ -129,20 +129,30 @@ def observed_models(events: Iterable[Event]) -> set[str]:
     return seen
 
 
-def _provenance(key: Key, model_rev: str | None = None) -> dict[str, Any]:
+def _provenance(
+    key: Key, model_rev: str | None = None, runtime_kind: str | None = None
+) -> dict[str, Any]:
     """What every agent-authored event carries.
 
     ``model_rev`` is the identity string the server reported. A remote model has
     no content hash to pin, so the string the box gave is the closest thing to
     one, and it is what makes "which model produced this claim" answerable a
     year later.
+
+    ``runtime_kind`` is ``bundled`` or ``endpoint`` — *what* ran, never where
+    relative to whoever reads the log. "This computer" would be false on every
+    other machine that syncs the folder; ``bundled`` beside the event's own
+    ``device`` is true everywhere. Absent on events written before it existed.
     """
-    return {
+    provenance = {
         "model": key.model,
         "model_rev": model_rev or key.model,
         "prompt_hash": key.prompt_hash,
         "artifact": key.artifact,
     }
+    if runtime_kind:
+        provenance["runtime_kind"] = runtime_kind
+    return provenance
 
 
 def _document_timestamp(document_date: Mapping[str, Any] | None) -> str | None:
@@ -175,6 +185,7 @@ def extraction_event(
     deterministic: Mapping[str, Any] | None = None,
     ts: str | None = None,
     extra: Mapping[str, Any] | None = None,
+    runtime: Mapping[str, Any] | None = None,
 ) -> Event:
     """The model's answer, stored verbatim, with everything needed to re-derive it.
 
@@ -183,11 +194,12 @@ def extraction_event(
     audio. It is merged last so a reader cannot quietly redefine the fields
     every extraction carries.
     """
+    runtime = dict(runtime) if runtime else None
     return envelope.new(
         EXTRACTION_COMPLETED,
         device,
         ts=ts,
-        provenance=_provenance(key, completion.model),
+        provenance=_provenance(key, completion.model, (runtime or {}).get("kind")),
         payload={
             "key": key.as_dict(),
             "artifact": key.artifact,
@@ -215,6 +227,10 @@ def extraction_event(
             "claims_proposed": len(extraction.claims),
             "rejected": extraction.describe_rejections(),
             "notes": list(extraction.notes),
+            # What read it, as observations: kind, engine, pinned file hashes,
+            # wall time. Never a verdict on how good that reader is — see
+            # MODELS.md, "Recording which reader read it".
+            "runtime": runtime,
             **{
                 name: value
                 for name, value in dict(extra or {}).items()
@@ -234,6 +250,7 @@ def claim_event(
     model_rev: str | None = None,
     ts: str | None = None,
     audio_span: Mapping[str, Any] | None = None,
+    runtime_kind: str | None = None,
 ) -> Event:
     """One ``claim.proposed``, with all four timestamps set honestly.
 
@@ -290,12 +307,18 @@ def claim_event(
         CLAIM_PROPOSED,
         device,
         ts=ts,
-        provenance=_provenance(key, model_rev),
+        provenance=_provenance(key, model_rev, runtime_kind),
         payload=payload,
     )
 
 
-def model_event(device: str, key: Key, reported: str, ts: str | None = None) -> Event:
+def model_event(
+    device: str,
+    key: Key,
+    reported: str,
+    ts: str | None = None,
+    runtime_kind: str | None = None,
+) -> Event:
     """First sight of a model identity string. The registry MODELS.md asks for.
 
     Appended once per identity. "Last seen" needs no event of its own: it is the
@@ -305,7 +328,7 @@ def model_event(device: str, key: Key, reported: str, ts: str | None = None) -> 
         MODEL_OBSERVED,
         device,
         ts=ts,
-        provenance=_provenance(key, reported),
+        provenance=_provenance(key, reported, runtime_kind),
         payload={"model": reported, "configured": key.model},
     )
 
@@ -345,6 +368,7 @@ def build(
     ts: str | None = None,
     audio_spans: Mapping[int, Mapping[str, Any]] | None = None,
     extra: Mapping[str, Any] | None = None,
+    runtime: Mapping[str, Any] | None = None,
 ) -> Proposal:
     """Assemble the events for one artefact, or decline because it is already done.
 
@@ -374,10 +398,12 @@ def build(
             deterministic=deterministic,
             ts=ts,
             extra=extra,
+            runtime=runtime,
         )
     ]
+    kind = (runtime or {}).get("kind")
     if seen_models is not None and completion.model not in seen_models:
-        events.append(model_event(device, key, completion.model, ts=ts))
+        events.append(model_event(device, key, completion.model, ts=ts, runtime_kind=kind))
 
     verifications = verifications or {}
     for index, claim in enumerate(extraction.claims):
@@ -392,6 +418,7 @@ def build(
                 model_rev=completion.model,
                 ts=ts,
                 audio_span=(audio_spans or {}).get(index),
+                runtime_kind=kind,
             )
         )
 

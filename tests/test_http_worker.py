@@ -32,6 +32,20 @@ from agent.server.worker import PROBE_SECONDS, UNREACHABLE_SECONDS, Worker
 from .conftest import JPEG, api_client
 
 
+@pytest.fixture(autouse=True)
+def _reads_on_another_computer():
+    """These tests are about a remote box, so this machine reads on one.
+
+    Since phase 11 a vault with no ``[models.vlm]`` table reads on this computer
+    by default. The states below — not configured, unreachable, a rejected key —
+    are the remote path's, and the reader on this computer has its own tests in
+    ``test_worker_local_reader.py``.
+    """
+    from agent.runtime import choice
+
+    choice.save(choice.ANOTHER_COMPUTER)
+
+
 def test_the_worker_is_off_by_default_under_pytest(vault):
     """No test may come to depend on background timing.
 
