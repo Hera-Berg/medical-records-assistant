@@ -106,12 +106,26 @@ class Launch:
     binary: Path
 
 
+def thread_counts(logical: int | None = None) -> tuple[int, int]:
+    """Threads for generation and for reading the prompt.
+
+    Not llama-server's default. On hybrid Intel laptop chips it counts only the
+    performance cores — two on a Core Ultra 7 155U, out of fourteen threads —
+    and a document there took 212 seconds of prompt processing at 8 tokens a
+    second where twelve threads took 101. Two threads are left for the rest of
+    the machine, because the person is using it while a document is read.
+    """
+    count = logical or os.cpu_count() or 4
+    return max(2, count - 2), max(2, count)
+
+
 def llama_launch(store: Store, platform: str, port: int, ctx: int) -> Launch:
     """The pinned ``llama-server``, with every flag that matters stated."""
     engine = manifest.engine_for(platform)
     binary = store.binary(engine) if engine else None
     if engine is None or binary is None:
         raise ReaderUnavailable("not-downloaded", "the reader's program is not here")
+    threads, batch_threads = thread_counts()
     weights = store.path_for(manifest.VISION, manifest.WEIGHTS)
     projector = store.path_for(manifest.VISION, manifest.PROJECTOR)
     return Launch(
@@ -128,6 +142,8 @@ def llama_launch(store: Store, platform: str, port: int, ctx: int) -> Launch:
             # The thinking toggle is a chat-template kwarg; without Jinja it is
             # ignored and a reasoning trace lands in every answer.
             "--jinja",
+            "--threads", str(threads),
+            "--threads-batch", str(batch_threads),
             "--alias", manifest.ALIAS,
             "--no-webui",
             "--no-slots",

@@ -383,3 +383,10 @@ def test_the_status_says_nothing_the_process_printed(ready_store):
     body = reader.status().to_dict()
     assert body["message"] == states.MESSAGES["ready"]
     assert set(body) == {"state", "reason", "message", "launches", "log_path"}
+
+
+def test_threads_are_stated_not_left_to_the_default():
+    """llama-server's default used 2 of 14 threads on a hybrid Intel laptop chip."""
+    assert supervisor.thread_counts(14) == (12, 14)
+    assert supervisor.thread_counts(2) == (2, 2)
+    assert supervisor.thread_counts(4) == (2, 4)

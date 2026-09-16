@@ -109,7 +109,7 @@ def test_speed_is_measured_from_this_devices_own_readings():
 def test_before_anything_is_read_the_range_is_honest():
     sentence = reader_view.speed([], "laptop-aaaa", platforms.LINUX_X64, waiting=1)["sentence"]
     assert sentence == (
-        "Reading on this computer takes about 30 to 90 seconds a document. 1 document waiting."
+        "Reading on this computer takes about 1 to 4 minutes a document. 1 document waiting."
     )
     apple = reader_view.speed([], "mac-aaaa", platforms.MACOS_ARM64, waiting=0)["sentence"]
     assert "10 to 30 seconds" in apple

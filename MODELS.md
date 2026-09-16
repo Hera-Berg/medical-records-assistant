@@ -133,10 +133,18 @@ reader while the server holds it is refused with a sentence, rather than loading
 
 ### Honest about speed
 
-A 4B model at Q4 on a laptop CPU takes 30–90 seconds a document; on Apple Silicon with Metal it is
-more like 10–30. The interface says so before the first read and, once there are readings, says what
-this machine actually measured — "usually about 70 seconds here, 6 waiting". A queue that is slow must
-never look like a queue that is broken.
+A 4B model at Q4 on a laptop CPU is slow, and slower than first assumed. Measured in development on a
+Core Ultra 7 155U: a photographed page at the 1280 px budget is about 1,650 prompt tokens, read at
+16 tokens a second with every thread in use — about 100 seconds before the answer starts, and several
+minutes a document in all. The pre-measurement estimate is therefore "about 1 to 4 minutes a document"
+on a processor, and "about 10 to 30 seconds" on Apple Silicon with Metal, which has **not** been
+measured. Once this machine has read something the interface says what it actually took — "usually
+about 2 minutes 30 seconds a document on this computer, 6 waiting". A queue that is slow must never
+look like a queue that is broken.
+
+**Threads are stated, never left to llama-server's default.** On hybrid Intel laptop chips the default
+counts only performance cores — 2 of 14 threads on the machine above, which doubled the time. The
+reader uses all logical CPUs but two for generation, and all of them for reading the prompt.
 
 A question asked of the record goes before the next queued document, not behind the whole queue. It can
 still wait for the document being read, and the screen says that too.

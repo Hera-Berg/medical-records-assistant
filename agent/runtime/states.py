@@ -119,10 +119,19 @@ DOWNLOAD_MESSAGES: dict[str, str] = {
 
 
 def speed_estimate(platform: str | None) -> str:
-    """What to expect before this machine has read anything to measure."""
+    """What to expect before this machine has read anything to measure.
+
+    The processor range is wide on purpose. Measured in development on a
+    low-power laptop chip (Core Ultra 7 155U), one photographed page was about
+    1,650 prompt tokens at 16 a second with every thread in use — well over a
+    minute and a half before the answer began. Faster processors have not been
+    measured. Once this machine has read something, the screen says what it
+    actually took instead. The Apple Silicon figure is from MODELS.md and has not
+    been measured here.
+    """
     if platform == platforms.MACOS_ARM64:
         return "about 10 to 30 seconds a document"
-    return "about 30 to 90 seconds a document"
+    return "about 1 to 4 minutes a document"
 
 
 def message(reason: str | None) -> str:
