@@ -113,7 +113,12 @@ def build(retrieval: Retrieval, history: Sequence[Turn] = ()) -> Context:
         dropped_history = len([t for t in list(history)[-MAX_PRIOR_TURNS:] if t.question.strip()])
         rendered_history = ""
 
-    while passages and size(passages, rendered_history) > budget:
+    # Never the last one. Dropping every passage would leave an empty context
+    # and an answer with nothing it could cite — which arrives looking like "your
+    # record does not cover that" and is nothing of the sort. One passage that
+    # does not fit is a retrieval bug, and the raise below is how it is reported
+    # rather than rendered as silence.
+    while len(passages) > 1 and size(passages, rendered_history) > budget:
         passages.pop()
         dropped += 1
 
