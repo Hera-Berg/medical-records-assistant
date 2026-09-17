@@ -28,7 +28,6 @@ from typing import Any, Mapping, Sequence
 
 from ..projection import subjects, tiers
 from . import dates as dates_mod
-from .schema import EXTRACTION_SCHEMA
 
 #: The strongest tier an artefact of each kind may support, whatever the model
 #: says. A voice note cannot be prescriber-issued however confidently it is
@@ -82,6 +81,39 @@ class ReadClaim:
 
 
 @dataclass(frozen=True)
+class Abstention:
+    """Something the reader could see on the page and said it could not read.
+
+    A first-class outcome, not a failure. It becomes a visible "could not be
+    read" item in the review queue, so the person photographs it again or types
+    it in — where a guessed dose would have become a wrong fact nobody sees.
+    """
+
+    family: str
+    field: str
+    reason: str
+    #: The entity id, when the name was readable and resolves; ``None`` when even
+    #: the name could not be read.
+    subject: str | None = None
+    subject_name: str | None = None
+    source_span: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "family": self.family,
+            "field": self.field,
+            "reason": self.reason,
+            "subject": self.subject,
+            "subject_name": self.subject_name,
+            "source_span": self.source_span,
+        }
+
+    def describe(self) -> str:
+        what = self.subject_name or f"one entry in {self.family}"
+        return f"{what}: {self.field} could not be read ({self.reason})"
+
+
+@dataclass(frozen=True)
 class Extraction:
     """Everything one page's answer yielded, including what it did not."""
 
@@ -107,6 +139,9 @@ class Extraction:
     claims: tuple[ReadClaim, ...] = ()
     rejections: tuple[Rejection, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: What the reader, or the checks after it, declined to assert. Each one is a
+    #: visible item for a person, never a silent gap.
+    abstentions: tuple[Abstention, ...] = ()
 
     @property
     def is_usable(self) -> bool:
@@ -221,115 +256,6 @@ def _dispense(payload: Any) -> dict[str, Any] | None:
     return kept or None
 
 
-def _read_claim(
-    raw: Mapping[str, Any], index: int, mime: str, locale: str
-) -> tuple[ReadClaim | None, Rejection | None]:
-    kind = raw["subject_kind"]
-    name = raw["subject_name"]
-    subject_id = subjects.make_id(kind, name)
-    subject = subjects.parse(subject_id) if subject_id else None
-    if subject is None:
-        return None, Rejection(
-            f"subject {kind}:{name!r} does not resolve to a usable entity id, so the "
-            f"claim has nothing to attach to",
-            index,
-        )
-
-    notes: list[str] = []
-    tier, capped = _cap_tier(raw["evidence_tier"], mime)
-    if capped:
-        notes.append(capped)
-
-    occurred, problem = dates_mod.normalise(raw.get("occurred_at"), locale)
-    if problem:
-        notes.append(problem)
-
-    span = raw.get("occurred_span")
-    occurred_span = span.strip() if isinstance(span, str) and span.strip() else None
-    if occurred is None and problem and occurred_span is None:
-        # The date could not be read and the model offered no phrase. Keep the
-        # written form as the span so the record still holds what the page said
-        # — the projection turns it into a question rather than losing it.
-        written = (raw.get("occurred_at") or {}).get("value")
-        if isinstance(written, str) and written.strip():
-            occurred_span = written.strip()
-
-    if not tiers.is_known_predicate(subject.kind, raw["predicate"]):
-        notes.append(
-            f"{subject.kind}:{raw['predicate']} is not in the consequence table, so it "
-            f"is gated as high-consequence until the table says otherwise"
-        )
-
-    return (
-        ReadClaim(
-            subject=subject.id,
-            subject_literal=str(name).strip(),
-            predicate=raw["predicate"],
-            value_literal=raw["value_literal"].strip(),
-            evidence_tier=tier,
-            confidence=float(raw["confidence"]),
-            source_span=raw["source_span"].strip(),
-            occurred_at=occurred,
-            occurred_span=occurred_span,
-            dispense=_dispense(raw.get("dispense")),
-            notes=tuple(notes),
-        ),
-        None,
-    )
-
-
-def read(payload: Any, mime: str = "", locale: str = "en") -> Extraction:
-    """Validate one page's answer and normalise what survives.
-
-    Never raises on bad model output: the caller has already recorded the raw
-    answer, and a page nobody can read is a reportable outcome rather than an
-    error. What it returns is what may become claims, plus everything that may
-    not and why.
-    """
-    structural = check(payload, EXTRACTION_SCHEMA)
-    if structural:
-        return Extraction(
-            readable=False,
-            refused=True,
-            unreadable_reason=(
-                "the model's answer did not match the extraction schema, so no claim "
-                "is made from it"
-            ),
-            rejections=tuple(Rejection(problem) for problem in structural),
-        )
-
-    document_date, date_problem = dates_mod.normalise(payload.get("document_date"), locale)
-    notes = [date_problem] if date_problem else []
-
-    if not payload["readable"]:
-        return Extraction(
-            artifact_kind=payload["artifact_kind"],
-            readable=False,
-            unreadable_reason=payload.get("unreadable_reason")
-            or "the model could not read this page and did not say why",
-            document_date=document_date,
-            notes=tuple(notes),
-        )
-
-    claims: list[ReadClaim] = []
-    rejections: list[Rejection] = []
-    for index, raw in enumerate(payload["claims"]):
-        claim, rejection = _read_claim(raw, index, mime, locale)
-        if rejection is not None:
-            rejections.append(rejection)
-        elif claim is not None:
-            claims.append(claim)
-
-    return Extraction(
-        artifact_kind=payload["artifact_kind"],
-        readable=True,
-        document_date=document_date,
-        claims=tuple(claims),
-        rejections=tuple(rejections),
-        notes=tuple(notes),
-    )
-
-
 def merge(extractions: Sequence[Extraction]) -> Extraction:
     """Fold one artefact's pages into a single result.
 
@@ -378,4 +304,5 @@ def merge(extractions: Sequence[Extraction]) -> Extraction:
         claims=tuple(claim for item in readable for claim in item.claims),
         rejections=tuple(r for item in extractions for r in item.rejections),
         notes=tuple(note for item in extractions for note in item.notes),
+        abstentions=tuple(a for item in extractions for a in item.abstentions),
     )

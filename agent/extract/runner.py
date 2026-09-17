@@ -56,8 +56,8 @@ from . import (
     text,
     transcripts as transcripts_mod,
 )
-from .schema import EXTRACTION_SCHEMA, SCHEMA_NAME
-from .validate import Extraction, merge, read as read_answer
+from . import reader as reader_mod
+from .validate import Extraction, merge
 
 log = logging.getLogger("agent.extract")
 
@@ -81,6 +81,9 @@ READ_UNREADABLE = "page-unreadable"
 #: more room, or a person, rather than a retake or a server setting.
 READ_TRUNCATED = "output-truncated"
 READ_ALREADY = "already-read"
+#: Read, and everything the reader saw it said it could not be sure of. Goes to
+#: a person as "could not be read", the same as an unreadable page.
+READ_UNCLEAR = "read-unclear"
 #: A recording that has not been typed up yet. Not a failure of anything: the
 #: speech model runs locally and on its own schedule, and this reader has
 #: nothing to read until it has.
@@ -127,12 +130,15 @@ class Outcome:
             detail = f"the model could not read it — review manually: {detail}"
         elif self.reading == READ_TRUNCATED:
             detail = f"ran out of room — review manually: {detail}"
+        elif self.reading == READ_UNCLEAR:
+            detail = "read, but nothing on it could be read with certainty — review manually"
         label = {
             READ_CLAIMS: "read",
             READ_NOTHING: "read",
             READ_REFUSED: "read",
             READ_UNREADABLE: "read",
             READ_TRUNCATED: "read",
+            READ_UNCLEAR: "read",
             READ_ALREADY: "skipped",
         }.get(self.reading or "", self.state)
         return f"{label:<9} {self.artifact}  {detail}".rstrip()
@@ -163,6 +169,11 @@ def _reading_of(extraction: Extraction) -> str:
         return READ_REFUSED if extraction.refused else READ_UNREADABLE
     if extraction.claims:
         return READ_CLAIMS
+    if extraction.abstentions:
+        # Read, and everything it saw it said it could not be sure of. Not
+        # "nothing found": that would tell the owner the page holds nothing,
+        # when it holds things nobody has read yet.
+        return READ_UNCLEAR
     # Readable, no claims. Either every claim on the page was individually
     # rejected — a subject that resolves to nothing, a value that failed the
     # schema — or the page genuinely says nothing the record tracks.
@@ -288,21 +299,26 @@ class Extractor:
 
         answers: list[Extraction] = []
         budget_notes: list[str] = []
-        completion = None
+        turns: list[reader_mod.Turn] = []
         for page, prompt in zip(document.pages, page_prompts):
             where = f"page {page.page}" if len(document.pages) > 1 else None
-            completion, raised = self._ask(
-                prompt.to_list(), EXTRACTION_SCHEMA, SCHEMA_NAME, where=where
+            result = reader_mod.read(
+                self.client, prompt, mime=artifact.mime, locale=self.locale,
+                page=page.page, where=where,
             )
-            budget_notes.extend(raised)
-            answers.append(self._read_one(completion, artifact.mime, where=where))
+            answers.append(result.extraction)
+            turns.extend(result.turns)
+            budget_notes.extend(result.notes)
             log.info(
-                "read %s page %s: %d claims, ~%d vision tokens",
+                "read %s page %s: %d claims, %d unclear, %d turns, ~%d vision tokens",
                 short,
                 page.page,
-                len(answers[-1].claims),
+                len(result.extraction.claims),
+                len(result.extraction.abstentions),
+                len(result.turns),
                 page.vision_tokens,
             )
+        completion = turns[-1].completion
 
         extraction = merge(answers)
         if budget_notes:
@@ -323,6 +339,7 @@ class Extractor:
             deterministic=deterministic.describe(),
             seen_models=propose.observed_models(log_events),
             runtime=self._runtime(started),
+            turns=turns,
         )
         state = _state_of(extraction)
         reading = _reading_of(extraction)
@@ -415,14 +432,15 @@ class Extractor:
                 ),
             )
 
-        completion, raised = self._ask(
-            prompt.to_list(),
-            transcripts_mod.TRANSCRIPT_SCHEMA,
-            transcripts_mod.SCHEMA_NAME,
+        result = reader_mod.read(
+            self.client, prompt, mime=artifact.mime, locale=self.locale
         )
-        extraction = self._read_one(completion, artifact.mime)
-        if raised:
-            extraction = replace(extraction, notes=extraction.notes + tuple(raised))
+        completion = result.last
+        extraction = result.extraction
+        if result.notes:
+            extraction = replace(
+                extraction, notes=extraction.notes + tuple(dict.fromkeys(result.notes))
+            )
         held, tier_notes = transcripts_mod.force_tier(extraction.claims)
         if tier_notes:
             extraction = replace(
@@ -457,6 +475,7 @@ class Extractor:
             seen_models=propose.observed_models(log_events),
             audio_spans=spans,
             runtime=self._runtime(started),
+            turns=result.turns,
             extra={
                 "reader": "transcript",
                 # Which transcript these claims were read from. A better speech
@@ -477,67 +496,6 @@ class Extractor:
             reading=_reading_of(extraction),
         )
 
-    def _ask(
-        self,
-        messages: list[dict[str, Any]],
-        schema: Any,
-        schema_name: str,
-        where: str | None = None,
-    ) -> tuple[Completion, tuple[str, ...]]:
-        """Ask once, and again with more room if the box says it ran out.
-
-        The ladder is in :mod:`agent.extract.budget`; what belongs here is why
-        the loop is shaped this way. It advances only on the server's own
-        ``finish_reason``, never on a guess about how long an answer should be,
-        so an ordinary page costs exactly one call and a four-table pathology
-        report costs one more. It stops at the top of the ladder or at the edge
-        of ``ctx``, whichever comes first, because the same prompt at temperature
-        zero produces the same cut-off answer and looping would only spend the
-        box's time.
-
-        The raise is returned as a note rather than left in the log alone: "this
-        page needed two calls" is provenance, and the extraction event records
-        the ceiling it finally answered under.
-        """
-        return budget_mod.ask(self.client, messages, schema, schema_name, where=where)
-
-    def _read_one(self, completion, mime: str, where: str | None = None) -> Extraction:
-        """Parse and validate one page's answer. Never repairs, never raises."""
-        try:
-            payload = parse_completion(completion)
-        except OutputTruncated as exc:
-            # Separated from every other refusal on purpose. The answer is not
-            # wrong, it is unfinished, and the fix is room rather than a server
-            # setting — the generic message would send someone to read about
-            # guided decoding while the token cap sat there unexamined.
-            prefix = f"{where}: " if where else ""
-            return Extraction(
-                readable=False,
-                refused=True,
-                truncated=True,
-                unreadable_reason=(
-                    prefix
-                    + str(exc)
-                    + " "
-                    + budget_mod.describe_exhausted(
-                        completion.max_tokens or budget_mod.START,
-                        self.client.settings.ctx,
-                        completion.prompt_tokens,
-                    )
-                ),
-            )
-        except InferenceError as exc:
-            # The raw output is still recorded by the caller. An answer that is
-            # not JSON is a refusal, not a crash — and not a page the model could
-            # not read, which is why `refused` is set: thinking narration landing
-            # in `content` is a server setting to change, and reporting it as an
-            # unreadable photograph would send the user to the wrong place.
-            return Extraction(
-                readable=False,
-                refused=True,
-                unreadable_reason=str(exc),
-            )
-        return read_answer(payload, mime=mime, locale=self.locale)
 
 
 # --- draining the queue ----------------------------------------------------

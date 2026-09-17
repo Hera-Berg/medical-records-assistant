@@ -1,26 +1,31 @@
-"""Scoring a model against the golden corpus.
+"""Scoring a reader against the golden corpus: correct, abstained, or wrong.
 
-``MODELS.md``: "**Recall on medications, doses and allergies must be 100%.** A
-false positive gets caught in review; a missed medication is invisible and is
-precisely the failure this project exists to prevent. Report recall and precision
-separately and never trade recall for precision."
+Every expected claim on medications, doses and allergies ends in exactly one of
+three outcomes, and the gate reads two numbers:
 
-Two rules follow, and both are enforced here rather than left to whoever reads
-the report.
+- **wrong must be zero.** Wrong is an asserted falsehood — a wrong dose, a wrong
+  drug, a value filed under the wrong field — and it is also *silence*: a
+  medication that produced neither a claim nor an abstention. A silent miss makes
+  no review item and nobody can notice it, which is the failure ``CLAUDE.md``
+  calls worse than no record.
+- **correct + abstained must be everything.** An abstention — the reader saying
+  it could not read that field, or that page — becomes a visible "could not be
+  read" in the review queue, and the person photographs it again or types it
+  in. That is a working system. How the split falls between correct and
+  abstained is a measure of quality, not of safety.
 
-**There is no combined score.** No F1, no weighted average, nothing that can go
-up because precision improved while recall fell. The two numbers are reported
-apart and the pass/fail gate reads recall on the critical categories only.
+Scoring abstention and error identically, as recall did, could not tell a
+cautious reader from a broken one. An error in the harness is wrong, not
+abstained: the system does not put a harness exception in front of anybody.
 
-**Matching is on the normalised key, never the literal.** A model that writes
-"5 mg daily" where the fixture says "5mg daily" has read the page correctly, and
-an eval that failed it would push the next prompt change in exactly the wrong
-direction. This is the same comparison the projection uses to decide whether two
-readings agree — see ``values.normalise_text``.
+**A claim the fixture does not expect is wrong too**, when it is about a
+medication or an allergy and the fixture does not list it as also true. A
+reading of "mefenamic acid 500mg" off a page that says metformin is not a false
+positive for a person to catch — it is the wrong drug in a medical record.
 
-The harness is deliberately not a test that runs on every commit: it needs the
-box. It is a gate on a **model or prompt change**, which is when it is worth
-minutes and a warm GPU.
+**Matching is on the normalised key, never the literal**, through the same
+:mod:`~agent.projection.values` comparison and salt table the projection uses.
+There is no combined score.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from ..projection import drugs, subjects, values
-from .validate import ReadClaim
+from .validate import Abstention, ReadClaim, merge
 
 
 def _key(subject: str, predicate: str, value: str) -> tuple[str, str, str]:
@@ -62,90 +67,145 @@ def _key(subject: str, predicate: str, value: str) -> tuple[str, str, str]:
     return (normalised, predicate.strip().lower(), key)
 
 
+CORRECT = "correct"
+ABSTAINED = "abstained"
+WRONG = "wrong"
+
+#: Subject kinds whose claims are medications, doses and allergies — the gate.
+CRITICAL_KINDS = ("med", "allergy")
+
+#: Which group of the reader a subject kind is asked about in.
+_FAMILY_OF_KIND = {"med": "medications", "allergy": "allergies", "problem": "problems", "person": "problems"}
+
+#: Predicates that only say a thing is named on the page. True whenever the thing
+#: itself is one the fixture knows is there.
+_NAMING = ("name", "substance")
+
+
+def _subject_key(subject: str) -> str:
+    normalised = subject.strip().lower()
+    parsed = subjects.parse(normalised)
+    return drugs.alias_for(parsed) or normalised
+
+
+def _key(subject: str, predicate: str, value: str) -> tuple[str, str, str]:
+    """What makes two readings the same reading.
+
+    The projection's own :class:`~agent.projection.values.Value` key, folded
+    through the salt table: a label reading ``PERINDOPRIL ARGININE`` is filed
+    under ``med:perindopril``, and a reader that got it right must not score
+    wrong for it.
+    """
+    parsed = values.parse(value)
+    key = parsed.key if parsed is not None else values.normalise_text(value)
+    return (_subject_key(subject), predicate.strip().lower(), key)
+
+
+@dataclass(frozen=True)
+class Scored:
+    """One expected claim, or one claim nobody expected, and what became of it."""
+
+    key: tuple[str, str, str]
+    outcome: str
+    critical: bool
+    detail: str = ""
+
+    def describe(self) -> str:
+        subject, predicate, value = self.key
+        line = f"{self.outcome:<9} {subject} {predicate} {value}"
+        return f"{line} — {self.detail}" if self.detail else line
+
+
 @dataclass(frozen=True)
 class FixtureResult:
     """How one artefact scored."""
 
     name: str
-    matched: tuple[tuple[str, str, str], ...] = ()
-    missed: tuple[tuple[str, str, str], ...] = ()
-    extra: tuple[tuple[str, str, str], ...] = ()
-    #: The critical subsets, carried rather than re-derived. Critical recall is
-    #: the number the gate reads, and computing it from `matched` minus
-    #: `missed_critical` would count every non-critical match as critical and
-    #: report a pass that had not been earned.
-    matched_critical: tuple[tuple[str, str, str], ...] = ()
-    missed_critical: tuple[tuple[str, str, str], ...] = ()
+    #: One entry per expected claim.
+    expected: tuple[Scored, ...] = ()
+    #: Claims nobody expected. Wrong when critical; reported either way.
+    unexpected: tuple[Scored, ...] = ()
     readable: bool = True
     expected_readable: bool = True
     error: str | None = None
 
+    def _count(self, outcome: str, critical: bool = True) -> int:
+        return sum(
+            1 for item in (*self.expected, *self.unexpected)
+            if item.outcome == outcome and (item.critical or not critical)
+        )
+
+    @property
+    def correct(self) -> int:
+        return self._count(CORRECT)
+
+    @property
+    def abstained(self) -> int:
+        return self._count(ABSTAINED)
+
+    @property
+    def wrong(self) -> int:
+        return self._count(WRONG)
+
+    @property
+    def critical_expected(self) -> int:
+        return sum(1 for item in self.expected if item.critical)
+
     @property
     def ok(self) -> bool:
-        """A fixture passes only if nothing critical was missed.
+        """Nothing critical wrong, and every critical claim correct or abstained."""
+        if self.error is not None or self.wrong:
+            return False
+        return self.correct + self.abstained >= self.critical_expected
 
-        Extras do not fail it. A false positive is caught in review by a person
-        looking at a diff; a missed medication is not caught by anything.
-        """
-        return not self.missed_critical and self.error is None
-
-    def describe(self) -> str:
-        if self.error:
-            return f"ERROR  {self.name}: {self.error}"
-        parts = [f"{len(self.matched)} found"]
-        if self.missed:
-            parts.append(f"{len(self.missed)} missed")
-        if self.extra:
-            parts.append(f"{len(self.extra)} extra")
+    def describe(self) -> list[str]:
         flag = "ok  " if self.ok else "FAIL"
-        return f"{flag}   {self.name}: {', '.join(parts)}"
+        head = (
+            f"{flag}   {self.name}: correct {self.correct}, abstained "
+            f"{self.abstained}, wrong {self.wrong}"
+        )
+        lines = [head]
+        if self.error:
+            lines.append(f"         error: {self.error}")
+        for item in (*self.expected, *self.unexpected):
+            if item.outcome != CORRECT or not item.critical:
+                lines.append(f"         {item.describe()}")
+        return lines
 
 
 @dataclass(frozen=True)
 class Report:
-    """The whole corpus, scored. Two numbers, never combined into one."""
+    """The whole corpus, scored. Three counts on the gated claims, never combined."""
 
     results: tuple[FixtureResult, ...] = ()
     model: str = ""
-    tier: str = "remote"
+    tier: str = "endpoint"
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     @property
-    def matched(self) -> int:
-        return sum(len(r.matched) for r in self.results)
+    def correct(self) -> int:
+        return sum(r.correct for r in self.results)
 
     @property
-    def missed(self) -> int:
-        return sum(len(r.missed) for r in self.results)
+    def abstained(self) -> int:
+        return sum(r.abstained for r in self.results)
 
     @property
-    def extra(self) -> int:
-        return sum(len(r.extra) for r in self.results)
+    def wrong(self) -> int:
+        return sum(r.wrong for r in self.results)
 
-    def recall(self) -> Fraction | None:
-        """Of everything the corpus says is there, how much was found.
+    @property
+    def total(self) -> int:
+        """Every gated outcome: expected claims plus unexpected critical assertions."""
+        return self.correct + self.abstained + self.wrong
 
-        Exact arithmetic. A float here would make two runs of an unchanged model
-        differ in the last digit and turn a stable number into a moving one.
-        """
-        total = self.matched + self.missed
-        return Fraction(self.matched, total) if total else None
-
-    def precision(self) -> Fraction | None:
-        """Of everything found, how much the corpus says is really there."""
-        total = self.matched + self.extra
-        return Fraction(self.matched, total) if total else None
-
-    def critical_recall(self) -> Fraction | None:
-        """Recall on medications, doses and allergies. Must be 1."""
-        found = sum(len(r.matched_critical) for r in self.results)
-        missed = sum(len(r.missed_critical) for r in self.results)
-        total = found + missed
-        return Fraction(found, total) if total else None
+    def share(self, count: int) -> Fraction | None:
+        """Exact arithmetic, so an unchanged reader reports an unchanged number."""
+        return Fraction(count, self.total) if self.total else None
 
     @property
     def ok(self) -> bool:
-        """The gate. Critical recall of 100%, and nothing errored."""
+        """The gate: wrong is zero, and correct plus abstained is everything."""
         return all(result.ok for result in self.results)
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,20 +213,29 @@ class Report:
             "model": self.model,
             "tier": self.tier,
             "ok": self.ok,
-            # Separately. Always separately.
-            "recall": _percent(self.recall()),
-            "precision": _percent(self.precision()),
-            "critical_recall": _percent(self.critical_recall()),
-            "matched": self.matched,
-            "missed": self.missed,
-            "extra": self.extra,
+            "critical": {
+                "correct": self.correct,
+                "abstained": self.abstained,
+                "wrong": self.wrong,
+                "correct_share": _percent(self.share(self.correct)),
+                "abstained_share": _percent(self.share(self.abstained)),
+                "wrong_share": _percent(self.share(self.wrong)),
+            },
             "fixtures": [
                 {
                     "name": r.name,
                     "ok": r.ok,
-                    "matched": [list(m) for m in r.matched],
-                    "missed": [list(m) for m in r.missed],
-                    "extra": [list(m) for m in r.extra],
+                    "correct": r.correct,
+                    "abstained": r.abstained,
+                    "wrong": r.wrong,
+                    "expected": [
+                        {"claim": list(s.key), "outcome": s.outcome, "critical": s.critical, "detail": s.detail}
+                        for s in r.expected
+                    ],
+                    "unexpected": [
+                        {"claim": list(s.key), "outcome": s.outcome, "critical": s.critical, "detail": s.detail}
+                        for s in r.unexpected
+                    ],
                     "error": r.error,
                 }
                 for r in self.results
@@ -175,21 +244,22 @@ class Report:
         }
 
     def describe(self) -> list[str]:
-        lines = [result.describe() for result in self.results]
+        lines: list[str] = []
+        for result in self.results:
+            lines.extend(result.describe())
         lines.append("")
-        lines.append(f"recall            {_percent(self.recall())}")
-        lines.append(f"precision         {_percent(self.precision())}")
-        lines.append(f"critical recall   {_percent(self.critical_recall())}")
+        lines.append("medications, doses and allergies:")
+        lines.append(f"  correct     {self.correct}  ({_percent(self.share(self.correct))})")
+        lines.append(f"  abstained   {self.abstained}  ({_percent(self.share(self.abstained))})")
+        lines.append(f"  wrong       {self.wrong}  ({_percent(self.share(self.wrong))})")
         if not self.ok:
             lines.append("")
             lines.append(
-                "FAILED. Recall on medications, doses and allergies must be 100%: a "
-                "false positive is caught in review, a missed medication is caught by "
-                "nothing. Do not accept this model or prompt change."
+                "FAILED. Wrong must be 0 on medications, doses and allergies, and "
+                "every one of them must be read correctly or honestly left unread. "
+                "An asserted falsehood or a silent miss reaches nobody. Do not accept "
+                "this model or prompt change."
             )
-            for result in self.results:
-                for item in result.missed_critical:
-                    lines.append(f"  missed  {result.name}: {' '.join(item)}")
         return lines
 
 
@@ -199,66 +269,107 @@ def _percent(value: Fraction | None) -> str:
     return f"{float(value) * 100:.1f}%"
 
 
-def score(fixture, claims: Sequence[ReadClaim], readable: bool = True, error: str | None = None) -> FixtureResult:
-    """Compare one fixture's expected claims against what the model produced.
+def score(
+    fixture,
+    claims: Sequence[ReadClaim],
+    readable: bool = True,
+    error: str | None = None,
+    abstentions: Sequence[Abstention] = (),
+) -> FixtureResult:
+    """Score one fixture: every expected claim correct, abstained or wrong."""
+    expected_keys = [
+        (_key(e.subject, e.predicate, e.value), e.critical) for e in fixture.expected
+    ]
+    also_true = {_key(*item) for item in getattr(fixture, "also_true", ())}
+    known_subjects = {key[0] for key, _ in expected_keys} | {key[0] for key in also_true}
 
-    An error is scored as a miss of everything the fixture expected. It used to
-    leave the fixture's claims out of recall altogether, so a recording that
-    errored raised the headline number by removing two critical claims from the
-    denominator — a harness that improves when a read fails is not a gate.
-    """
     if error is not None:
-        expected_all = tuple(
-            sorted(_key(e.subject, e.predicate, e.value) for e in fixture.expected)
-        )
         return FixtureResult(
             fixture.name,
-            missed=expected_all,
-            missed_critical=tuple(
-                sorted(_key(e.subject, e.predicate, e.value) for e in fixture.critical)
+            expected=tuple(
+                Scored(key, WRONG, critical, f"the read errored: {error}")
+                for key, critical in expected_keys
             ),
-            error=error,
+            readable=False,
             expected_readable=fixture.readable,
+            error=error,
         )
 
-    expected = {_key(e.subject, e.predicate, e.value): e for e in fixture.expected}
-    produced = {_key(c.subject, c.predicate, c.value_literal) for c in claims}
+    produced = [(_key(c.subject, c.predicate, c.value_literal), c) for c in claims]
+    produced_keys = {key for key, _ in produced}
+    by_slot: dict[tuple[str, str], list[str]] = {}
+    for key, _claim in produced:
+        by_slot.setdefault(key[:2], []).append(key[2])
 
-    matched = tuple(sorted(produced & set(expected)))
-    missed = tuple(sorted(set(expected) - produced))
-    extra = tuple(sorted(produced - set(expected)))
-    matched_critical = tuple(item for item in matched if expected[item].critical)
-    missed_critical = tuple(item for item in missed if expected[item].critical)
+    named = [a for a in abstentions if a.subject]
+    nameless: dict[str, int] = {}
+    for item in abstentions:
+        if not item.subject:
+            nameless[item.family] = nameless.get(item.family, 0) + 1
+    covered = {_subject_key(a.subject) for a in named}
 
-    if not fixture.readable and claims:
-        # A page nobody can read that produced claims anyway is the worst
-        # outcome in the corpus, and it is not a precision problem — it is a
-        # fabrication. Recorded as critical so the gate fails.
-        missed_critical = missed_critical + (("<unreadable>", "should-be", "nothing"),)
+    scored: list[Scored] = []
+    wrong_slots: set[tuple[str, str]] = set()
+    for key, critical in expected_keys:
+        slot = key[:2]
+        family = _FAMILY_OF_KIND.get(slot[0].split(":", 1)[0], "")
+        if key in produced_keys:
+            scored.append(Scored(key, CORRECT, critical))
+        elif slot in by_slot:
+            wrong_slots.add(slot)
+            scored.append(
+                Scored(key, WRONG, critical, f"asserted {', '.join(sorted(by_slot[slot]))} instead")
+            )
+        elif not readable:
+            scored.append(Scored(key, ABSTAINED, critical, "the reader said it could not read the page"))
+        elif slot[0] in covered:
+            reasons = sorted({f"{a.field}: {a.reason}" for a in named if _subject_key(a.subject) == slot[0]})
+            scored.append(Scored(key, ABSTAINED, critical, "; ".join(reasons)))
+        elif nameless.get(family):
+            nameless[family] -= 1
+            scored.append(Scored(key, ABSTAINED, critical, f"an unnamed entry in {family} could not be read"))
+        else:
+            scored.append(Scored(key, WRONG, critical, "silently missing — no claim and no abstention"))
+
+    expected_set = {key for key, _ in expected_keys}
+    unexpected: list[Scored] = []
+    for key, _claim in produced:
+        if key in expected_set:
+            continue
+        subject, predicate, _value = key
+        critical = subject.split(":", 1)[0] in CRITICAL_KINDS
+        if not fixture.readable:
+            unexpected.append(Scored(key, WRONG, True, "a claim from a page nobody can read is a fabrication"))
+        elif key in also_true:
+            unexpected.append(Scored(key, CORRECT, False, "not required, and true"))
+        elif predicate in _NAMING and subject in known_subjects:
+            unexpected.append(Scored(key, CORRECT, False, "names something that is on the page"))
+        elif (subject, predicate) in wrong_slots:
+            continue  # already counted against the expected claim it displaced
+        elif critical:
+            unexpected.append(Scored(key, WRONG, True, "asserted, and not what the page says"))
+        else:
+            unexpected.append(Scored(key, "unexpected", False, "not in the fixture; not gated"))
 
     return FixtureResult(
         name=fixture.name,
-        matched=matched,
-        missed=missed,
-        extra=extra,
-        matched_critical=matched_critical,
-        missed_critical=missed_critical,
+        expected=tuple(scored),
+        unexpected=tuple(unexpected),
         readable=readable,
         expected_readable=fixture.readable,
     )
 
 
-def report(results: Iterable[FixtureResult], model: str, tier: str = "remote", notes=()) -> Report:
+def report(results: Iterable[FixtureResult], model: str, tier: str = "endpoint", notes=()) -> Report:
     return Report(results=tuple(results), model=model, tier=tier, notes=tuple(notes))
 
 
 def compare_tiers(remote: Report, fallback: Report) -> list[str]:
-    """Fixtures the fallback tier reads worse than the remote one.
+    """Fixtures one reader gets wrong that another does not.
 
-    ``MODELS.md``: "If 4B recall on medications, doses or allergies falls below
-    9B on any fixture, that fixture becomes a required review case at the
-    fallback tier — the answer is to route it to a human, never to quietly
-    accept the worse result because the box was unreachable."
+    Kept for comparing two readers on the same corpus. A fixture the second
+    reader gets wrong more often is one to route to a person on that reader —
+    never a worse result to accept because the other one was unreachable.
     """
     worse: list[str] = []
     by_name = {result.name: result for result in remote.results}
@@ -266,13 +377,12 @@ def compare_tiers(remote: Report, fallback: Report) -> list[str]:
         better = by_name.get(result.name)
         if better is None:
             continue
-        if len(result.missed_critical) > len(better.missed_critical):
+        if result.wrong > better.wrong or (not result.ok and better.ok):
             worse.append(
-                f"{result.name}: the fallback tier misses "
-                f"{len(result.missed_critical)} critical claim(s) the remote model "
-                f"finds. Route this artefact to a person when running on the "
-                f"fallback — never accept the worse reading because the box was "
-                f"unreachable"
+                f"{result.name}: the {fallback.tier} reader gets {result.wrong} gated "
+                f"claim(s) wrong where the {remote.tier} reader gets {better.wrong}. "
+                f"Route this artefact to a person on the {fallback.tier} reader — "
+                f"never accept the worse reading because the other was unreachable"
             )
     return worse
 
@@ -287,27 +397,15 @@ def run_corpus(
     hotwords: Sequence[str] = (),
     workdir: Path | None = None,
 ) -> Report:
-    """Read every fixture with *client* and score the result.
+    """Read every fixture exactly as extraction reads it, and score the result.
 
-    Needs the box, so this is never part of the ordinary test suite. It is a
-    gate on a model or prompt change — the moment when minutes and a warm GPU
-    are worth spending, and the moment a silent recall regression would
-    otherwise be accepted.
-
-    Recordings go through both readers, in the order a real capture does: the
-    local speech model types them up, and the box reads the words. Their claims
-    were deferred through phases 6 and 7 with nothing scoring them, which is the
-    condition a golden corpus exists to prevent — two fixtures carrying
-    hand-written expected claims that no run ever compared against.
+    Through :func:`agent.extract.reader.read` — the same conversation, the same
+    ceiling ladder, the same checks — so the harness scores what extraction does
+    rather than a second implementation of it.
     """
-    from . import budget as budget_mod  # noqa: PLC0415 - avoids an import cycle
     from . import images as images_mod  # noqa: PLC0415 - avoids an import cycle
     from . import prompts as prompts_mod
-    from . import transcripts as transcripts_mod
-    from .schema import EXTRACTION_SCHEMA, SCHEMA_NAME
-    from .validate import merge, read as read_answer
-    from ..errors import OutputTruncated
-    from ..llm.client import parse_completion
+    from . import reader as reader_mod
     from ..errors import HealthAgentError
 
     results: list[FixtureResult] = []
@@ -318,11 +416,7 @@ def run_corpus(
             if fixture.mime.startswith("audio/"):
                 results.append(
                     _score_recording(
-                        client,
-                        fixture,
-                        data,
-                        locale=locale,
-                        hotwords=hotwords,
+                        client, fixture, data, locale=locale, hotwords=hotwords,
                         workdir=workdir,
                     )
                 )
@@ -334,52 +428,38 @@ def run_corpus(
                     pages=(images_mod.prepare(data, client.settings.long_edge, page=1),)
                 )
             if not document.is_readable:
-                results.append(
-                    score(fixture, [], readable=False, error=document.unreadable)
-                )
+                results.append(score(fixture, [], error=document.unreadable))
                 continue
 
             answers = []
             for page in document.pages:
                 prompt = prompts_mod.build(page, total_pages=len(document.pages))
-                # The same ladder real extraction climbs, so a page that needs a
-                # second call with more room is scored on that second call.
-                completion, _raised = budget_mod.ask(
-                    client, prompt.to_list(), EXTRACTION_SCHEMA, SCHEMA_NAME
+                answers.append(
+                    reader_mod.read(client, prompt, mime=fixture.mime, locale=locale).extraction
                 )
-                try:
-                    payload = parse_completion(completion)
-                except OutputTruncated:
-                    from .validate import Extraction
-
-                    # Scored as a miss, and named as the miss it is. A fixture
-                    # the box ran out of room on is a fixture whose recall is
-                    # zero, and calling that "not JSON" would send whoever reads
-                    # the report to the server's grammar settings.
-                    answers.append(
-                        Extraction(
-                            readable=False,
-                            truncated=True,
-                            unreadable_reason="cut off at the token ceiling",
-                        )
-                    )
-                    continue
-                except HealthAgentError:
-                    from .validate import Extraction
-
-                    answers.append(
-                        Extraction(readable=False, unreadable_reason="not JSON")
-                    )
-                    continue
-                answers.append(read_answer(payload, mime=fixture.mime, locale=locale))
             extraction = merge(answers)
-            results.append(
-                score(fixture, extraction.claims, readable=extraction.readable)
-            )
+            results.append(_score_extraction(fixture, extraction))
         except HealthAgentError as exc:
             results.append(score(fixture, [], error=str(exc)))
     runtime = (getattr(client, "runtime", None) or {}).get("kind", "endpoint")
     return report(results, model=model, tier=runtime)
+
+
+def _score_extraction(fixture, extraction) -> FixtureResult:
+    """An answer the system refused or could not finish is not an abstention.
+
+    A cut-off or schema-refused answer parks the artefact for a person, which is
+    visible — but it is the harness's job to say the reader failed to answer, so
+    it is scored as an error rather than credited as caution.
+    """
+    if extraction.refused:
+        return score(fixture, [], error=extraction.unreadable_reason or "the answer was refused")
+    return score(
+        fixture,
+        extraction.claims,
+        readable=extraction.readable,
+        abstentions=extraction.abstentions,
+    )
 
 
 def _score_recording(
@@ -390,56 +470,29 @@ def _score_recording(
     hotwords: Sequence[str],
     workdir: Path | None,
 ) -> FixtureResult:
-    """Type a recording up locally, then read the words with the box.
-
-    Both stages, deliberately. Scoring the transcript prompt against a
-    hand-written transcript would test the prompt and nothing else; what has to
-    hold is that a drug name survives Whisper *and* the reading that follows it,
-    because a name mangled in the first stage is an unmatched entity in the
-    second and there is nothing downstream to notice.
-    """
+    """Type a recording up locally, then read the words exactly as extraction does."""
     import tempfile  # noqa: PLC0415 - only needed here
 
     from ..asr import transcribe as transcribe_mod  # noqa: PLC0415
-    from ..errors import HealthAgentError  # noqa: PLC0415
-    from ..llm.client import parse_completion  # noqa: PLC0415
+    from . import reader as reader_mod  # noqa: PLC0415
     from . import transcripts as transcripts_mod  # noqa: PLC0415
-    from .validate import Extraction, read as read_answer  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory(prefix="health-agent-eval-audio-") as scratch:
         audio = Path(workdir or scratch) / f"{fixture.name}.webm"
         audio.parent.mkdir(parents=True, exist_ok=True)
         audio.write_bytes(data)
-        transcript = transcribe_mod.transcribe(
-            audio,
-            language=locale,
-            hotwords=tuple(hotwords),
-        )
+        transcript = transcribe_mod.transcribe(audio, language=locale, hotwords=tuple(hotwords))
 
     if not transcript.is_available:
-        return score(fixture, [], readable=False, error=transcript.unavailable)
+        return score(fixture, [], error=transcript.unavailable)
     if not transcript.text.strip():
-        # Silence and a cough. No speech, nothing asked of the box, no claims —
-        # which for that fixture is the expected result rather than a failure.
-        return score(fixture, [], readable=False, error=None)
-
-    from . import budget as budget_mod  # noqa: PLC0415
+        # Silence and a cough: nothing asked of the reader and nothing claimed,
+        # which for that fixture is the expected result.
+        return score(fixture, [], readable=False)
 
     prompt = transcripts_mod.build(transcript.text)
-    completion, _raised = budget_mod.ask(
-        client,
-        prompt.to_list(),
-        transcripts_mod.TRANSCRIPT_SCHEMA,
-        transcripts_mod.SCHEMA_NAME,
-    )
-    try:
-        payload = parse_completion(completion)
-    except HealthAgentError as exc:
-        # The message says which of the two it was — an unfinished answer or an
-        # invalid one — because a recall failure with the wrong cause attached
-        # is what makes a model swap get accepted on a bad report.
-        return score(fixture, [], readable=False, error=str(exc))
-
-    extraction = read_answer(payload, mime=fixture.mime, locale=locale)
+    extraction = reader_mod.read(client, prompt, mime=fixture.mime, locale=locale).extraction
     held, _notes = transcripts_mod.force_tier(extraction.claims)
-    return score(fixture, held, readable=extraction.readable)
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    return _score_extraction(fixture, _replace(extraction, claims=tuple(held)))

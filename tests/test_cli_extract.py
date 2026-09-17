@@ -17,6 +17,8 @@ import io
 import json
 
 import httpx
+
+from . import family_answers
 import pytest
 from PIL import Image
 
@@ -116,7 +118,7 @@ def _patch_client(monkeypatch, handler, resolver=lambda h, p=None: ["100.94.135.
         return Client(
             parse_settings(vault.config.raw).vlm,
             vault_root=vault.root,
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(family_answers.wrap(handler)),
             resolver=resolver,
         )
 
@@ -592,7 +594,7 @@ def test_artifact_runs_only_the_one_named(monkeypatch, configured):
 
     assert code == 0
     assert f"selected  {first}" in output
-    assert len(seen) == 1, "the other artefact was not sent"
+    assert len(seen) == 3, "one artefact read in three turns; the other was not sent"
     extractions = [
         e for e in configured.read().events if e.type == "extraction.completed"
     ]
@@ -803,14 +805,24 @@ def test_thinking_narration_is_reported_as_a_rejected_output(monkeypatch, config
     assert "could not read it" not in output
 
 
-def test_a_claim_the_validator_refused_is_reported_as_rejected(monkeypatch, configured):
+def test_a_name_the_checks_refuse_is_reported_as_unread_not_dropped(monkeypatch, configured):
+    """A medication whose name will not resolve is not silently lost.
+
+    It used to be rejected as a claim and mentioned only as a rejection. It is an
+    abstention now: nothing is asserted, and the page goes to a person.
+    """
     code, output = _extract_one(
         monkeypatch, configured, _readable([_claim(subject_name="   ")])
     )
 
     assert code == 0
-    assert "output rejected: claim 0:" in output
-    assert "does not resolve to a usable entity id" in output
+    assert "0 claims proposed" in output
+    assert "review manually" in output
+    completed = next(
+        e for e in configured.read().events if e.type == "extraction.completed"
+    )
+    (abstention,) = completed.payload["abstentions"]
+    assert abstention["family"] == "medications" and abstention["field"] == "name"
 
 
 def test_a_page_the_model_could_not_read_is_reported_as_that(monkeypatch, configured):

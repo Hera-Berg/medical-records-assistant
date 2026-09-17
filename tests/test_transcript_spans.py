@@ -104,22 +104,6 @@ def test_malformed_word_entries_are_skipped_rather_than_trusted():
     assert span.start == 0.8
 
 
-def test_the_schema_cannot_express_a_prescribers_authority():
-    """A voice note is patient-reported, and the grammar is where that is settled."""
-    claim = transcripts.TRANSCRIPT_SCHEMA["properties"]["claims"]["items"]
-    assert claim["properties"]["evidence_tier"]["enum"] == ["patient-reported"]
-    assert transcripts.TRANSCRIPT_SCHEMA["properties"]["artifact_kind"]["enum"] == [
-        "note",
-        "unreadable",
-    ]
-
-    # And narrowing it left the document schema alone.
-    from agent.extract.schema import EXTRACTION_SCHEMA
-
-    document_tier = EXTRACTION_SCHEMA["properties"]["claims"]["items"]["properties"]
-    assert "prescriber-issued" in document_tier["evidence_tier"]["enum"]
-
-
 def test_the_transcript_is_in_the_prompt_hash():
     """Different words are different work; the same words are not.
 

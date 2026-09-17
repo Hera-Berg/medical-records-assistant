@@ -3,6 +3,18 @@
 This is the guarded edge of the system, and most of the guarding is done by
 **what the schema does not contain**.
 
+**A page is read in groups — medications, then allergies, then problems and
+people — and every group has an** ``unclear`` **list.** Leaving something out
+because the page is hard to read is a correct answer and the schema gives it a
+place, because a small model asked to fill a schema will fill it. An entry in
+``unclear`` becomes a visible "could not be read" in the review queue; a guessed
+dose becomes a wrong fact in a medical record.
+
+**The name is only the name.** A medicine's strength, frequency and name are
+separate fields, so a strength cannot leak into the identifier
+(``med:atorvastatin-20``), and a dose is only ever proposed when both strength
+and frequency were read — see :mod:`agent.extract.families`.
+
 There is no ``consequence`` field. ``MODELS.md``: "The model never assigns a
 consequence tier. If the model could label something low-consequence, a bad
 extraction could route itself around review." A schema without the field is
@@ -132,89 +144,287 @@ _DISPENSE = {
     },
 }
 
-_CLAIM = {
+#: The groups a page is read in, in order, as turns of one conversation about the
+#: same image. Measured on the bundled reader: the first turn pays the image
+#: prefill (about 80 seconds on a laptop CPU) and each later turn reuses it from
+#: the server's prompt cache (about 3 seconds). Asked as separate prompts instead,
+#: every group paid the whole prefill again, which is why they are turns.
+MEDICATIONS = "medications"
+ALLERGIES = "allergies"
+PROBLEMS = "problems"
+FAMILIES = (MEDICATIONS, ALLERGIES, PROBLEMS)
+
+#: What an ``unclear`` entry may say could not be read, per group.
+UNCLEAR_FIELDS = {
+    MEDICATIONS: ("name", "strength", "frequency", "stopped", "whole entry"),
+    ALLERGIES: ("substance", "reaction", "whole entry"),
+    PROBLEMS: ("name", "role", "whole entry"),
+}
+
+
+def _tier() -> dict[str, Any]:
+    return {
+        "type": "string",
+        "enum": list(tiers.EVIDENCE_TIERS),
+        "description": "What kind of source this is. Judge the document, not the entry.",
+    }
+
+
+def _confidence() -> dict[str, Any]:
+    return {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": (
+            "How sure you are you read this correctly. It does not affect whether "
+            "a person reviews it."
+        ),
+    }
+
+
+_SOURCE_SPAN = _string(
+    "The text on the page this was read from, copied verbatim, so a person can find it."
+)
+_OCCURRED_SPAN = _nullable_string(
+    "The words the source uses about when this happened, copied verbatim, whenever "
+    "they are not a plain calendar date: 'around Easter', 'last Christmas'. Copy the "
+    "phrase; never turn it into a date."
+)
+
+
+def _unclear(family: str) -> dict[str, Any]:
+    """Something on the page the model could not read. A first-class answer."""
+    return {
+        "type": "array",
+        "maxItems": 20,
+        "description": (
+            "Everything in this group you can see on the page but cannot read with "
+            "certainty. Putting an entry here is the correct answer whenever you are "
+            "unsure — it sends the page to the person to check, which is exactly what "
+            "should happen. A guess is never better than an entry here."
+        ),
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["name_if_readable", "field", "reason", "source_span"],
+            "properties": {
+                "name_if_readable": _nullable_string(
+                    "The name of the thing, if that part is clear. Null if even the "
+                    "name cannot be read."
+                ),
+                "field": {"type": "string", "enum": list(UNCLEAR_FIELDS[family])},
+                "reason": _string("What stops you reading it: 'handwriting', 'blurred'."),
+                "source_span": _nullable_string("The words you can make out, if any."),
+            },
+        },
+    }
+
+
+_MEDICATION = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "subject_kind",
-        "subject_name",
-        "predicate",
-        "value_literal",
-        "evidence_tier",
-        "occurred_at",
-        "occurred_span",
-        "dispense",
-        "source_span",
+        "name", "strength", "frequency", "stopped", "dispense", "evidence_tier",
+        "occurred_at", "occurred_span", "source_span", "confidence",
+    ],
+    "properties": {
+        "name": _string(
+            "The medicine's name and nothing else, as written: 'Perindopril Arginine', "
+            "'Atorvastatin'. Never a strength, a form or a count — not "
+            "'Atorvastatin 20mg tablets', just 'Atorvastatin'."
+        ),
+        "strength": _nullable_string(
+            "How much is in one dose, copied as written: '5mg', '500 mg'. Null if the "
+            "page does not say, or you cannot read it — then add it to unclear."
+        ),
+        "frequency": _nullable_string(
+            "How often it is taken, copied as written: 'daily', 'Take ONE tablet at "
+            "night', 'twice daily with food'. Null if the page does not say, or you "
+            "cannot read it — then add it to unclear."
+        ),
+        "stopped": _nullable_string(
+            "Only if the source says this medicine was stopped: copy those words. "
+            "Otherwise null."
+        ),
+        "dispense": _DISPENSE,
+        "evidence_tier": _tier(),
+        "occurred_at": _OCCURRED_AT,
+        "occurred_span": _OCCURRED_SPAN,
+        "source_span": _SOURCE_SPAN,
+        "confidence": _confidence(),
+    },
+}
+
+_ALLERGY = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "substance", "reaction", "evidence_tier", "occurred_at", "occurred_span",
+        "source_span", "confidence",
+    ],
+    "properties": {
+        "substance": _string(
+            "What the person reacts to, and nothing else, as written: 'Penicillin'."
+        ),
+        "reaction": _nullable_string(
+            "What happens, copied as written: 'rash', 'anaphylaxis'. Null if the page "
+            "does not say."
+        ),
+        "evidence_tier": _tier(),
+        "occurred_at": _OCCURRED_AT,
+        "occurred_span": _OCCURRED_SPAN,
+        "source_span": _SOURCE_SPAN,
+        "confidence": _confidence(),
+    },
+}
+
+_PROBLEM = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "name", "evidence_tier", "occurred_at", "occurred_span", "source_span",
         "confidence",
     ],
     "properties": {
-        "subject_kind": {"type": "string", "enum": list(SUBJECT_KINDS)},
-        "subject_name": _string(
-            "The thing this is about, as the source names it: 'Perindopril', "
-            "'Penicillin', 'Dr Nguyen'."
+        "name": _string(
+            "A condition the source itself names as the person's, as written: "
+            "'hypertension'. Never one you work out from a result or a medicine."
         ),
-        "predicate": {"type": "string", "enum": list(PREDICATES)},
-        "value_literal": _string(
-            "The value exactly as the source writes it: '5mg daily', not '5.0 mg'. "
-            "Copy it; do not tidy it, convert it, or complete it."
-        ),
-        "evidence_tier": {
-            "type": "string",
-            "enum": list(tiers.EVIDENCE_TIERS),
-            "description": "What kind of source this is. Judge the document, not the claim.",
-        },
+        "evidence_tier": _tier(),
         "occurred_at": _OCCURRED_AT,
-        "occurred_span": _nullable_string(
-            "The words the source uses about when this happened, copied verbatim, "
-            "whenever they are not a plain calendar date: 'around Easter', 'last "
-            "Christmas', 'the week before the wedding'. Copy the phrase; never turn "
-            "it into a date."
-        ),
-        "dispense": _DISPENSE,
-        "source_span": _string(
-            "The text on the page this claim was read from, copied verbatim, so a "
-            "person can find it."
-        ),
-        "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": (
-                "How sure you are you read this correctly. It does not affect "
-                "whether a person reviews the claim."
-            ),
-        },
+        "occurred_span": _OCCURRED_SPAN,
+        "source_span": _SOURCE_SPAN,
+        "confidence": _confidence(),
     },
 }
 
-EXTRACTION_SCHEMA: dict[str, Any] = {
+_PERSON = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["artifact_kind", "readable", "document_date", "claims", "unreadable_reason"],
+    "required": ["name", "role", "evidence_tier", "source_span", "confidence"],
     "properties": {
-        "artifact_kind": {"type": "string", "enum": list(ARTIFACT_KINDS)},
-        "readable": {
-            "type": "boolean",
-            "description": (
-                "False if you cannot read this well enough to be sure of what it "
-                "says. That is a useful answer and is preferred to a guess."
-            ),
-        },
-        "unreadable_reason": _nullable_string(
-            "If readable is false, what stops you reading it."
+        "name": _string("The practitioner's name, as written: 'Dr H Nguyen'."),
+        "role": _nullable_string(
+            "Their role or specialty, copied as written: 'Consultant', 'cardiology'. "
+            "Null if the page does not say."
         ),
-        "document_date": _OCCURRED_AT,
-        "claims": {
-            "type": "array",
-            "maxItems": 40,
-            "items": _CLAIM,
-            "description": (
-                "Everything the source states. An empty list is correct for a "
-                "document that states nothing about medications, allergies, "
-                "problems or practitioners."
-            ),
-        },
+        "evidence_tier": _tier(),
+        "source_span": _SOURCE_SPAN,
+        "confidence": _confidence(),
     },
 }
 
-SCHEMA_NAME = "health_record_extraction"
+
+#: What a recording can be. A voice note is a note; offering "prescription" would
+#: invite the model to promote what it heard.
+TRANSCRIPT_KINDS = ("note", "unreadable")
+TRANSCRIPT_TIER = "patient-reported"
+
+
+def family_schema(family: str, transcript: bool = False) -> dict[str, Any]:
+    """The answer shape for one group. The first group also reports the page itself.
+
+    *transcript* narrows it for a voice note: the only tier the grammar can
+    express is ``patient-reported``, and the only kinds are note and unreadable.
+    The reader caps the tier by mime as well; neither is redundant, because the
+    grammar stops the model saying it and the cap stops it meaning it.
+    """
+    built = _family_schema(family)
+    return _for_transcript(built) if transcript else built
+
+
+def _for_transcript(node: Any) -> Any:
+    if isinstance(node, dict):
+        narrowed = {name: _for_transcript(value) for name, value in node.items()}
+        properties = narrowed.get("properties")
+        if isinstance(properties, dict):
+            if "evidence_tier" in properties:
+                properties["evidence_tier"] = {
+                    **properties["evidence_tier"],
+                    "enum": [TRANSCRIPT_TIER],
+                    "description": (
+                        "Always patient-reported. This is a recording of the person "
+                        "whose record this is, whatever they are describing."
+                    ),
+                }
+            if "artifact_kind" in properties:
+                properties["artifact_kind"] = {
+                    **properties["artifact_kind"],
+                    "enum": list(TRANSCRIPT_KINDS),
+                }
+        return narrowed
+    if isinstance(node, list):
+        return [_for_transcript(item) for item in node]
+    return node
+
+
+def _family_schema(family: str) -> dict[str, Any]:
+    if family == MEDICATIONS:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "artifact_kind", "readable", "unreadable_reason", "document_date",
+                "medications", "unclear",
+            ],
+            "properties": {
+                "artifact_kind": {"type": "string", "enum": list(ARTIFACT_KINDS)},
+                "readable": {
+                    "type": "boolean",
+                    "description": (
+                        "False if you cannot read this page well enough to be sure of "
+                        "what it says. That is a correct and useful answer, and always "
+                        "better than a guess."
+                    ),
+                },
+                "unreadable_reason": _nullable_string(
+                    "If readable is false, what stops you reading it."
+                ),
+                "document_date": _OCCURRED_AT,
+                "medications": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "items": _MEDICATION,
+                    "description": "Every medicine you can read with certainty.",
+                },
+                "unclear": _unclear(MEDICATIONS),
+            },
+        }
+    if family == ALLERGIES:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["allergies", "unclear"],
+            "properties": {
+                "allergies": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": _ALLERGY,
+                    "description": "Every allergy or reaction you can read with certainty.",
+                },
+                "unclear": _unclear(ALLERGIES),
+            },
+        }
+    if family == PROBLEMS:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["problems", "people", "unclear"],
+            "properties": {
+                "problems": {"type": "array", "maxItems": 20, "items": _PROBLEM},
+                "people": {"type": "array", "maxItems": 10, "items": _PERSON},
+                "unclear": _unclear(PROBLEMS),
+            },
+        }
+    raise ValueError(f"unknown family {family!r}")
+
+
+def schema_name(family: str) -> str:
+    return f"health_record_{family}"
+
+
+#: Every group's schema, in order. Hashed together into the prompt hash.
+FAMILY_SCHEMAS: dict[str, dict[str, Any]] = {f: family_schema(f) for f in FAMILIES}
+TRANSCRIPT_SCHEMAS: dict[str, dict[str, Any]] = {
+    f: family_schema(f, transcript=True) for f in FAMILIES
+}

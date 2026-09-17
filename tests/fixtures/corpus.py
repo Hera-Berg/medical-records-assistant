@@ -86,6 +86,11 @@ class Fixture:
     #: recordings are rendered with espeak-ng and ffmpeg and are reported as
     #: unavailable rather than failing where those are absent.
     requires: tuple[str, ...] = ()
+    #: Claims that are true of the page but not required. A claim about a
+    #: medication or an allergy that is neither expected nor listed here is
+    #: scored wrong: nobody can tell a true extra from an invented one without a
+    #: person having written it down.
+    also_true: tuple[tuple[str, str, str], ...] = ()
 
     @property
     def missing_tools(self) -> tuple[str, ...]:
@@ -388,13 +393,13 @@ FIXTURES: tuple[Fixture, ...] = (
         render=lambda: _pdf(_PATHOLOGY),
         text="\n".join(_PATHOLOGY),
         document_date="2026-08-14",
-        expected=(
-            Expected("problem:hypothyroidism", "diagnosis", "TSH 8.4", critical=False),
-        ),
+        expected=(),
         notes=(
             "a real text layer, so the deterministic path reads it directly and "
-            "never rasterises it — an out-of-range flag the model must report and "
-            "must not interpret"
+            "never rasterises it. It names no medication, allergy or condition, so "
+            "the correct reading proposes none — in particular no hypothyroidism: "
+            "a condition worked out from a TSH result is interpretation. Lab results "
+            "have no predicate yet, so the out-of-range flag is not scored"
         ),
     ),
     Fixture(

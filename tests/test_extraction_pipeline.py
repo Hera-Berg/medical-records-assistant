@@ -17,6 +17,8 @@ import io
 import json
 
 import httpx
+
+from . import family_answers
 import pytest
 from PIL import Image
 
@@ -119,7 +121,7 @@ def _client(vault, handler, resolver=lambda h, p=None: list(PRIVATE)):
     return Client(
         settings,
         vault_root=vault.root,
-        transport=httpx.MockTransport(handler),
+        transport=httpx.MockTransport(family_answers.wrap(handler)),
         resolver=resolver,
     )
 
@@ -152,9 +154,15 @@ def test_the_raw_answer_is_stored_verbatim(vault):
         outcome = Extractor(vault, client).run(short)
 
     completed = next(e for e in outcome.events if e.type == propose.EXTRACTION_COMPLETED)
-    assert json.loads(completed.payload["raw_output"])["claims"][0]["value_literal"] == (
-        "5mg daily"
-    )
+    turns = completed.payload["turns"]
+    assert [turn["family"] for turn in turns] == ["medications", "allergies", "problems"]
+    first = json.loads(turns[0]["raw_output"])
+    assert first["medications"][0]["strength"] == "5mg"
+    assert first["medications"][0]["frequency"] == "daily"
+    # Every turn verbatim, and raw_output is the first of them — never a later
+    # turn standing in for the whole answer.
+    assert completed.payload["raw_output"] == turns[0]["raw_output"]
+    assert all(turn["finish_reason"] is None or turn["finish_reason"] for turn in turns)
     assert completed.payload["sampling"]["temperature"] == 0.0
     assert completed.payload["prompt_hashes"][0].startswith("sha256:")
     assert completed.payload["images"][0]["vision_tokens_estimate"] > 0
@@ -264,7 +272,7 @@ def test_retry_is_idempotent(vault):
     events = list(vault.read().events)
     assert sum(1 for e in events if e.type == propose.CLAIM_PROPOSED) == 1
     assert sum(1 for e in events if e.type == propose.EXTRACTION_COMPLETED) == 1
-    assert len(calls) == 1, "and the model is not asked again either"
+    assert len(calls) == 3, "one reading — three turns — and the model is not asked again"
 
 
 def test_idempotency_survives_a_restart(vault):

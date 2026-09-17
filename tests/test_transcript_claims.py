@@ -22,6 +22,8 @@ import json
 import wave
 
 import httpx
+
+from . import family_answers
 import pytest
 
 from agent import ingest as ingest_mod
@@ -162,7 +164,7 @@ def _client(vault, handler):
     return Client(
         settings,
         vault_root=vault.root,
-        transport=httpx.MockTransport(handler),
+        transport=httpx.MockTransport(family_answers.wrap(handler)),
         resolver=lambda h, p=None: list(PRIVATE),
     )
 
@@ -204,8 +206,8 @@ def test_a_recording_is_read_from_its_words_and_never_from_its_bytes(vault, reco
         outcome = Extractor(vault, client).run(recorded.short)
 
     assert outcome.claims == 1
-    (request,) = box.requests
-    sent = json.dumps(request)
+    assert len(box.requests) == 3, "medications, allergies, problems"
+    sent = json.dumps(box.requests)
     assert SPOKEN in sent
     # No image parts, and nothing base64-shaped: this is a text prompt.
     assert "image_url" not in sent
@@ -239,9 +241,29 @@ def test_claims_from_a_recording_are_patient_reported_whatever_the_model_says(
     with _client(vault, box) as client:
         outcome = Extractor(vault, client).run(recorded.short)
 
-    (claim,) = [e for e in outcome.events if e.type == propose.CLAIM_PROPOSED]
-    assert claim.payload["evidence_tier"] == "patient-reported"
-    assert any("recording" in note for note in claim.payload.get("notes", []))
+    # The voice-note grammar has no word for a prescriber's authority, so an
+    # answer using one does not match it and is refused whole — nothing proposed,
+    # nothing capped into shape. Validate, then reject; never repair.
+    assert [e for e in outcome.events if e.type == propose.CLAIM_PROPOSED] == []
+    assert outcome.reading == extract_runner.READ_REFUSED
+
+
+def test_a_claim_that_got_past_the_grammar_is_still_held_at_patient_reported():
+    """The cap is the second line: it holds even an answer the grammar allowed."""
+    from agent.extract import families
+
+    answer = {
+        "artifact_kind": "note", "readable": True, "unreadable_reason": None,
+        "document_date": None, "unclear": [],
+        "medications": [{
+            "name": "Atorvastatin", "strength": "forty milligrams", "frequency": "daily",
+            "stopped": None, "dispense": None, "evidence_tier": "prescriber-issued",
+            "occurred_at": None, "occurred_span": None, "source_span": "forty", "confidence": 0.8,
+        }],
+    }
+    (claim,) = families.read("medications", answer, mime="audio/webm").claims
+    assert claim.evidence_tier == "patient-reported"
+    assert any("recording" in note for note in claim.notes)
 
 
 def test_a_vague_date_stays_a_phrase(vault, recorded):
@@ -302,7 +324,7 @@ def test_reading_the_same_words_twice_proposes_nothing_the_second_time(vault, re
     assert first.claims == 1
     assert second.reading == extract_runner.READ_ALREADY
     assert second.events == ()
-    assert len(box.requests) == 1
+    assert len(box.requests) == 3, "one reading's three turns, and nothing the second time"
 
 
 def test_re_transcribing_to_different_words_is_new_work(vault, recorded):
@@ -323,8 +345,8 @@ def test_re_transcribing_to_different_words_is_new_work(vault, recorded):
         again = extractor.run(recorded.short)
 
     assert again.reading == extract_runner.READ_CLAIMS
-    assert len(box.requests) == 2
-    assert "eighty milligrams" in json.dumps(box.requests[1])
+    assert len(box.requests) == 6
+    assert "eighty milligrams" in json.dumps(box.requests[3])
 
 
 # --- silence ---------------------------------------------------------------

@@ -49,7 +49,7 @@ _RESERVED = frozenset(
         "stripped_reasoning", "latency_s", "usage", "prompt_version",
         "prompt_hashes", "images", "deterministic_read", "artifact_kind",
         "readable", "unreadable_reason", "document_date", "claims_proposed",
-        "rejected", "notes", "runtime",
+        "rejected", "notes", "runtime", "turns", "abstentions",
     }
 )
 
@@ -186,8 +186,13 @@ def extraction_event(
     ts: str | None = None,
     extra: Mapping[str, Any] | None = None,
     runtime: Mapping[str, Any] | None = None,
+    turns: Sequence[Any] = (),
 ) -> Event:
     """The model's answer, stored verbatim, with everything needed to re-derive it.
+
+    ``turns`` carries every question asked and every answer, verbatim, for every
+    page. ``raw_output`` is the first of them, kept for readers written before a
+    page was read in turns; it is never the whole answer when there were more.
 
     *extra* is how a reader records what is particular to it — which transcript
     a recording was read from, how many of its claims could be located in the
@@ -205,7 +210,12 @@ def extraction_event(
             "artifact": key.artifact,
             # Verbatim. Not the parsed form, not a tidied form: a model swap is
             # diffed against this, and a parse is a lossy view of it.
-            "raw_output": completion.content,
+            "raw_output": turns[0].completion.content if turns else completion.content,
+            "turns": [turn.to_payload() for turn in turns],
+            # What the reader said it could not read, and what the checks after
+            # it declined to assert. Each becomes a "could not be read" item for
+            # a person; none of it is a claim.
+            "abstentions": [item.to_dict() for item in extraction.abstentions],
             "model_reported": completion.model,
             "sampling": dict(completion.sampling),
             "stripped_reasoning": completion.stripped_reasoning,
@@ -369,6 +379,7 @@ def build(
     audio_spans: Mapping[int, Mapping[str, Any]] | None = None,
     extra: Mapping[str, Any] | None = None,
     runtime: Mapping[str, Any] | None = None,
+    turns: Sequence[Any] = (),
 ) -> Proposal:
     """Assemble the events for one artefact, or decline because it is already done.
 
@@ -399,6 +410,7 @@ def build(
             ts=ts,
             extra=extra,
             runtime=runtime,
+            turns=turns,
         )
     ]
     kind = (runtime or {}).get("kind")

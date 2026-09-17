@@ -12,11 +12,10 @@ a string.
 
 **The source is a person talking about themselves.** Everything a recording says
 is ``patient-reported``, and that is a fact about the artefact rather than a
-judgement about the sentence, so it is settled before the model runs. The schema
-here cannot express another tier, and :func:`agent.extract.validate.read` caps
-the tier by mime as well. Neither is redundant: the schema stops the model
-saying it, the cap stops a log written by some other version of this program
-from meaning it.
+judgement about the sentence, so it is settled before the model runs. The reader
+caps the tier by mime, and :func:`force_tier` holds anything that still gets
+through. Neither is redundant: the cap stops the model's label taking effect, and
+the hold stops a log written by some other version of this program meaning it.
 
 **The words are the input, so the words are in the prompt hash.** For a document
 the artefact hash identifies the bytes and the prompt hash identifies the
@@ -41,59 +40,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from ..events.envelope import Event
 from .prompts import PROMPT_VERSION, Prompt, prompt_hash
-from .schema import EXTRACTION_SCHEMA
 
 #: The only tier a recording can carry. Not a default and not a ceiling here —
 #: the single value the schema permits, so there is no version of the prompt or
 #: the grammar under which the model can claim a script's authority for
 #: something somebody said out loud.
 TRANSCRIPT_TIER = "patient-reported"
-
-#: What a recording can be. A voice note is a note; there is no "prescription"
-#: reading of somebody describing one, and offering the word would invite the
-#: model to promote what it heard.
-TRANSCRIPT_KINDS = ("note", "unreadable")
-
-SCHEMA_NAME = "health_record_transcript_extraction"
-
-
-def _schema() -> dict[str, Any]:
-    """The extraction schema, narrowed to what a recording can say.
-
-    Built from the document schema rather than written out again, so a field
-    added there is present here and a change to one cannot silently diverge from
-    the other. The only edits are the two enums that would otherwise let a voice
-    note claim to be a prescription.
-    """
-    schema = dict(EXTRACTION_SCHEMA)
-    properties = {name: dict(spec) for name, spec in schema["properties"].items()}
-
-    properties["artifact_kind"] = {
-        **properties["artifact_kind"],
-        "enum": list(TRANSCRIPT_KINDS),
-    }
-
-    claims = dict(properties["claims"])
-    item = dict(claims["items"])
-    item_properties = {name: dict(spec) for name, spec in item["properties"].items()}
-    item_properties["evidence_tier"] = {
-        "type": "string",
-        "enum": [TRANSCRIPT_TIER],
-        "description": (
-            "Always patient-reported. This is a recording of the person whose "
-            "record this is, whatever they are describing."
-        ),
-    }
-    item["properties"] = item_properties
-    claims["items"] = item
-    properties["claims"] = claims
-
-    schema["properties"] = properties
-    return schema
-
-
-TRANSCRIPT_SCHEMA: dict[str, Any] = _schema()
-
 
 SYSTEM = """\
 You read a transcript of a voice note that the owner of a personal health record
@@ -104,67 +56,74 @@ suggest causes, do not say whether anything is concerning, and do not comment on
 whether a dose sounds right. Report what was said and stop.
 
 This is speech, so it rambles, repeats itself, corrects itself and trails off.
-That is normal and is not a reason to tidy it.
+That is normal and is not a reason to tidy it. You will be asked about it in
+parts: first medications, then allergies, then problems and practitioners.
 
 Rules, in order of importance:
 
-1. COPY, NEVER COMPUTE. Every value you report is a span of the transcript,
-   copied. If they said "forty milligrams", report "forty milligrams" — do not
-   turn it into "40mg". Do no arithmetic of any kind.
+1. UNSURE MEANS UNCLEAR. Whenever you cannot tell with certainty what was said —
+   a name, a strength, how often — put it in the unclear list and leave it out
+   of the rest of your answer. That sends it to the person to check. A guess is
+   the one answer that does harm here.
 
-2. NEVER INVENT A DATE. People date things vaguely when they talk: "around
-   Easter", "a couple of months back", "just before the wedding". Copy the
-   phrase verbatim into occurred_span and leave occurred_at null. Do not work
-   out what date it means. Someone will be asked.
+2. A NAME IS ONLY A NAME. "Atorvastatin", never "atorvastatin forty milligrams".
+   The strength goes in strength and how often goes in frequency.
 
-3. WHEN THEY CORRECT THEMSELVES, THE LATER STATEMENT IS THE ONE THEY MEANT.
-   "I take fifty — no, sorry, a hundred" is one claim of a hundred. Report the
-   correction, not both, and copy the span that carries it.
+3. COPY, NEVER COMPUTE. Every value is a span of the transcript, copied. If they
+   said "forty milligrams", report "forty milligrams" — do not turn it into
+   "40mg". Do no arithmetic of any kind.
 
-4. ONLY WHAT THEY SAID ABOUT THEMSELVES. A recording of someone reading a
-   pharmacy label aloud is still that person saying it, and it is still
-   patient-reported. Do not report what a doctor is quoted as saying as though
-   the letter were in front of you; it is what the speaker remembers being told.
+4. NEVER INVENT A DATE. Copy vague phrases — "around Easter" — verbatim into
+   occurred_span and leave occurred_at null.
 
-5. IF THEY DID NOT SAY IT, IT IS NOT THERE. Do not complete a half-finished
-   sentence, and do not carry anything over from what you know about these
-   drugs. A transcript that mentions no medication has no medications.
+5. WHEN THEY CORRECT THEMSELVES, THE LATER STATEMENT IS THE ONE THEY MEANT.
 
-6. SILENCE AND NOISE ARE NOT SPEECH. If the transcript is empty, or is filler
-   with nothing in it about health, return an empty claims list. That is a
-   correct answer.
+6. ONLY WHAT THEY SAID ABOUT THEMSELVES. It is always patient-reported, whatever
+   they are describing. If they did not say it, it is not there.
+
+7. SILENCE AND NOISE ARE NOT SPEECH. Filler with nothing about health means empty
+   lists. That is a correct answer.
 
 Answer with JSON matching the schema you have been given. Nothing else."""
 
-USER = """\
+OPENING = """\
 This is the transcript of a voice note in the record. It was typed up by a
 speech model on this machine, so it may contain mishearings — read it as speech,
 not as a document.
 
-Report what the speaker states about their own medications, allergies, problems
-or practitioners, following the rules exactly. If it states nothing about any of
-those, return an empty claims list.
-
 --- transcript begins ---
 {transcript}
---- transcript ends ---"""
+--- transcript ends ---
+
+First, the medications. Report every medicine they talk about with certainty,
+with the strength and how often copied exactly as said. Anything you cannot tell
+with certainty goes in unclear. If they mention no medicines, return an empty
+list."""
 
 
 def build(transcript: str) -> Prompt:
-    """The prompt for one transcript, hashed over the words it carries.
+    """The conversation about one transcript, hashed over the words it carries.
 
     The transcript is part of the rendered prompt, so the hash identifies this
     reading of these words. That is what makes idempotency work across a
     re-transcription without a rule about transcripts anywhere in the queue.
+    The groups and their schemas are the document reader's, so a field added
+    there is asked of a recording too.
     """
-    user = USER.format(transcript=transcript.strip())
+    from .prompts import FOLLOW_UPS, prompt_hash  # noqa: PLC0415
+    from .schema import FAMILIES, TRANSCRIPT_SCHEMAS  # noqa: PLC0415
+
+    opening = OPENING.format(transcript=transcript.strip())
+    words = "\n\n".join([opening, *(FOLLOW_UPS[f] for f in FAMILIES[1:])])
     return Prompt(
         messages=(
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": user},
+            {"role": "user", "content": opening},
         ),
-        prompt_hash=prompt_hash(SYSTEM, user, TRANSCRIPT_SCHEMA),
+        prompt_hash=prompt_hash(SYSTEM, words, TRANSCRIPT_SCHEMAS),
+        follow_ups=tuple((f, FOLLOW_UPS[f]) for f in FAMILIES[1:]),
         version=PROMPT_VERSION,
+        transcript=True,
     )
 
 

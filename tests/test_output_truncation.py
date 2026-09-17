@@ -195,13 +195,15 @@ def test_a_page_that_overruns_is_asked_again_with_more_room(vault):
     with _client(vault, handler) as client:
         outcome = Extractor(vault, client).run(short)
 
-    assert handler.ceilings == [2048, 4096], "raised once, on the server's own word"
+    assert handler.ceilings == [2048, 4096] * 3, (
+        "raised once per turn, on the server's own word each time"
+    )
     assert outcome.reading == runner.READ_CLAIMS
     assert outcome.claims == 1
     assert any("asked again with room for 4096" in note for note in outcome.notes)
 
 
-def test_an_ordinary_page_costs_exactly_one_call(vault):
+def test_an_ordinary_page_costs_exactly_one_call_per_turn(vault):
     """The ladder advances on evidence. A page that fits never pays for it."""
     short = _ingest(vault)
     handler = _box(cuts_below=0)
@@ -209,7 +211,7 @@ def test_an_ordinary_page_costs_exactly_one_call(vault):
     with _client(vault, handler) as client:
         Extractor(vault, client).run(short)
 
-    assert handler.ceilings == [2048]
+    assert handler.ceilings == [2048, 2048, 2048], "medications, allergies, problems"
 
 
 def test_the_ceiling_that_answered_is_what_the_event_records(vault):
@@ -353,20 +355,13 @@ def test_one_cut_off_page_does_not_let_the_rest_file_a_partial_document(vault):
 
 def test_the_page_that_was_cut_off_is_named_when_there_is_more_than_one(vault):
     """"Something overran" is not actionable; "page 2 overran" is."""
-    with _client(vault, _box(cuts_below=0)) as client:
-        extractor = Extractor(vault, client)
-        cut = extractor._read_one(
-            client_mod.Completion(
-                content="{",
-                model=MODEL,
-                raw={},
-                latency_s=0.1,
-                sampling={"max_tokens": 8192},
-                finish_reason="length",
-            ),
-            "image/jpeg",
-            where="page 2",
+    from agent.extract import reader as reader_mod
+
+    with _client(vault, _box(cuts_below=None)) as client:
+        prompt = reader_mod.Prompt(
+            messages=({"role": "user", "content": "page"},), prompt_hash="sha256:x"
         )
+        cut = reader_mod.read(client, prompt, mime="image/jpeg", where="page 2").extraction
 
     assert cut.truncated is True
     assert cut.unreadable_reason.startswith("page 2: ")

@@ -17,21 +17,21 @@ import json
 import pytest
 from PIL import Image
 
-from agent.extract import crossverify, dates as xdates, images, prompts, schema, validate
+from agent.extract import crossverify, dates as xdates, families, images, prompts, schema, validate
 from agent.extract.text import DeterministicRead, METHOD_OCR, METHOD_TEXT_LAYER
 from agent.projection import tiers
 
 
-def _claim(**overrides):
+def _medication(**overrides):
     base = {
-        "subject_kind": "med",
-        "subject_name": "Perindopril",
-        "predicate": "dose",
-        "value_literal": "5mg daily",
+        "name": "Perindopril",
+        "strength": "5mg",
+        "frequency": "daily",
+        "stopped": None,
+        "dispense": None,
         "evidence_tier": "prescriber-issued",
         "occurred_at": None,
         "occurred_span": None,
-        "dispense": None,
         "source_span": "PERINDOPRIL 5mg — one daily",
         "confidence": 0.9,
     }
@@ -39,17 +39,44 @@ def _claim(**overrides):
 
 
 def _answer(**overrides):
+    """What the medications turn answers."""
     base = {
         "artifact_kind": "prescription",
         "readable": True,
         "unreadable_reason": None,
         "document_date": None,
-        "claims": [_claim()],
+        "medications": [_medication()],
+        "unclear": [],
     }
     return {**base, **overrides}
 
 
+def _allergies(*items, unclear=()):
+    return {"allergies": list(items), "unclear": list(unclear)}
+
+
+def _allergy(**overrides):
+    base = {
+        "substance": "Penicillin",
+        "reaction": "rash",
+        "evidence_tier": "prescriber-issued",
+        "occurred_at": None,
+        "occurred_span": None,
+        "source_span": "rash with penicillin",
+        "confidence": 0.9,
+    }
+    return {**base, **overrides}
+
+
+def _read(answer, mime="image/jpeg", family=schema.MEDICATIONS):
+    return families.read(family, answer, mime=mime)
+
+
 # --- what the schema does not contain --------------------------------------
+
+
+def _every_schema():
+    return [*schema.FAMILY_SCHEMAS.values(), *schema.TRANSCRIPT_SCHEMAS.values()]
 
 
 def test_the_schema_has_no_consequence_field_anywhere():
@@ -58,7 +85,7 @@ def test_the_schema_has_no_consequence_field_anywhere():
     "If the model could label something low-consequence, a bad extraction could
     route itself around review."
     """
-    rendered = json.dumps(schema.EXTRACTION_SCHEMA)
+    rendered = json.dumps(_every_schema())
 
     assert "consequence" not in rendered
     for name in tiers.CONSEQUENCE_TIERS:
@@ -80,11 +107,18 @@ def _property_names(node, found=None):
 
 def test_the_schema_has_no_field_for_a_computed_number():
     """The model copies spans; Python counts. There is nowhere to put an answer."""
-    names = _property_names(schema.EXTRACTION_SCHEMA)
+    names = set()
+    for item in _every_schema():
+        _property_names(item, names)
 
-    for computed in ("days_supply", "expected_exhaustion", "total", "exhaustion"):
+    for computed in ("days_supply", "expected_exhaustion", "total", "exhaustion", "dose"):
         assert computed not in names
     assert "quantity" in names, "the spans themselves are still there"
+
+
+def test_every_group_offers_a_place_to_say_it_could_not_read_something():
+    for family, item in schema.FAMILY_SCHEMAS.items():
+        assert "unclear" in item["required"], family
 
 
 def test_the_dispense_block_is_only_literal_spans():
@@ -102,8 +136,7 @@ def test_the_schema_offers_only_kinds_that_have_somewhere_to_live():
 
 
 def test_the_consequence_tier_is_looked_up_not_read_from_the_answer():
-    read = validate.read(_answer(), mime="image/jpeg")
-    (claim,) = read.claims
+    (claim,) = _read(_answer()).claims
 
     assert claim.consequence == tiers.HIGH
     assert claim.consequence == tiers.consequence_for("med", "dose")
@@ -113,13 +146,14 @@ def test_the_consequence_tier_is_looked_up_not_read_from_the_answer():
 
 
 def test_a_valid_answer_reads_cleanly():
-    read = validate.read(_answer(), mime="image/jpeg")
+    read = _read(_answer())
 
     assert read.readable
-    assert read.rejections == ()
+    assert read.rejections == () and read.abstentions == ()
     (claim,) = read.claims
     assert claim.subject == "med:perindopril"
-    assert claim.value_literal == "5mg daily"
+    assert claim.predicate == "dose"
+    assert claim.value_literal == "5mg daily", "strength and frequency, both as copied"
 
 
 @pytest.mark.parametrize(
@@ -132,59 +166,110 @@ def test_a_valid_answer_reads_cleanly():
     ],
 )
 def test_a_structurally_wrong_answer_yields_no_claims_at_all(answer, expected):
-    read = validate.read(answer, mime="image/jpeg")
+    read = _read(answer)
 
     assert read.claims == ()
-    assert not read.readable
+    assert not read.readable and read.refused
     assert any(expected in r.reason for r in read.rejections)
 
 
 def test_an_unexpected_field_is_a_rejection_not_something_to_ignore():
-    read = validate.read(_answer(consequence="low"), mime="image/jpeg")
+    read = _read(_answer(consequence="low"))
 
     assert read.claims == ()
     assert any("unexpected field 'consequence'" in r.reason for r in read.rejections)
 
 
-def test_one_bad_claim_does_not_discard_the_good_ones_beside_it():
-    """A page's allergy should survive an unreadable line about a drug."""
-    answer = _answer(
-        claims=[
-            _claim(subject_name="   "),
-            _claim(subject_kind="allergy", subject_name="Penicillin",
-                   predicate="reaction", value_literal="rash"),
-        ]
-    )
-    read = validate.read(answer, mime="application/pdf")
-
-    assert [c.subject for c in read.claims] == ["allergy:penicillin"]
-    assert len(read.rejections) == 1
-    assert read.rejections[0].index == 0
-
-
 def test_an_unreadable_page_is_a_first_class_answer():
-    read = validate.read(
-        _answer(readable=False, unreadable_reason="the photograph is out of focus"),
-        mime="image/jpeg",
-    )
+    read = _read(_answer(readable=False, unreadable_reason="the photograph is out of focus"))
 
-    assert not read.readable
+    assert not read.readable and not read.refused
     assert "out of focus" in read.unreadable_reason
     assert read.claims == ()
 
 
 def test_an_out_of_range_confidence_is_rejected_not_clamped():
-    read = validate.read(_answer(claims=[_claim(confidence=1.4)]), mime="image/jpeg")
+    read = _read(_answer(medications=[_medication(confidence=1.4)]))
 
     assert read.claims == ()
     assert any("at most 1" in r.reason for r in read.rejections)
 
 
-def test_a_predicate_outside_the_vocabulary_is_rejected():
-    read = validate.read(_answer(claims=[_claim(predicate="vibe")]), mime="image/jpeg")
+# --- failing safely -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name", ["Atorvastatin 20mg tablets", "Atorvastatin 20", "Metformin tablets", "   "]
+)
+def test_a_name_carrying_a_strength_or_form_is_unread_never_filed(name):
+    """``med:atorvastatin-20`` means the dose leaked into the identifier."""
+    read = _read(_answer(medications=[_medication(name=name)]))
 
     assert read.claims == ()
-    assert any("must be one of" in r.reason for r in read.rejections)
+    (abstention,) = read.abstentions
+    assert abstention.field == "name" and abstention.subject is None
+
+
+def test_a_strength_without_its_frequency_proposes_no_dose():
+    """A dose without its frequency is not the dose on the page."""
+    read = _read(_answer(medications=[_medication(frequency=None)]))
+
+    assert read.claims == ()
+    (abstention,) = read.abstentions
+    assert abstention.subject == "med:perindopril"
+    assert abstention.field == "frequency"
+
+
+def test_a_frequency_without_its_strength_proposes_no_dose_either():
+    read = _read(_answer(medications=[_medication(strength=None)]))
+
+    assert read.claims == ()
+    assert read.abstentions[0].field == "strength"
+
+
+def test_a_medicine_named_with_no_dose_on_the_page_is_still_recorded():
+    """Neither a dose nor silence: the page names it, and the record keeps that."""
+    read = _read(_answer(medications=[_medication(strength=None, frequency=None)]))
+
+    (claim,) = read.claims
+    assert (claim.subject, claim.predicate, claim.value_literal) == (
+        "med:perindopril", "name", "Perindopril"
+    )
+    assert read.abstentions == ()
+
+
+def test_what_the_reader_says_it_cannot_read_becomes_an_abstention():
+    unclear = [
+        {"name_if_readable": "Metformin", "field": "frequency", "reason": "handwriting", "source_span": "Metformin 500mg tw…"},
+        {"name_if_readable": None, "field": "whole entry", "reason": "blurred", "source_span": None},
+    ]
+    read = _read(_answer(medications=[], unclear=unclear))
+
+    assert read.claims == ()
+    named, nameless = read.abstentions
+    assert named.subject == "med:metformin" and named.field == "frequency"
+    assert nameless.subject is None and nameless.reason == "blurred"
+
+
+def test_a_stopped_medicine_is_a_status_claim():
+    read = _read(_answer(medications=[_medication(strength=None, frequency=None, stopped="I stopped the sertraline", name="Sertraline")]))
+
+    (claim,) = read.claims
+    assert (claim.subject, claim.predicate, claim.value_literal) == ("med:sertraline", "status", "stopped")
+
+
+def test_an_allergy_reads_as_its_reaction():
+    read = _read(_allergies(_allergy()), family=schema.ALLERGIES)
+
+    (claim,) = read.claims
+    assert (claim.subject, claim.predicate, claim.value_literal) == ("allergy:penicillin", "reaction", "rash")
+
+
+def test_an_allergy_with_a_number_in_the_substance_is_unread():
+    read = _read(_allergies(_allergy(substance="Penicillin 500mg")), family=schema.ALLERGIES)
+
+    assert read.claims == ()
+    assert read.abstentions[0].field == "substance"
 
 
 # --- the tier a claim is allowed to carry ----------------------------------
@@ -192,23 +277,30 @@ def test_a_predicate_outside_the_vocabulary_is_rejected():
 
 def test_a_recording_can_never_be_prescriber_issued():
     """The tier is a fact about the artefact, known before the model runs."""
-    read = validate.read(_answer(), mime="audio/webm")
-    (claim,) = read.claims
+    (claim,) = _read(_answer(), mime="audio/webm").claims
 
     assert claim.evidence_tier == "patient-reported"
     assert any("held at patient-reported" in note for note in claim.notes)
 
 
 def test_a_photograph_keeps_the_tier_the_model_judged():
-    read = validate.read(_answer(), mime="image/jpeg")
-    assert read.claims[0].evidence_tier == "prescriber-issued"
+    assert _read(_answer()).claims[0].evidence_tier == "prescriber-issued"
 
 
 def test_a_recording_claiming_a_weaker_tier_is_left_alone():
-    read = validate.read(
-        _answer(claims=[_claim(evidence_tier="inferred")]), mime="audio/webm"
-    )
+    read = _read(_answer(medications=[_medication(evidence_tier="inferred")]), mime="audio/webm")
     assert read.claims[0].evidence_tier == "inferred"
+
+
+def test_the_voice_note_grammar_cannot_express_a_prescribers_authority():
+    """A voice note is patient-reported, and the grammar is where that is settled."""
+    item = schema.TRANSCRIPT_SCHEMAS[schema.MEDICATIONS]["properties"]["medications"]["items"]
+    assert item["properties"]["evidence_tier"]["enum"] == ["patient-reported"]
+    assert schema.TRANSCRIPT_SCHEMAS[schema.MEDICATIONS]["properties"]["artifact_kind"]["enum"] == [
+        "note", "unreadable",
+    ]
+    document = schema.FAMILY_SCHEMAS[schema.MEDICATIONS]["properties"]["medications"]["items"]
+    assert "prescriber-issued" in document["properties"]["evidence_tier"]["enum"]
 
 
 # --- dates: enumerated, never guessed --------------------------------------
@@ -295,25 +387,21 @@ def test_an_unreadable_date_becomes_a_span_the_record_keeps():
     never auto-resolved.
     """
     answer = _answer(
-        claims=[
-            _claim(
-                occurred_at={
-                    "value": "around Easter",
-                    "precision": "month",
-                    "uncertainty_days": 14,
-                }
+        medications=[
+            _medication(
+                occurred_at={"value": "around Easter", "precision": "month", "uncertainty_days": 14}
             )
         ]
     )
-    (claim,) = validate.read(answer, mime="audio/webm").claims
+    (claim,) = _read(answer, mime="audio/webm").claims
 
     assert claim.occurred_at is None
     assert claim.occurred_span == "around Easter"
 
 
 def test_a_phrase_the_model_put_in_occurred_span_is_carried_through():
-    answer = _answer(claims=[_claim(occurred_span="the week before the wedding")])
-    (claim,) = validate.read(answer, mime="audio/webm").claims
+    answer = _answer(medications=[_medication(occurred_span="the week before the wedding")])
+    (claim,) = _read(answer, mime="audio/webm").claims
 
     assert claim.occurred_at is None
     assert claim.occurred_span == "the week before the wedding"
