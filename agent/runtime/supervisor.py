@@ -33,6 +33,16 @@ ten minutes leave it stopped with a sentence saying so. A child killed by
 ``SIGKILL`` is reported as most likely out of memory, because on a laptop that
 is overwhelmingly what it is.
 
+**It dies with the app, on every platform.** Quitting stops it through
+:meth:`Reader.shutdown`. An app that is killed instead — Force Quit, Task Manager,
+an out-of-memory kill — cannot run anything, so each platform's own mechanism
+has to do it: ``PR_SET_PDEATHSIG`` on Linux and a kill-on-close job object on
+Windows. macOS has neither, so a small ``/bin/sh`` loop is started beside each
+launch that waits for this process to disappear and then stops the reader,
+having checked the pid still runs the reader's binary. The pidfile reap on the
+next start stays as a second line: a 3.5 GB orphan must not outlive the app by
+more than a few seconds, and never until the app happens to be opened again.
+
 **It sleeps.** After ``sleep_after_minutes`` with no request in flight and no
 work waiting, the process is stopped and the state says ``sleeping``. The next
 job or question wakes it. Stopping the process rather than asking llama-server
@@ -511,7 +521,11 @@ class Reader:
         if sys.platform.startswith("linux"):
             kwargs["preexec_fn"] = _die_with_parent
         if sys.platform == "win32":  # pragma: no cover - Windows only
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # No console window: the app has none of its own, and without this
+            # flag Windows gives the child one, open beside the tray icon.
+            kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
         proc = subprocess.Popen(
             launch.argv,
             cwd=str(launch.cwd),
@@ -523,6 +537,8 @@ class Reader:
         )
         if sys.platform == "win32":  # pragma: no cover - Windows only
             _kill_with_parent_windows(proc)
+        if needs_parent_watch():  # pragma: no cover - macOS only
+            watch_parent(proc.pid, launch.argv[0])
         with self._cond:
             self._proc, self._port, self._key = proc, port, None
             self._stopping = False
@@ -794,6 +810,58 @@ def _tail(path: Path, limit: int = 8192) -> str:
             return handle.read().decode("utf-8", "replace")
     except OSError:
         return ""
+
+
+#: Stops the reader when the app is gone. Arguments: this process's pid, the
+#: reader's pid, and the reader's argv[0]. It leaves on its own as soon as the
+#: reader exits for any other reason, so a sleeping reader leaves no watcher.
+#: The command line rather than the process name is compared, because macOS and
+#: Linux truncate and spell ``comm`` differently while both print the full
+#: ``command`` as it was launched — with an absolute path, here.
+PARENT_WATCH = r"""
+parent=$1 child=$2 binary=$3
+while kill -0 "$parent" 2>/dev/null; do
+  kill -0 "$child" 2>/dev/null || exit 0
+  sleep 2
+done
+ours() {
+  case "$(ps -p "$child" -o command= 2>/dev/null)" in
+    "$binary"*) return 0 ;;
+  esac
+  return 1
+}
+ours || exit 0
+kill -TERM "$child" 2>/dev/null
+n=0
+while [ "$n" -lt 20 ]; do
+  ours || exit 0
+  sleep 1
+  n=$((n + 1))
+done
+kill -KILL "$child" 2>/dev/null
+"""
+
+
+def needs_parent_watch() -> bool:
+    """Only where the platform has no way to tie a child's life to its parent."""
+    return sys.platform == "darwin"
+
+
+def watch_parent(child_pid: int, binary: str, parent_pid: int | None = None) -> subprocess.Popen:
+    """Start the watcher for one launch. Its own session, so a signal to ours misses it."""
+    return subprocess.Popen(
+        [
+            "/bin/sh", "-c", PARENT_WATCH, "health-agent-reader-watch",
+            str(parent_pid if parent_pid is not None else os.getpid()),
+            str(child_pid),
+            str(binary),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
 
 
 def _die_with_parent() -> None:  # pragma: no cover - runs in the child
