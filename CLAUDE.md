@@ -344,7 +344,13 @@ queued or a request is in flight, and the state says "sleeping" rather than hidi
 
 **macOS and Windows are pinned and unverified** until someone runs them. Say so wherever it matters.
 
-**A reader fails safely or it does not ship.** The eval scores correct, abstained and wrong; the bar is
+**A reader that misses the bar ships only as an informed choice.** The 4B model is the recommended
+local reader despite failing the eval bar, because it is the one that runs on an 8 GB laptop. The
+model list shows every model's size, memory, speed and correct/abstained/wrong in the list itself, and
+the known failure nothing in the app can catch is said beside it in plain words. Memory shortfalls are
+warned about, never enforced.
+
+**A reader fails safely or it is disclosed.** The eval scores correct, abstained and wrong; the bar is
 wrong 0% and correct + abstained 100% on medications, doses and allergies. Wrong includes silence and
 any unlisted assertion. An abstention counts as safe only because it is visible: every latest reading
 that was unreadable, cut off, refused, or that declined part of a page raises a high-consequence

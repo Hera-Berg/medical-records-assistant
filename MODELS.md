@@ -142,6 +142,34 @@ reader while the server holds it is refused with a sentence, rather than loading
 - **Its log is outside the vault**, in the data directory, and is never run verbose: verbose output
   includes prompts.
 
+### Choosing the model
+
+The reader on this computer offers a list of models from the manifest — today Qwen3.5-4B Q4
+(recommended, preselected, runs on 8 GB) and Qwen3.5-9B Q4 (16 GB). Adding one is a manifest entry and
+a measurement, never a code path.
+
+**The person chooses knowing.** The 4B model does not meet the eval bar: on the blurry handwritten
+script it read metformin as mefenamic acid, with a dose, and did not abstain — a wrong fact that makes
+no review item, so nothing in the app can catch it. It ships as the recommended local reader anyway,
+because local reading only means anything on the laptop most people own, and a larger model does not
+fit alongside Windows in 8 GB. What makes that acceptable is disclosure at the point of choice, not that
+it was quietly good enough. So every entry shows, in the list itself: download size, memory needed,
+speed on this computer (its own readings, or a measurement on a named machine, or "not measured"), and
+correct / left for you to check / wrong on medications, doses and allergies from the eval corpus (or
+"not measured"). A failure a person found that the app cannot catch is said beside its model, in plain
+words, with what to do about it.
+
+**Measurements are data, recorded from real runs.** `agent/runtime/measurements.json`, keyed by the
+model's identity string (so re-pinned weights start unmeasured), written by `health-agent eval
+--record` and committed. Known failures are written by a person and kept across re-records.
+
+**Memory is warned about, never enforced.** A model needing more than the machine has gets a sentence
+saying what will happen — slow, other programs squeezed, possibly stopped part-way — and can still be
+chosen.
+
+**What read each claim is shown beside its evidence tier** — "read by Qwen3.5-4B on this computer" —
+from the event's provenance, never merged into the tier.
+
 ### Honest about speed
 
 A 4B model at Q4 on a laptop CPU is slow, and slower than first assumed. Measured in development on a
@@ -152,6 +180,15 @@ on a processor, and "about 10 to 30 seconds" on Apple Silicon with Metal, which 
 measured. Once this machine has read something the interface says what it actually took — "usually
 about 2 minutes 30 seconds a document on this computer, 6 waiting". A queue that is slow must never
 look like a queue that is broken.
+
+**The read timeout follows the ceiling.** One timeout for the whole ladder meant the top rung —
+8,192 tokens at about 9 tokens a second — could not finish, and a reader still writing was reported as
+a box that had gone to sleep. Each request's read timeout is the configured allowance for reading the
+page plus the ceiling at the slowest generation speed that model's own server has reported (or its
+measured speed, or 2 tokens a second), with half as much again. A cut-off answer that ends in the same
+passage repeated stops climbing — more room only buys a longer repetition — and is parked as a run-on,
+saying so. A timeout from the reader on this computer is parked the same way; a remote box's timeout is
+still unreachable, because it may genuinely have gone to sleep.
 
 **Threads are stated, never left to llama-server's default.** On hybrid Intel laptop chips the default
 counts only performance cores — 2 of 14 threads on the machine above, which doubled the time. The
