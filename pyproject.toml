@@ -56,6 +56,8 @@ include = ["agent*"]
 # step; see frontend/README.md.
 [tool.setuptools.package-data]
 "agent.server" = ["static_files/**"]
+# What each local model was measured to do, shown where a person chooses one.
+"agent.runtime" = ["measurements.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

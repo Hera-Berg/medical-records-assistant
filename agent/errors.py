@@ -113,6 +113,17 @@ class EndpointUnreachable(InferenceError):
     """The box did not answer. Transient — retry with backoff, drain later."""
 
 
+class ReadTimedOut(EndpointUnreachable):
+    """The answer did not finish arriving within the read timeout.
+
+    Still an :class:`EndpointUnreachable` to everything that only knows that
+    word, because for a box across a network it may well mean the box went to
+    sleep mid-answer. The reader on this computer is different — its process is
+    alive and simply still writing — and :mod:`agent.extract.reader` reports
+    that as an answer that ran on, not as a sleeping machine.
+    """
+
+
 class AuthRejected(InferenceError):
     """The box answered 401 or 403. **Terminal.**
 

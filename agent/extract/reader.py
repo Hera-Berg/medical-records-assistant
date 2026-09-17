@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..errors import InferenceError, OutputTruncated
+from ..errors import InferenceError, OutputTruncated, ReadTimedOut
 from ..llm.client import Completion, parse_completion
 from . import budget as budget_mod
 from . import families
@@ -73,10 +73,28 @@ class Read:
 
 
 def _refused(
-    family: str, exc: Exception, where: str | None, completion: Completion, ctx: int
+    family: str, exc: Exception, where: str | None, completion: Completion | None, ctx: int
 ) -> Extraction:
     prefix = f"{where}: " if where else ""
+    if isinstance(exc, ReadTimedOut):
+        return Extraction(
+            readable=False,
+            refused=True,
+            truncated=True,
+            unreadable_reason=(
+                f"{prefix}the reader on this computer was still writing its answer "
+                f"about {family} when the time allowed for it ran out. "
+                + budget_mod.describe_run_on()
+            ),
+        )
     if isinstance(exc, OutputTruncated):
+        if budget_mod.is_run_on(completion.content):
+            return Extraction(
+                readable=False,
+                refused=True,
+                truncated=True,
+                unreadable_reason=f"{prefix}{budget_mod.describe_run_on()}",
+            )
         # Separated from every other refusal on purpose. The answer is not
         # wrong, it is unfinished, and the fix is room rather than a server
         # setting — the generic message would send someone to read about guided
@@ -121,11 +139,21 @@ def read(
                 {"role": "assistant", "content": turns[-1].completion.content},
                 {"role": "user", "content": follow_ups[family]},
             ]
-        completion, raised = budget_mod.ask(
-            client, messages, family_schema(family, transcript=prompt.transcript),
-            schema_name(family),
-            where=f"{where}, {family}" if where else family,
-        )
+        try:
+            completion, raised = budget_mod.ask(
+                client, messages, family_schema(family, transcript=prompt.transcript),
+                schema_name(family),
+                where=f"{where}, {family}" if where else family,
+            )
+        except ReadTimedOut as exc:
+            if (getattr(client, "runtime", None) or {}).get("kind") != "bundled":
+                # A box across a network may have gone to sleep mid-answer: that
+                # stays unreachable, retried later, as it always was.
+                raise
+            # The reader on this computer is alive and was still writing. That is
+            # an answer that ran on, parked with that reason — not a sleeping box
+            # to retry for ever.
+            return Read(_refused(family, exc, where, None, client.settings.ctx), tuple(turns), tuple(notes))
         turns.append(Turn(family=family, completion=completion, notes=raised, page=page))
         notes.extend(raised)
         try:

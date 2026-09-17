@@ -398,3 +398,129 @@ def test_an_answer_refused_for_any_other_reason_is_still_reported_that_way(vault
     assert outcome.state == jobs_mod.UNREADABLE
     assert "response_format json_schema" in outcome.reason
     assert "ran out of room" not in outcome.describe()
+
+
+# --- a reader still writing is not a machine that went away -----------------
+
+
+class _Settings:
+    def __init__(self, model="m", read_timeout_s=900.0, ctx=16384):
+        self.model, self.read_timeout_s, self.ctx = model, read_timeout_s, ctx
+
+
+class _Local:
+    """A client whose runtime is the reader on this computer."""
+
+    def __init__(self, model="qwen-local@abc", runtime_kind="bundled", responses=()):
+        self.settings = _Settings(model=model)
+        self.runtime = {"kind": runtime_kind}
+        self.asked: list[dict] = []
+        self._responses = list(responses)
+
+    def complete(self, messages, schema=None, schema_name="", max_tokens=0, read_timeout_s=None):
+        self.asked.append({"max_tokens": max_tokens, "read_timeout_s": read_timeout_s})
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def test_the_read_timeout_covers_the_ceiling_at_the_speed_it_writes(monkeypatch):
+    """At nine tokens a second, 8192 tokens is fifteen minutes on top of the page."""
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {"qwen-local@abc": 9.0})
+    client = _Local()
+    timeout = budget.read_timeout_for(client, 8192)
+    assert timeout == 900.0 + (8192 / 9.0) * budget.SPEED_HEADROOM
+    assert timeout > 900.0 + 8192 / 9.0, "with headroom, never exactly the average"
+
+
+def test_an_endpoint_that_reports_no_speed_keeps_its_configured_timeout(monkeypatch):
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    assert budget.read_timeout_for(_Local(runtime_kind="endpoint"), 8192) is None
+
+
+def test_the_observed_speed_is_the_slower_one(monkeypatch):
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    client = _Local()
+    for rate in (12.0, 7.5, 10.0):
+        budget._observe(client, client_mod.Completion(
+            content="{}", model="m", raw={"timings": {"predicted_per_second": rate}}, latency_s=1.0,
+        ))
+    assert budget._OBSERVED_RATES["qwen-local@abc"] == 7.5
+
+
+def _cut(content):
+    return client_mod.Completion(
+        content=content, model="m", raw={}, latency_s=1.0,
+        sampling={"max_tokens": 2048}, finish_reason="length",
+    )
+
+
+REPEATING = '{"medications": [' + '{"name": "Atorvastatin", "strength": "forty milligrams"}, ' * 40
+
+
+def test_a_run_on_is_recognised_and_an_ordinary_long_answer_is_not():
+    assert budget.is_run_on(REPEATING)
+    varied = '{"medications": [' + ", ".join(
+        f'{{"name": "Medicine {i}", "strength": "{i * 5}mg", "frequency": "{i} daily"}}' for i in range(60)
+    )
+    assert not budget.is_run_on(varied)
+
+
+def test_a_run_on_stops_the_ladder_instead_of_buying_a_longer_repetition(monkeypatch):
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    client = _Local(responses=[_cut(REPEATING)])
+    completion, _notes = budget.ask(client, [], {}, "health_record_medications")
+    assert [call["max_tokens"] for call in client.asked] == [budget.START]
+    assert completion.truncated
+
+
+def test_a_run_on_is_parked_as_what_it_is(monkeypatch):
+    from agent.extract import reader as reader_mod
+
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    client = _Local(responses=[_cut(REPEATING)])
+    prompt = reader_mod.Prompt(messages=({"role": "user", "content": "page"},), prompt_hash="sha256:x")
+    extraction = reader_mod.read(client, prompt).extraction
+    assert extraction.truncated and not extraction.readable
+    assert "writing the same thing over and over" in extraction.unreadable_reason
+    assert "grammar" not in extraction.unreadable_reason
+
+
+def test_a_local_reader_that_times_out_is_cut_off_not_asleep(monkeypatch):
+    from agent.errors import ReadTimedOut
+    from agent.extract import reader as reader_mod
+
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    client = _Local(responses=[ReadTimedOut("timed out")])
+    prompt = reader_mod.Prompt(messages=({"role": "user", "content": "page"},), prompt_hash="sha256:x")
+    extraction = reader_mod.read(client, prompt).extraction
+    assert extraction.truncated
+    assert "still writing" in extraction.unreadable_reason
+    assert "asleep" not in extraction.unreadable_reason
+
+
+def test_a_remote_box_that_times_out_is_still_unreachable(monkeypatch):
+    from agent.errors import EndpointUnreachable, ReadTimedOut
+    from agent.extract import reader as reader_mod
+
+    monkeypatch.setattr(budget, "_OBSERVED_RATES", {})
+    client = _Local(runtime_kind="endpoint", responses=[ReadTimedOut("timed out")])
+    prompt = reader_mod.Prompt(messages=({"role": "user", "content": "page"},), prompt_hash="sha256:x")
+    with pytest.raises(EndpointUnreachable):
+        reader_mod.read(client, prompt)
+
+
+def test_the_timeout_reaches_the_request(vault):
+    """Through the real client: a longer read timeout for one request, never shorter."""
+    seen = []
+
+    def handler(request):
+        seen.append(request.extensions.get("timeout"))
+        return httpx.Response(200, json=_answer_body())
+
+    with _client(vault, handler) as client:
+        client.complete([{"role": "user", "content": "x"}], read_timeout_s=5000.0)
+        client.complete([{"role": "user", "content": "x"}], read_timeout_s=1.0)
+    assert seen[0]["read"] == 5000.0
+    assert seen[1]["read"] == client.settings.read_timeout_s

@@ -87,6 +87,7 @@ def test_choosing_another_computer_writes_this_machine_and_never_config_toml(vau
         "label": "Read on another computer",
         "sleep_after_minutes": 30,
         "source": "file",
+        "model": manifest.DEFAULT_VISION_MODEL,
     }
     assert (vault.root / "config.toml").read_bytes() == config
     assert choice.path().exists()

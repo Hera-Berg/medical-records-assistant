@@ -39,7 +39,7 @@ class Clock:
         return self.now
 
 
-def fake_launcher(store, platform, port, ctx):
+def fake_launcher(store, platform, port, ctx, model=None):
     return supervisor.Launch(
         argv=[sys.executable, str(FAKE), "--host", "127.0.0.1", "--port", str(port),
               "--alias", manifest.ALIAS],
@@ -208,7 +208,7 @@ def test_something_else_on_the_port_is_never_sent_the_key(ready_store, monkeypat
     Recorder.seen = []
     foreign: dict = {}
 
-    def lying_launcher(store, platform, port, ctx):
+    def lying_launcher(store, platform, port, ctx, model=None):
         server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Recorder)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         foreign["server"] = server

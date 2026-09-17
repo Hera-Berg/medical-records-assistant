@@ -53,6 +53,7 @@ from ..errors import (
     ModelIdentityMismatch,
     OutputTruncated,
     RateLimited,
+    ReadTimedOut,
 )
 from . import credentials as credentials_mod
 from . import redaction
@@ -234,12 +235,28 @@ class Client:
 
     # -- requests ----------------------------------------------------------
 
-    def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self, path: str, body: dict[str, Any], read_timeout_s: float | None = None
+    ) -> dict[str, Any]:
         addresses = self._verified_addresses()
         headers = self._headers(addresses)
         url = self.settings.endpoint.url(path)
+        extra: dict[str, Any] = {}
+        if read_timeout_s is not None:
+            settings = self.settings
+            extra["timeout"] = httpx.Timeout(
+                connect=settings.connect_timeout_s,
+                read=max(read_timeout_s, settings.read_timeout_s),
+                write=settings.connect_timeout_s,
+                pool=settings.connect_timeout_s,
+            )
         try:
-            response = self._http.post(url, json=body, headers=headers)
+            response = self._http.post(url, json=body, headers=headers, **extra)
+        except httpx.ReadTimeout as exc:
+            raise ReadTimedOut(
+                f"the answer did not finish arriving in time: {redaction.scrub(str(exc))}. "
+                f"The job stays queued."
+            ) from None
         except httpx.TimeoutException as exc:
             raise EndpointUnreachable(
                 f"the inference endpoint timed out: {redaction.scrub(str(exc))}. The "
@@ -306,8 +323,15 @@ class Client:
         schema: Mapping[str, Any] | None = None,
         schema_name: str = "extraction",
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        read_timeout_s: float | None = None,
     ) -> Completion:
-        """One chat completion, grammar-constrained when *schema* is given."""
+        """One chat completion, grammar-constrained when *schema* is given.
+
+        *read_timeout_s* lengthens the read timeout for this one request, never
+        shortens it: a caller asking for a large answer from a slow reader knows
+        how long that answer can take, and a timeout shorter than that reports a
+        machine still writing as a machine that went away.
+        """
         settings = self.settings
         sampling = {
             "temperature": settings.temperature,
@@ -338,9 +362,11 @@ class Client:
 
         started = time.monotonic()
         try:
-            payload = self._post(CHAT_PATH, body)
+            payload = self._post(CHAT_PATH, body, read_timeout_s)
+        except ReadTimedOut:
+            raise
         except InferenceError as exc:
-            payload = self._retry_without_thinking_toggle(body, exc)
+            payload = self._retry_without_thinking_toggle(body, exc, read_timeout_s)
         latency = time.monotonic() - started
 
         content, stripped, finish_reason = _content_of(payload)
@@ -357,7 +383,7 @@ class Client:
         )
 
     def _retry_without_thinking_toggle(
-        self, body: dict[str, Any], exc: InferenceError
+        self, body: dict[str, Any], exc: InferenceError, read_timeout_s: float | None = None
     ) -> dict[str, Any]:
         """Some servers 400 on ``chat_template_kwargs``. Retry once without it.
 
@@ -374,7 +400,7 @@ class Client:
             "reasoning parser on the server."
         )
         retried = {k: v for k, v in body.items() if k != "chat_template_kwargs"}
-        return self._post(CHAT_PATH, retried)
+        return self._post(CHAT_PATH, retried, read_timeout_s)
 
     def _check_identity(self, reported: object) -> None:
         if not isinstance(reported, str) or not reported.strip():

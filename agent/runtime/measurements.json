@@ -1,0 +1,25 @@
+{
+  "models": {
+    "qwen3.5-4b-q4_k_m@00fe7986ff5f": {
+      "accuracy": {
+        "abstained": 0,
+        "correct": 7,
+        "fixtures": 10,
+        "measured": "2026-09-17",
+        "prompt_version": 2,
+        "wrong": 5
+      },
+      "known_failures": [
+        "In testing it read metformin as mefenamic acid on a blurry handwritten script — the wrong medicine, with a dose — and did not say it was unsure, so nothing on your review list would have caught it. Photograph scripts square-on and in good light, and check what it reads against the paper."
+      ],
+      "speed": {
+        "linux-x64": {
+          "generation_tokens_per_second": 8.0,
+          "machine": "an Intel Core Ultra 7 155U laptop",
+          "measured": "2026-09-17",
+          "seconds_per_document": 112
+        }
+      }
+    }
+  }
+}

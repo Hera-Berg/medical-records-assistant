@@ -34,9 +34,6 @@ ENGINE = f"llama.cpp {LLAMA_BUILD}"
 #: binary in the right place that is not the pinned build is not this reader.
 BUILD_INFO = f"{LLAMA_BUILD}-{LLAMA_COMMIT}"
 
-VISION_MODEL = "Qwen3.5-4B"
-VISION_QUANT = "Q4_K_M"
-
 _HF_QWEN = (
     "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/"
     "e87f176479d0855a907a41277aca2f8ee7a09523"
@@ -44,6 +41,10 @@ _HF_QWEN = (
 _HF_WHISPER = (
     "https://huggingface.co/Systran/faster-whisper-small/resolve/"
     "536b0662742c02347bc0e980a01041f333bce120"
+)
+_HF_QWEN_9B = (
+    "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/"
+    "3885219b6810b007914f3a7950a8d1b469d598a5"
 )
 _GH_LLAMA = f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_BUILD}"
 
@@ -119,28 +120,122 @@ ENGINES: dict[str, Bundle] = {
     ),
 }
 
-WEIGHTS = RemoteFile(
-    "Qwen3.5-4B-Q4_K_M.gguf",
-    f"{_HF_QWEN}/Qwen3.5-4B-Q4_K_M.gguf",
-    2740937888,
-    "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-)
-#: The vision projector. Without it the weights load, answer text perfectly and
-#: ignore every image — which is why it is a required file here and why the
-#: vision probe runs after the first start.
-PROJECTOR = RemoteFile(
-    "mmproj-F16.gguf",
-    f"{_HF_QWEN}/mmproj-F16.gguf",
-    672423616,
-    "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+
+@dataclass(frozen=True)
+class VisionModel:
+    """One model a person may choose to read documents on this computer.
+
+    The list is data: adding a model is an entry here and a measurement in
+    ``measurements.json``, never a code path of its own. Every entry is pinned
+    exactly like every other file in this module.
+    """
+
+    name: str
+    quant: str
+    weights: RemoteFile
+    projector: RemoteFile
+    #: Physical memory this model needs to read at a sensible speed alongside an
+    #: ordinary desktop. Below it the reader is warned about, never refused.
+    ram_needed_bytes: int
+    recommended: bool = False
+    licence: str = "Apache-2.0"
+
+    @property
+    def id(self) -> str:
+        return f"{self.name.lower()}-{self.quant.lower()}"
+
+    @property
+    def title(self) -> str:
+        return f"{self.name} {self.quant}"
+
+    @property
+    def bundle(self) -> Bundle:
+        return Bundle(
+            id=self.id,
+            title=f"{self.name}, the model that reads documents",
+            licence=self.licence,
+            files=(self.weights, self.projector),
+        )
+
+    @property
+    def alias(self) -> str:
+        """The identity the reader reports as ``model``.
+
+        Carries the weights hash so the string changes exactly when the bytes do
+        — and with it the idempotency key, so a re-pinned model is new work
+        rather than silently the same work.
+        """
+        return f"{self.id}@{self.weights.sha256[:12]}"
+
+
+_GIB = 1024**3
+
+QWEN_4B = VisionModel(
+    name="Qwen3.5-4B",
+    quant="Q4_K_M",
+    weights=RemoteFile(
+        "Qwen3.5-4B-Q4_K_M.gguf",
+        f"{_HF_QWEN}/Qwen3.5-4B-Q4_K_M.gguf",
+        2740937888,
+        "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    ),
+    # The vision projector. Without it the weights load, answer text perfectly
+    # and ignore every image — which is why it is a required file here and why
+    # the vision probe runs after the first start.
+    projector=RemoteFile(
+        "mmproj-F16.gguf",
+        f"{_HF_QWEN}/mmproj-F16.gguf",
+        672423616,
+        "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+    ),
+    ram_needed_bytes=8 * _GIB,
+    recommended=True,
 )
 
-VISION = Bundle(
-    id="qwen3.5-4b-q4_k_m",
-    title=f"{VISION_MODEL}, the model that reads documents",
-    licence="Apache-2.0",
-    files=(WEIGHTS, PROJECTOR),
+QWEN_9B = VisionModel(
+    name="Qwen3.5-9B",
+    quant="Q4_K_M",
+    weights=RemoteFile(
+        "Qwen3.5-9B-Q4_K_M.gguf",
+        f"{_HF_QWEN_9B}/Qwen3.5-9B-Q4_K_M.gguf",
+        5680522464,
+        "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+    ),
+    projector=RemoteFile(
+        "mmproj-F16.gguf",
+        f"{_HF_QWEN_9B}/mmproj-F16.gguf",
+        918166080,
+        "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+    ),
+    ram_needed_bytes=16 * _GIB,
 )
+
+#: Every model offered, in the order the list shows them.
+VISION_MODELS: tuple[VisionModel, ...] = (QWEN_4B, QWEN_9B)
+DEFAULT_VISION_MODEL = next(model.id for model in VISION_MODELS if model.recommended)
+
+# The recommended model under its older names, for callers that predate a choice.
+VISION = QWEN_4B.bundle
+WEIGHTS = QWEN_4B.weights
+PROJECTOR = QWEN_4B.projector
+VISION_MODEL = QWEN_4B.name
+VISION_QUANT = QWEN_4B.quant
+
+
+def vision_model(model_id: str | None) -> VisionModel:
+    """The chosen model, or the recommended one for an id this build does not know."""
+    for model in VISION_MODELS:
+        if model.id == model_id:
+            return model
+    return next(model for model in VISION_MODELS if model.recommended)
+
+
+def by_alias(alias: str | None) -> VisionModel | None:
+    for model in VISION_MODELS:
+        if model.alias == alias:
+            return model
+    return None
+
 
 SPEECH = Bundle(
     id="faster-whisper-small",
@@ -174,10 +269,7 @@ SPEECH = Bundle(
     ),
 )
 
-#: The identity the reader reports as ``model``. Carries the weights hash so the
-#: string changes exactly when the bytes do — and with it the idempotency key,
-#: so a re-pinned model is new work rather than silently the same work.
-ALIAS = f"{VISION_MODEL.lower()}-{VISION_QUANT.lower()}@{WEIGHTS.sha256[:12]}"
+ALIAS = QWEN_4B.alias
 
 #: Hosts a download may touch, including every redirect hop. Hugging Face serves
 #: large files from its own CDN hosts and GitHub from its release-asset host;
@@ -197,21 +289,23 @@ def engine_for(platform: str | None) -> Bundle | None:
     return ENGINES.get(platform) if platform else None
 
 
-def reader_bundles(platform: str | None) -> tuple[Bundle, ...]:
+def reader_bundles(platform: str | None, model_id: str | None = None) -> tuple[Bundle, ...]:
     """What reading documents on this computer needs. Empty if unsupported."""
     engine = engine_for(platform)
-    return (engine, VISION) if engine is not None else ()
+    return (engine, vision_model(model_id).bundle) if engine is not None else ()
 
 
-def required(platform: str | None, reads_here: bool) -> tuple[Bundle, ...]:
-    """Everything this machine should have, for the reader it chose.
+def required(
+    platform: str | None, reads_here: bool, model_id: str | None = None
+) -> tuple[Bundle, ...]:
+    """Everything this machine should have, for the reader and model it chose.
 
     Speech is always here: voice notes are typed up on this machine whichever
     computer reads documents.
     """
     bundles: list[Bundle] = [SPEECH]
     if reads_here:
-        bundles.extend(reader_bundles(platform))
+        bundles.extend(reader_bundles(platform, model_id))
     return tuple(bundles)
 
 

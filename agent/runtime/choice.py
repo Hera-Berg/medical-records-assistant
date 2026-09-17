@@ -28,6 +28,7 @@ from typing import Any
 
 from .. import device as device_mod
 from ..errors import ConfigError
+from . import manifest
 
 FILENAME = "reader"
 
@@ -56,6 +57,9 @@ class Choice:
     sleep_after_minutes: int = DEFAULT_SLEEP_MINUTES
     #: ``file`` once written; ``default`` when nothing has been written yet.
     source: str = "default"
+    #: Which model reads on this computer. The recommended one until a person
+    #: chooses another — and the list they choose from says what each one does.
+    model: str = manifest.DEFAULT_VISION_MODEL
 
     @property
     def reads_here(self) -> bool:
@@ -67,6 +71,7 @@ class Choice:
             "label": LABELS[self.reads_on],
             "sleep_after_minutes": self.sleep_after_minutes,
             "source": self.source,
+            "model": self.model,
         }
 
 
@@ -120,25 +125,42 @@ def load(vault) -> Choice:
             f"Expected one of {', '.join(CHOICES)}."
         )
     minutes = validate_minutes(data.get("sleep_after_minutes", DEFAULT_SLEEP_MINUTES))
-    return Choice(reads_on=reads_on, sleep_after_minutes=minutes, source="file")
+    model = data.get("model", manifest.DEFAULT_VISION_MODEL)
+    if not isinstance(model, str) or model not in {m.id for m in manifest.VISION_MODELS}:
+        # A model this build does not offer — written by a newer version, or by
+        # hand. Named rather than silently swapped for the recommended one.
+        raise ConfigError(
+            f"{path()} names the model {model!r}, which this version does not offer. "
+            f"Choose one again in Settings, or delete the file to go back to the "
+            f"recommended model."
+        )
+    return Choice(reads_on=reads_on, sleep_after_minutes=minutes, source="file", model=model)
 
 
-def save(reads_on: str, sleep_after_minutes: int = DEFAULT_SLEEP_MINUTES) -> Choice:
+def save(
+    reads_on: str,
+    sleep_after_minutes: int = DEFAULT_SLEEP_MINUTES,
+    model: str = manifest.DEFAULT_VISION_MODEL,
+) -> Choice:
     """Write this machine's choice atomically, readable only by its owner."""
     if reads_on not in CHOICES:
         raise ConfigError(f"unknown reader choice {reads_on!r}")
+    if model not in {m.id for m in manifest.VISION_MODELS}:
+        raise ConfigError(f"unknown model {model!r}")
     minutes = validate_minutes(sleep_after_minutes)
     target = path()
     target.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(
-        {"reads_on": reads_on, "sleep_after_minutes": minutes}, indent=2, sort_keys=True
+        {"reads_on": reads_on, "sleep_after_minutes": minutes, "model": model},
+        indent=2,
+        sort_keys=True,
     ) + "\n"
     temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(body)
     os.replace(temporary, target)
-    return Choice(reads_on=reads_on, sleep_after_minutes=minutes, source="file")
+    return Choice(reads_on=reads_on, sleep_after_minutes=minutes, source="file", model=model)
 
 
 def settle(vault) -> Choice:
@@ -153,4 +175,4 @@ def settle(vault) -> Choice:
     current = load(vault)
     if current.source == "file" or vault.is_demo:
         return current
-    return save(current.reads_on, current.sleep_after_minutes)
+    return save(current.reads_on, current.sleep_after_minutes, current.model)

@@ -119,15 +119,21 @@ def thread_counts(logical: int | None = None) -> tuple[int, int]:
     return max(2, count - 2), max(2, count)
 
 
-def llama_launch(store: Store, platform: str, port: int, ctx: int) -> Launch:
+def llama_launch(
+    store: Store,
+    platform: str,
+    port: int,
+    ctx: int,
+    model: manifest.VisionModel = manifest.QWEN_4B,
+) -> Launch:
     """The pinned ``llama-server``, with every flag that matters stated."""
     engine = manifest.engine_for(platform)
     binary = store.binary(engine) if engine else None
     if engine is None or binary is None:
         raise ReaderUnavailable("not-downloaded", "the reader's program is not here")
     threads, batch_threads = thread_counts()
-    weights = store.path_for(manifest.VISION, manifest.WEIGHTS)
-    projector = store.path_for(manifest.VISION, manifest.PROJECTOR)
+    weights = store.path_for(model.bundle, model.weights)
+    projector = store.path_for(model.bundle, model.projector)
     return Launch(
         argv=[
             str(binary),
@@ -144,7 +150,7 @@ def llama_launch(store: Store, platform: str, port: int, ctx: int) -> Launch:
             "--jinja",
             "--threads", str(threads),
             "--threads-batch", str(batch_threads),
-            "--alias", manifest.ALIAS,
+            "--alias", model.alias,
             "--no-webui",
             "--no-slots",
             "--offline",
@@ -183,14 +189,16 @@ class Reader:
         platform: str | None = None,
         sleep_after_minutes: int = choice_mod.DEFAULT_SLEEP_MINUTES,
         ctx: int = DEFAULT_CTX,
-        launcher: Callable[[Store, str, int, int], Launch] = llama_launch,
+        launcher: Callable[..., Launch] = llama_launch,
         clock: Callable[[], float] = time.monotonic,
         start_timeout_s: float = START_TIMEOUT_S,
         expected_build: str = manifest.BUILD_INFO,
         check_socket_owner: bool = True,
         restart_backoff_s: tuple[float, ...] = RESTART_BACKOFF_S,
+        model_id: str | None = None,
     ):
         self.store = store
+        self.model = manifest.vision_model(model_id)
         self.platform = platform if platform is not None else platforms.current()
         self.sleep_after_minutes = sleep_after_minutes
         self.ctx = ctx
@@ -229,7 +237,7 @@ class Reader:
 
     @property
     def bundles(self) -> tuple[manifest.Bundle, ...]:
-        return manifest.reader_bundles(self.platform)
+        return manifest.reader_bundles(self.platform, self.model.id)
 
     @property
     def log_path(self) -> Path:
@@ -278,7 +286,7 @@ class Reader:
             port = self._port
         return VlmSettings(
             endpoint=parse_endpoint(f"http://127.0.0.1:{port}/v1"),
-            model=manifest.ALIAS,
+            model=self.model.alias,
             ctx=self.ctx,
             connect_timeout_s=CONNECT_TIMEOUT_S,
             read_timeout_s=READ_TIMEOUT_S,
@@ -306,8 +314,8 @@ class Reader:
             "kind": "bundled",
             "engine": manifest.ENGINE,
             "files": {
-                manifest.WEIGHTS.name: f"sha256:{manifest.WEIGHTS.sha256}",
-                manifest.PROJECTOR.name: f"sha256:{manifest.PROJECTOR.sha256}",
+                self.model.weights.name: f"sha256:{self.model.weights.sha256}",
+                self.model.projector.name: f"sha256:{self.model.projector.sha256}",
             },
         }
 
@@ -342,6 +350,25 @@ class Reader:
         """Ask for the reader to be running. Returns at once."""
         self._ensure_thread()
         self._commands.put("start")
+
+    def set_model(self, model_id: str) -> None:
+        """Read with a different model from now on.
+
+        The running reader is stopped first — its process holds the old weights —
+        and the files are checked again, because the new model's may not be here
+        yet. Nothing is started: the next job or question starts it, and if the
+        files are missing the screen asks for the download before anything else.
+        """
+        chosen = manifest.vision_model(model_id)
+        if chosen.id == self.model.id:
+            return
+        self.stop()
+        with self._cond:
+            self.model = chosen
+            self._files_checked = False
+            if self._state not in (states.UNSUPPORTED, states.ELSEWHERE):
+                self._state, self._reason = states.NOT_DOWNLOADED, "not-downloaded"
+            self._cond.notify_all()
 
     def retry(self) -> None:
         """Clear a stop that was waiting for a person, and start again."""
@@ -470,7 +497,7 @@ class Reader:
     def _launch(self, port: int) -> str:
         key = secrets.token_urlsafe(32)
         redaction.register(key)
-        launch = self._launcher(self.store, self.platform or "", port, self.ctx)
+        launch = self._launcher(self.store, self.platform or "", port, self.ctx, self.model)
 
         env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LLAMA_")}
         env["LLAMA_API_KEY"] = key
@@ -561,7 +588,7 @@ class Reader:
             props = response.json() if response.status_code == 200 else {}
         except (httpx.HTTPError, ValueError):
             return "failed-to-start"
-        if props.get("model_alias") != manifest.ALIAS:
+        if props.get("model_alias") != self.model.alias:
             return "wrong-build"
         if props.get("build_info") != self._expected_build:
             return "wrong-build"
@@ -896,10 +923,14 @@ def get(vault=None) -> Reader:
         if _READER is None:
             root = vault.root if vault is not None else None
             minutes = choice_mod.DEFAULT_SLEEP_MINUTES
+            model_id = manifest.DEFAULT_VISION_MODEL
             if vault is not None:
                 with contextlib.suppress(Exception):
-                    minutes = choice_mod.load(vault).sleep_after_minutes
-            _READER = Reader(Store(vault_root=root), sleep_after_minutes=minutes)
+                    chosen = choice_mod.load(vault)
+                    minutes, model_id = chosen.sleep_after_minutes, chosen.model
+            _READER = Reader(
+                Store(vault_root=root), sleep_after_minutes=minutes, model_id=model_id
+            )
         return _READER
 
 

@@ -250,7 +250,7 @@ def _unzip(archive: Path, destination: Path) -> None:
 
 
 def bundle_by_id(bundle_id: str) -> Bundle | None:
-    for bundle in (manifest.VISION, manifest.SPEECH, *manifest.ENGINES.values()):
+    for bundle in (*(m.bundle for m in manifest.VISION_MODELS), manifest.SPEECH, *manifest.ENGINES.values()):
         if bundle.id == bundle_id:
             return bundle
     return None

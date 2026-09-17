@@ -344,7 +344,34 @@ def test_the_choice_file_is_private_and_readable_without_the_app():
     assert choice.path().stat().st_mode & 0o077 == 0
     assert json.loads(choice.path().read_text()) == {
         "reads_on": "another-computer", "sleep_after_minutes": 30,
+        "model": manifest.DEFAULT_VISION_MODEL,
     }
+
+
+def test_the_recommended_model_is_preselected_and_a_choice_is_remembered():
+    assert choice.load(_FakeVault({})).model == manifest.QWEN_4B.id
+    choice.save(choice.THIS_COMPUTER, 15, manifest.QWEN_9B.id)
+    assert choice.load(_FakeVault({})).model == manifest.QWEN_9B.id
+
+
+def test_a_model_this_version_does_not_offer_is_named_not_swapped():
+    choice.path().parent.mkdir(parents=True, exist_ok=True)
+    choice.path().write_text(json.dumps({"reads_on": "this-computer", "model": "qwen9000-q1"}))
+    with pytest.raises(ConfigError) as caught:
+        choice.load(_FakeVault({}))
+    assert "qwen9000-q1" in str(caught.value)
+
+
+def test_every_offered_model_is_pinned_and_one_is_recommended():
+    assert sum(1 for model in manifest.VISION_MODELS if model.recommended) == 1
+    aliases = {model.alias for model in manifest.VISION_MODELS}
+    assert len(aliases) == len(manifest.VISION_MODELS)
+    for model in manifest.VISION_MODELS:
+        assert model.weights.sha256[:12] in model.alias
+        assert model.ram_needed_bytes > 0
+        for item in model.bundle.files:
+            assert manifest.host_allowed(httpx.URL(item.url).host)
+            assert len(item.sha256) == 64
 
 
 @pytest.mark.parametrize("minutes", [-1, 24 * 60 + 1, True, 2.5, "15"])
