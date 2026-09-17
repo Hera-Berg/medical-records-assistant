@@ -40,6 +40,7 @@ from ..events import envelope
 from ..events.envelope import Event
 from ..projection import entities as entities_mod
 from ..projection import reconcile, stops, subjects
+from ..projection import unread as unread_mod
 from ..projection.claims import Claim
 from ..projection.reconcile import ReviewItem, Slot
 
@@ -54,9 +55,10 @@ CORRECT = "correct"
 DATE = "date"
 CONFIRM_AGAIN = "confirm-again"
 KEEP_REJECTED = "keep-rejected"
+DEALT_WITH = "dealt-with"
 
 ACTIONS = frozenset(
-    {CONFIRM, CONFIRM_STOP, REJECT, CORRECT, DATE, CONFIRM_AGAIN, KEEP_REJECTED}
+    {CONFIRM, CONFIRM_STOP, REJECT, CORRECT, DATE, CONFIRM_AGAIN, KEEP_REJECTED, DEALT_WITH}
 )
 
 #: Which acts each review kind offers.
@@ -79,6 +81,11 @@ BY_KIND: Mapping[str, tuple[str, ...]] = {
     "contradiction": (CORRECT, REJECT),
     entities_mod.STOP_REPORTED: (CORRECT,),
     reconcile.MERGE_PROPOSED: (),
+    # Nothing was read, so there is nothing to confirm, correct or reject. The
+    # person checks the document, photographs it again or types it in, and says
+    # so. A new photograph is read afresh and raises its own item if it too
+    # cannot be read.
+    unread_mod.COULD_NOT_READ: (DEALT_WITH,),
 }
 
 #: Kinds where ``reject`` must name which claim it retracts.
@@ -216,6 +223,7 @@ def already_decided(events: Sequence[Event], item_id: str) -> str:
             "claim.confirmed": "confirmed",
             "claim.rejected": "rejected",
             "claim.corrected": "corrected",
+            unread_mod.ACKNOWLEDGED: "marked as dealt with",
         }.get(decided.type, "decided")
         return (
             f"This was already {what}{when}, so it has left your review list. "
@@ -231,7 +239,9 @@ def already_decided(events: Sequence[Event], item_id: str) -> str:
 def _latest_decision(events: Iterable[Event], target: str) -> Event | None:
     latest: Event | None = None
     for event in events:
-        if event.type not in ("claim.confirmed", "claim.rejected", "claim.corrected"):
+        if event.type not in (
+            "claim.confirmed", "claim.rejected", "claim.corrected", unread_mod.ACKNOWLEDGED
+        ):
             continue
         if event.payload.get("target") != target:
             continue
@@ -283,6 +293,15 @@ def build(
         ]
     if action == CORRECT:
         return _corrections(entry, device, value)
+    if action == DEALT_WITH:
+        return [
+            envelope.new(
+                unread_mod.ACKNOWLEDGED,
+                device,
+                payload={"target": event_id, "artifact": entry.item.cite},
+            )
+            for event_id in entry.targets
+        ]
     return _dating(entry, device, occurred_at)
 
 

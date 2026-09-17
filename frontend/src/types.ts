@@ -141,6 +141,8 @@ export interface InboxItem {
       occurred_at: { value: string; precision: string; uncertainty_days: number };
     }[];
   } | null;
+  /** For a document the reader could not fully read: which artefact. No values. */
+  unread: { artifact: string } | null;
 }
 
 export interface ReviewQueue {

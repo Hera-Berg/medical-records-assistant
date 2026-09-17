@@ -25,6 +25,7 @@ from typing import Any, Iterable, Mapping
 
 from ..events.envelope import Event, format_ts, parse_ts_or_none
 from . import citations as citations_mod
+from . import unread
 from . import entities as entities_mod
 from . import pages, reconcile, timeline, views, writer
 from .claims import ClaimProblem
@@ -131,7 +132,11 @@ def project(events: Iterable[Event], as_of: datetime | str | None = None) -> Pro
     # the page, so they are merged back in here and sorted with the rest.
     review = tuple(
         sorted(
-            reconciliation.review + entities_mod.derived_review(entities),
+            reconciliation.review
+            + entities_mod.derived_review(entities)
+            # What a reader said it could not read. Without these in the queue
+            # an abstention would be as invisible as a silent miss.
+            + unread.review_items(events),
             key=lambda item: item.sort_key,
         )
     )

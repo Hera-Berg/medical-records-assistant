@@ -49,6 +49,10 @@ EVENT_TYPES: dict[str, str] = {
     # identity is the string the server reported, recorded the first time it
     # is seen. See MODELS.md, "Model identity".
     "model.identity.observed": ACTOR_AGENT,
+    # A person has dealt with a reading that could not read something — checked
+    # the document, photographed it again, typed it in. Names the extraction
+    # event it answers, so a later reading raises its own question afresh.
+    "reading.acknowledged": ACTOR_USER,
 }
 
 ENVELOPE_KEYS = ("id", "type", "ts", "device", "actor", "provenance", "payload")

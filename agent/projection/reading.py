@@ -70,6 +70,10 @@ class Reading:
     #: outcome — telling its owner that "what you said is kept and quoted here"
     #: would promise a quotation that does not exist.
     spoke: bool = True
+    #: Parts the reader said it could not read, still waiting on a person. A
+    #: document with these is never finished, whatever was decided about the
+    #: rest of it.
+    unclear: int = 0
 
     @property
     def is_finished(self) -> bool:
@@ -85,7 +89,7 @@ class Reading:
             # Nothing was said, so there is nothing for a later version to read
             # out of it either. Silence is an answer.
             return not self.spoke
-        return self.awaiting == 0
+        return self.awaiting == 0 and self.unclear == 0
 
     def sentence(self) -> str:
         """One short sentence, in the words the owner of the record would use.
@@ -112,6 +116,15 @@ class Reading:
             return f"Could not be read — {self.reason}" if self.reason else (
                 "Could not be read."
             )
+        if self.unclear and self.state in (READ, NOTHING_FOUND):
+            # Said before anything else about it: the part that could not be
+            # read is the part that needs the person.
+            if self.awaiting:
+                return (
+                    f"Read in part — {self.awaiting} to review, and some of it could "
+                    f"not be read."
+                )
+            return "Read in part — some of it could not be read, and is on your review list."
         if self.state == NOTHING_FOUND:
             return "Read — nothing in it is tracked here."
         if self.state == READ:
@@ -170,6 +183,9 @@ def index(
         if current is None or event.sort_key > current.sort_key:
             looked[short] = event
 
+    from . import unread as unread_mod  # noqa: PLC0415 - import cycle
+
+    done = unread_mod.acknowledged(events)
     found: dict[str, Reading] = {}
     for short, artifact in artifacts.items():
         mime = str(getattr(artifact, "mime", "") or "")
@@ -195,14 +211,21 @@ def index(
                     awaiting=max(claims - decided, 0),
                     is_recording=recording,
                     reason=_clean(read.payload.get("unreadable_reason")) if read else None,
+                    # Not finished until a person has dealt with it: a page
+                    # nobody could read is exactly the page that needs one.
+                    unclear=0 if read.id in done else 1,
                 )
                 continue
+            unclear = 0
+            if read is not None and read.id not in done:
+                unclear = len(unread_mod.open_abstentions(read))
             found[short] = Reading(
                 short,
                 READ if claims else NOTHING_FOUND,
                 claims=claims,
                 awaiting=max(claims - decided, 0),
                 is_recording=recording,
+                unclear=unclear,
             )
             continue
 

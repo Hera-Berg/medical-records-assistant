@@ -279,7 +279,17 @@ def inbox_item(entry, citer: Citer) -> dict[str, Any]:
         ] or ([citation(citer, item.cite, "Proposed from")] if item.cite else []),
         "stop": _stop_detail(entry),
         "dateable": _dateable_detail(entry),
+        "unread": _unread_detail(entry),
     }
+
+
+def _unread_detail(entry) -> dict[str, Any] | None:
+    """What could not be read, as fields for the inbox to list. Never a value."""
+    from ..projection import unread as unread_mod  # noqa: PLC0415
+
+    if entry.item.kind != unread_mod.COULD_NOT_READ:
+        return None
+    return {"artifact": entry.item.cite}
 
 
 def _predicate_label(predicate: str) -> str:

@@ -353,7 +353,7 @@ from the evidence tier, which describes the document and never the reader. It is
 consultation summary.
 
 Whether the default reader is good enough is answered by the eval corpus, not by a label: the bundled
-reader meets the same 100% recall bar in its own right before it ships as the default.
+reader meets the wrong-is-zero bar in its own right before it ships as the default.
 
 Speech and the bundled reader do not read at the same time in the background worker: a pass
 transcribes what is waiting first, and only then asks the reader for anything.
@@ -432,6 +432,21 @@ a conflict; the trace is evidence for the reviewer, not a verdict.
 
 Constrain decoding to a JSON schema — GBNF grammar in llama.cpp, `format` in Ollama. Do not
 post-process free text into JSON with a regex.
+
+**A page is read in groups, as turns of one conversation.** Medications first, with the page attached;
+then allergies; then conditions and practitioners. Every group's schema has an `unclear` list, and the
+prompt's first rule is that unsure means unclear — a small model asked to fill a schema will fill it,
+so leaving something out has to be a place in the schema, not an absence. Measured on the bundled
+reader, a follow-up turn reuses the page from llama-server's prompt cache (about 3 seconds against
+about 80 for the first), while the same question as a separate prompt re-pays the image prefill. So
+groups are turns; as separate prompts the idea would cost three times the prefill and would not be
+worth it. The sequence is fixed — this is not a loop, and the model's answers decide nothing about
+what is asked next beyond not asking about a page it said it cannot read.
+
+**A medicine's name, strength and frequency are separate fields.** A name carrying a digit, unit or
+form is refused, not trimmed. A dose is proposed only when strength and frequency were both read; one
+without the other is an abstention, because a dose without its frequency is not the dose on the page.
+Every refusal of this kind is recorded as an abstention and reaches the review queue.
 
 **Validate, then reject. Never repair.** A malformed claim that gets coerced into a valid one is how a
 dose becomes wrong silently. Log the raw output, emit no claim, surface the artefact as "could not
@@ -606,15 +621,25 @@ answerable a year later.
 `tests/fixtures/` holds the golden corpus with hand-written expected claims. Run it on every model or
 prompt change, before the swap is accepted.
 
-**Recall on medications, doses and allergies must be 100%.** A false positive gets caught in review; a
-missed medication is invisible and is precisely the failure this project exists to prevent. Report
-recall and precision separately and never trade recall for precision.
+**Every expected medication, dose and allergy is scored correct, abstained or wrong.**
 
-**Run the corpus against both readers.** The bundled reader is the default, so it meets the 100%
-recall bar on medications, doses and allergies in its own right — not relative to the remote box. If it
-misses a medication, a dose or an allergy on any fixture, that is a stop: the result goes to a person
-to decide, and the bar is never quietly lowered to let the default ship. Where both readers have been
-run, their results go in the same report.
+| Outcome | Meaning |
+|---|---|
+| correct | The claim matches, on the normalised key and the salt table. |
+| abstained | The reader said it could not read that field or that page. |
+| wrong | It asserted something false — a wrong dose, a wrong drug, a value under the wrong field or a leaked identifier — **or said nothing at all**. An unexpected claim about a medication or allergy that the fixture does not list in `also_true` is wrong too. A harness error is wrong. |
+
+**The bar: wrong is 0%, and correct + abstained is 100%.** How the split falls between correct and
+abstained is a quality measure, not a safety one. The asymmetry is visibility: a silent miss makes no
+review item and nobody can notice it, which is the failure this project exists to prevent; an
+abstention becomes a high-consequence "could not be read" item in the review queue, and the person
+photographs it again or types it in. That is a working system, so the harness credits it — and never
+credits an error, which the system puts in front of nobody.
+
+**Run the corpus against both readers.** The bundled reader is the default, so it meets the bar in its
+own right. If it asserts a false dose even once, it does not ship as the default. The bar is never
+quietly lowered, and the result goes to a person. When it ships, its measured correct/abstained split
+is stated where the person chooses it.
 
 Five tests belong here rather than in the fixture corpus:
 

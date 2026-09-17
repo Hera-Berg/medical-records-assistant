@@ -344,6 +344,19 @@ queued or a request is in flight, and the state says "sleeping" rather than hidi
 
 **macOS and Windows are pinned and unverified** until someone runs them. Say so wherever it matters.
 
+**A reader fails safely or it does not ship.** The eval scores correct, abstained and wrong; the bar is
+wrong 0% and correct + abstained 100% on medications, doses and allergies. Wrong includes silence and
+any unlisted assertion. An abstention counts as safe only because it is visible: every latest reading
+that was unreadable, cut off, refused, or that declined part of a page raises a high-consequence
+`could-not-read` review item naming what was not read and never a value, until a person marks it dealt
+with (`reading.acknowledged`) or a newer reading replaces it. A page whose any turn was cut off
+proposes nothing from any turn.
+
+**Identifiers never absorb values, and a dose is never half a dose.** Name, strength and frequency are
+separate fields; a name with a digit or unit is refused; strength without frequency is an abstention.
+The dose comparison key keeps words it does not understand as `instruction` and counts other than one
+as `per_dose`, so two readings never compare equal by dropping what differs.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -424,6 +437,7 @@ rewrite a line. Never delete a line. Corrections are new events.
 | `entity.merge.proposed` | agent | "Panadol" and "paracetamol" may be the same thing. |
 | `entity.merge.confirmed` / `.reverted` | user | |
 | `note.recorded` | user | Voice or text note, with transcript. |
+| `reading.acknowledged` | user | A "could not be read" item was dealt with. Names the extraction it answers. |
 
 **Store `extraction.completed` separately from `claim.proposed`.** When the model is swapped for a
 better one you need to re-derive everything and diff it, and you cannot do that from parsed claims.
@@ -726,7 +740,7 @@ Do not start a phase before the previous one's tests pass.
 10. **Querying the record.** Not before phase 9. See below.
 11. **Reading on this computer.** A managed `llama-server` and `Qwen3.5-4B`, downloaded and verified
     on first run, as the default reader. See "Where documents are read" in `MODELS.md`. Not the default
-    until the bundled reader meets the recall bar on the eval corpus in its own right.
+    until the bundled reader meets the eval bar in its own right: wrong 0%, correct + abstained 100%.
 12. **The `indication` predicate.** What a medication is *for*, read off the
     documents that say it. Its own piece of work — see "Next: the `indication`
     predicate".
@@ -802,8 +816,8 @@ record does not record what each is for.
 **What it touches.** `agent/extract/schema.py` (`indication` joins `PREDICATES`),
 the extraction prompt, `agent/projection/tiers.py`, the entity page and its
 frontmatter, the consultation summary's medication lines, and the eval corpus —
-the fixtures get expected indication claims, and medication recall is already
-required to be 100%. The query layer needs no change at all: it already asks the
+the fixtures get expected indication claims, and nothing about a medication may
+be scored wrong. The query layer needs no change at all: it already asks the
 record whether it holds one and already says so when it does not.
 
 **Rules it inherits, and one it needs.**

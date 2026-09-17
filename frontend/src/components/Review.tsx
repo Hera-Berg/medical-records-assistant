@@ -62,6 +62,7 @@ const ACTION_WORDS: Record<string, string> = {
   date: "Save the date",
   "confirm-again": "Yes, I meant to confirm it",
   "keep-rejected": "Yes, I meant to reject it",
+  "dealt-with": "I've dealt with this",
 };
 
 export function Review({
@@ -337,6 +338,20 @@ function Body({
     words here, where the subject already has a name and the source already has
     a citation.
   */
+  if (item.kind === "could-not-read") {
+    /* Written on the server for the person, and it names what could not be read
+       and never a value — there is none. The document itself is one tap away. */
+    return (
+      <div className="mt-1">
+        <p>{item.summary}</p>
+        <p className="mt-1 text-[color:var(--color-muted)]">
+          Nothing was guessed. When you have checked the document — or photographed it
+          again, or added what it says as a note — say so here.
+        </p>
+      </div>
+    );
+  }
+
   if (item.kind === "withdrawn-by-rejection") {
     return (
       <p className="mt-1">

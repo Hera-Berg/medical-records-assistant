@@ -372,6 +372,7 @@ def test_every_review_kind_the_projection_can_raise_can_be_rendered():
         entities_mod.STOP_REPORTED,
         "conflict",
         "contradiction",
+        "could-not-read",
     }
 
     assert raised <= set(review_mod.BY_KIND)
