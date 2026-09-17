@@ -145,3 +145,18 @@ def test_the_inbox_offers_one_act_and_records_it(vault):
     acknowledgements = [e for e in vault.read().events if e.type == "reading.acknowledged"]
     assert [e.payload["target"] for e in acknowledgements] == [read.id]
     assert acknowledgements[0].actor == "user"
+
+
+def test_an_unread_document_is_named_in_words_and_counted_apart(vault):
+    identity = vault.identity.id
+    for event in (ingested(identity), _read(abstentions=[METFORMIN_FREQUENCY], device=identity)):
+        vault.append(event)
+
+    with api_client(vault) as client:
+        (item,) = client.get("/api/review").json()["tiers"]["high"]
+        health = client.get("/api/health").json()
+
+    assert item["name"] == "A document read only in part"
+    assert "artifact:" not in item["name"]
+    assert health["review"]["could_not_read"] == 1
+    assert health["review"]["by_tier"]["high"] == 0, "not something to confirm"

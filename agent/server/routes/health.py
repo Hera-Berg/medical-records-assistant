@@ -50,7 +50,13 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     review = snapshot.projection.review
 
     by_tier: dict[str, int] = {}
+    unread = 0
     for item in review:
+        if item.kind == "could-not-read":
+            # Counted apart. It is not something to confirm and it is not a
+            # medication, and a banner that folded it in said both.
+            unread += 1
+            continue
         by_tier[item.consequence] = by_tier.get(item.consequence, 0) + 1
 
     device = _device(vault)
@@ -82,6 +88,7 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
         "review": {
             "total": len(review),
             "by_tier": {tier: by_tier.get(tier, 0) for tier in ("high", "medium", "low")},
+            "could_not_read": unread,
         },
         # Regenerable from the log, so never persisted — but surfaced here so
         # they cannot scroll past unseen. See CLAUDE.md, "Anomalies live in the

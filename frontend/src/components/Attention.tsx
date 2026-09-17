@@ -145,12 +145,28 @@ export function Attention({
     );
   }
 
-  if (health.review.total > 0) {
+  const unread = health.review.could_not_read ?? 0;
+  if (unread > 0) {
+    banners.push(
+      <Banner
+        key="unread"
+        tone="warn"
+        title={`${countWord(unread, "document", "documents")} could not be fully read.`}
+      >
+        Nothing was guessed from the parts that could not be read. Check{" "}
+        {unread === 1 ? "it" : "them"} on the <strong>Waiting for you</strong> screen —
+        photograph again or type in anything that matters.
+      </Banner>,
+    );
+  }
+
+  const toConfirm = health.review.total - unread;
+  if (toConfirm > 0) {
     banners.push(
       <Banner
         key="review"
         tone="info"
-        title={`${countWord(health.review.total, "thing is", "things are")} waiting for you to confirm.`}
+        title={`${countWord(toConfirm, "thing is", "things are")} waiting for you to confirm.`}
       >
         {health.review.by_tier.high > 0 ? (
           <>

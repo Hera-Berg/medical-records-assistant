@@ -147,6 +147,13 @@ def _display_name(item: ReviewItem, entities: Mapping[str, Any]) -> str:
     pending claim may have no entity at all, and "Sulfonamides" is a better
     thing to show a patient than ``allergy:sulfonamides``.
     """
+    if item.kind == unread_mod.COULD_NOT_READ:
+        # A document, not an entity, and not its internal id.
+        return (
+            "A document that could not be read"
+            if item.summary.startswith("This document could not be read")
+            else "A document read only in part"
+        )
     entity = entities.get(item.subject_id)
     if entity is not None and entity.name:
         return entity.name

@@ -294,7 +294,12 @@ export interface Health {
     malformed: string[];
   };
   record: { events: number; artifacts: number; entities: number; as_of: string };
-  review: { total: number; by_tier: { high: number; medium: number; low: number } };
+  review: {
+    total: number;
+    by_tier: { high: number; medium: number; low: number };
+    /** Documents a reader could not fully read. Not in `by_tier`; not something to confirm. */
+    could_not_read: number;
+  };
   anomalies: { count: number; items: string[] };
   problems: string[];
 }
