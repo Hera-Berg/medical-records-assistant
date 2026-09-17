@@ -260,6 +260,25 @@ def test_key_redacted_from_logs_and_errors(caplog):
     assert redaction.REDACTED in written
 
 
+def test_a_record_from_a_child_logger_is_scrubbed(caplog):
+    """A logger's filter never sees records logged on its children.
+
+    ``agent.runtime`` and ``agent.llm.client`` propagate straight past a filter
+    attached to ``agent``, so the scrub has to happen where every record is
+    made — whichever logger made it, and whichever handler writes it.
+    """
+    redaction.register(KEY)
+    redaction.install()
+
+    with caplog.at_level(logging.WARNING):
+        logging.getLogger("agent.runtime.somewhere").warning("Bearer %s", KEY)
+        logging.getLogger("agent.llm.client").warning(f"inline Bearer {KEY}")
+        logging.getLogger("uvicorn.error").warning("not ours either: %s", KEY)
+
+    assert KEY not in caplog.text
+    assert caplog.text.count(redaction.REDACTED) == 3
+
+
 def test_an_exception_message_is_scrubbed_too():
     redaction.register(KEY)
     message = f"Client error for url https://box/v1?key={KEY} with Bearer {KEY}"

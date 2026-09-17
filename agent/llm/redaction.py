@@ -20,6 +20,7 @@ the old value scrubbed out of it.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Iterable
 
 REDACTED = "••••"
@@ -123,8 +124,34 @@ def scrub_structure(value: Any) -> Any:
     return scrub(value)
 
 
+_FACTORY_LOCK = threading.Lock()
+_FACTORY_INSTALLED = False
+
+
 def install(logger_name: str = "agent") -> logging.Logger:
-    """Attach the filter to *logger_name*, once. Idempotent."""
+    """Scrub every log record in the process, and attach the filter to *logger_name*. Idempotent.
+
+    The filter on a logger is not enough on its own, and for a long time it was
+    all there was. Python consults a logger's filters only for records logged on
+    that logger *itself*: a record from ``agent.runtime`` or ``agent.llm.client``
+    propagates up past ``agent`` to the handlers without ever meeting the filter
+    attached there. So every record is also scrubbed as it is created, through
+    the log record factory, which no logger name and no handler added later can
+    step around.
+    """
+    global _FACTORY_INSTALLED
+    with _FACTORY_LOCK:
+        if not _FACTORY_INSTALLED:
+            previous = logging.getLogRecordFactory()
+            scrubber = SecretFilter()
+
+            def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+                record = previous(*args, **kwargs)
+                scrubber.filter(record)
+                return record
+
+            logging.setLogRecordFactory(factory)
+            _FACTORY_INSTALLED = True
     logger = logging.getLogger(logger_name)
     if not any(isinstance(existing, SecretFilter) for existing in logger.filters):
         logger.addFilter(SecretFilter())
