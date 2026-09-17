@@ -502,14 +502,17 @@ function parentOf(path: string): string {
 }
 
 /**
- * A size in the units a person reads.
+ * A size in the unit it is actually in.
  *
- * Powers of two with the units people actually say. Nothing here is doing
- * arithmetic that reaches the record — this is a file listing, not a claim.
+ * Decimal — 1000 bytes to a kilobyte — because a listing is compared against
+ * the file manager and the disk, and a power-of-two figure labelled KB, MB or
+ * GB is a smaller number wearing a larger unit's name. Nothing here reaches the
+ * record; this is a file listing, not a claim.
  */
 function size(bytes: number | null): string {
   if (bytes == null) return "—";
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1000) return `${bytes} bytes`;
+  if (bytes < 1000 ** 2) return `${Math.round(bytes / 1000)} KB`;
+  if (bytes < 1000 ** 3) return `${(bytes / 1000 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1000 ** 3).toFixed(1)} GB`;
 }

@@ -75,7 +75,7 @@ that it works there.
 
 **Weights and binaries live outside the vault** — `$XDG_DATA_HOME/health-agent`, `~/Library/Application
 Support/health-agent`, or `%LOCALAPPDATA%\health-agent`. A data directory that resolves inside the vault
-is refused: 3.6 GB of model would sync to Dropbox.
+is refused: 3.9 GB of reader files would sync to Dropbox.
 
 ### Downloading
 
@@ -104,7 +104,7 @@ endpoint the user configured. It is therefore held to rules of its own:
 ### Running it
 
 One `llama-server` per machine, owned by a lock in the data directory. A second process that wants the
-reader while the server holds it is refused with a sentence, rather than loading a second 3.5 GB copy.
+reader while the server holds it is refused with a sentence, rather than loading a second 3.4 GB copy.
 
 - **Flags are not left to defaults.** `--host 127.0.0.1`, a free port, `--parallel 1` (the default
   splits the context across slots and silently shrinks each request's room), `--jinja` (the thinking
@@ -145,7 +145,8 @@ reader while the server holds it is refused with a sentence, rather than loading
 ### Choosing the model
 
 The reader on this computer offers a list of models from the manifest — today Qwen3.5-4B Q4
-(recommended, preselected, runs on 8 GB) and Qwen3.5-9B Q4 (16 GB). Adding one is a manifest entry and
+(recommended, preselected, 3.4 GB, runs on 8 GB of memory) and Qwen3.5-9B Q4 (6.6 GB, 16 GB of memory).
+Adding one is a manifest entry and
 a measurement, never a code path.
 
 **The person chooses knowing.** The 4B model does not meet the eval bar: on the blurry handwritten
@@ -162,6 +163,11 @@ words, with what to do about it.
 **Measurements are data, recorded from real runs.** `agent/runtime/measurements.json`, keyed by the
 model's identity string (so re-pinned weights start unmeasured), written by `health-agent eval
 --record` and committed. Known failures are written by a person and kept across re-records.
+
+**Sizes are quoted in the unit they are in.** Download and disk sizes are decimal gigabytes (1000³ bytes),
+the unit a browser, a disk and a data plan use: 6,598,688,544 bytes is "6.6 GB", never "6.1 GB". Memory is
+quoted as it is sold and reported — "8 GB" of RAM is 8 × 1024³ bytes — and the two never share a
+formatter.
 
 **Memory is warned about, never enforced.** A model needing more than the machine has gets a sentence
 saying what will happen — slow, other programs squeezed, possibly stopped part-way — and can still be

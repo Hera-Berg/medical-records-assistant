@@ -51,7 +51,7 @@ def start_download(
             status_code=409,
             detail=(
                 f"Nothing was downloaded. This would fetch {remaining:,} bytes "
-                f"({remaining / 1024**3:.1f} GB) from {hosts}, and a download "
+                f"({remaining / 1000**3:.1f} GB) from {hosts}, and a download "
                 f"starts only once that exact size has been shown and agreed to."
             ),
         )

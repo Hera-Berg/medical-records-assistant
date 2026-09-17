@@ -457,7 +457,7 @@ function ModelList({
             <span className="block">
               {gigabytes(model.size_bytes)} download
               {model.downloaded ? " (already downloaded)" : ""} · needs about{" "}
-              {gigabytes(model.ram_needed_bytes)} of memory · {model.licence} licence
+              {memory(model.ram_needed_bytes)} of memory · {model.licence} licence
             </span>
             <span className="block">{model.speed.sentence}</span>
             <span className="block">{model.accuracy.sentence}</span>
@@ -525,9 +525,23 @@ function Note({
   );
 }
 
+/**
+ * A download or disk size, in decimal gigabytes — the unit a browser, a disk and a
+ * data plan all quote. Dividing by 1024³ and calling it GB understates a 6.6 GB
+ * download as "6.1 GB", which reads as an error when more than promised arrives.
+ */
 function gigabytes(bytes: number): string {
-  if (bytes < 1024 ** 3) return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+  if (bytes < 1000 ** 3) return `${Math.max(1, Math.round(bytes / 1000 ** 2))} MB`;
+  const value = bytes / 1000 ** 3;
+  return Number.isInteger(value) ? `${value} GB` : `${value.toFixed(1)} GB`;
+}
+
+/**
+ * Memory, as it is sold and as the operating system reports it: "8 GB" means
+ * 8 × 1024³ bytes. Deliberately not {@link gigabytes} — a machine sold with 8 GB
+ * would otherwise read as having "8.6 GB", and the two numbers would not compare.
+ */
+function memory(bytes: number): string {
   const value = bytes / 1024 ** 3;
-  // "8 GB", not "8.0 GB"; "3.2 GB" where the tenth says something.
   return Number.isInteger(value) ? `${value} GB` : `${value.toFixed(1)} GB`;
 }

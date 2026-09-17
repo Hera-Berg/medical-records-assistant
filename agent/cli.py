@@ -928,9 +928,17 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _gigabytes(value: int | None) -> str:
+    """A download or disk size in decimal GB — the unit a disk and a data plan quote."""
     if value is None:
         return "unknown"
-    return f"{value / 1024**3:.2f} GB"
+    return f"{value / 1000**3:.2f} GB"
+
+
+def _memory(value: int | None) -> str:
+    """Memory as it is sold and reported: "8 GB" is 8 × 1024³ bytes."""
+    if value is None:
+        return "unknown"
+    return f"{value / 1024**3:.1f} GB"
 
 
 def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
@@ -1009,7 +1017,7 @@ def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
     verified = platform in platforms.VERIFIED
     print(f"machine   {label}" + ("" if verified else " — pinned but UNVERIFIED: never run in development"), file=out)
     memory = platforms.total_memory_bytes()
-    print(f"memory    {_gigabytes(memory)}"
+    print(f"memory    {_memory(memory)}"
           + (" — below 8 GB: reading here will be slow and crowd out other programs" if memory and memory < platforms.LOW_MEMORY_BYTES else ""), file=out)
     for bundle in bundles:
         arrived = sum(store.arrived_bytes(bundle, item) for item in bundle.files)

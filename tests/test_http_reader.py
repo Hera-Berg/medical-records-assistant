@@ -227,3 +227,13 @@ def test_an_unknown_model_is_refused(vault):
             "/api/settings/reader", json={"reads_on": "this-computer", "model": "qwen9000"}
         )
     assert response.status_code == 400
+
+
+def test_a_download_size_is_quoted_in_decimal_gigabytes(vault, no_real_download):
+    """6,598,688,544 bytes is 6.6 GB. Calling 1024³ a GB made it "6.1 GB"."""
+    with api_client(vault) as client:
+        client.post("/api/settings/reader", json={"reads_on": "this-computer", "model": manifest.QWEN_9B.id})
+        remaining = client.get("/api/reader").json()["files"]["remaining_bytes"]
+        refused = client.post("/api/reader/download", json={})
+    assert f"({remaining / 1000**3:.1f} GB)" in refused.json()["detail"]
+    assert f"({remaining / 1024**3:.1f} GB)" not in refused.json()["detail"]

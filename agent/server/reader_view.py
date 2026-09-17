@@ -209,6 +209,11 @@ def payload(state) -> dict[str, Any]:
 
 
 def _gb(value: int) -> str:
+    """Memory only, as it is sold and reported: "8 GB" is 8 × 1024³ bytes.
+
+    Download and disk sizes are sent as bytes and shown in decimal GB by the
+    screen; this is never used for them.
+    """
     gigabytes = value / 1024**3
     return f"{gigabytes:.0f} GB" if gigabytes == int(gigabytes) else f"{gigabytes:.1f} GB"
 
