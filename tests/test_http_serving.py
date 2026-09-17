@@ -223,7 +223,7 @@ def test_no_route_returns_the_key_or_any_prefix_of_it(vault, app, monkeypatch):
 
     redaction.register(KEY)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, base_url="http://127.0.0.1:7777") as client:
             # Make the endpoint state as informative as it ever gets.
             from agent.errors import AuthRejected
 

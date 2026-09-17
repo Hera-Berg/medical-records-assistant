@@ -16,6 +16,11 @@ from agent import vault as vault_mod
 from agent.events import envelope
 from agent.vault import Vault
 
+#: What a browser on this machine calls the server. The server refuses any other
+#: ``Host`` (see ``agent.server.origin``), so TestClient's default ``testserver``
+#: is not an address it answers.
+LOOPBACK_BASE = "http://127.0.0.1:7777"
+
 MINIMAL_CONFIG = 'sync_profile = "local"\nport = 7777\nlocale = "en"\n'
 
 
@@ -142,7 +147,7 @@ def app(vault):
 def client(app):
     from fastapi.testclient import TestClient
 
-    with TestClient(app) as started:
+    with TestClient(app, base_url=LOOPBACK_BASE) as started:
         yield started
 
 
@@ -153,7 +158,7 @@ def api_client(vault, **kwargs):
     from agent.server import create_app
 
     kwargs.setdefault("worker", False)
-    return TestClient(create_app(vault, **kwargs))
+    return TestClient(create_app(vault, **kwargs), base_url=LOOPBACK_BASE)
 
 
 # --- phase 3: hand-authored claims ------------------------------------------

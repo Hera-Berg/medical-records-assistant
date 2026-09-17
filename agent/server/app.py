@@ -29,6 +29,7 @@ from ..errors import EndpointNotConfigured, HealthAgentError
 from ..extract import session
 from ..llm import redaction
 from . import endpoint_state, static
+from .origin import OriginGuard
 from .index import Index
 from .routes import (
     artifact,
@@ -178,6 +179,10 @@ def create_app(
 
     # Registered last: its catch-all path must lose to every API route above.
     static.mount(app)
+
+    # Outermost, so a rebinding page or a cross-site form is refused before any
+    # route, handler or other middleware has touched the request.
+    app.add_middleware(OriginGuard)
 
     return app
 
