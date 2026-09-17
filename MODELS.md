@@ -136,9 +136,15 @@ reader while the server holds it is refused with a sentence, rather than loading
 - **It sleeps when idle** — after 15 minutes by default, configurable per machine — and never while a
   job is queued or a request is in flight. The state says "sleeping — wakes when you add something",
   because a first read that takes ten seconds longer than the next one must not look like a fault.
-- **It stops when the app stops.** On Linux the child is also told to die with its parent; on Windows it
-  is placed in a kill-on-close job object; on macOS, which has neither, a pidfile lets the next start
-  stop an orphan after checking it is this app's binary.
+- **It stops when the app stops — and when the app is killed.** Quitting shuts the reader down. For an
+  app that is killed instead, each platform's own mechanism does it: on Linux the child is told to die
+  with its parent; on Windows it is placed in a kill-on-close job object; on macOS, which has neither, a
+  `/bin/sh` loop started beside each launch polls the app's pid every two seconds and stops the reader
+  once the app is gone, after checking the pid's command line is still the reader's binary. The pidfile
+  reap on the next start stays as a second line. A 3.5 GB orphan must not outlive the app by more than
+  seconds, and the release workflow checks both Quit and a hard kill on the downloaded app, per platform.
+- **No console window on Windows.** The child is started with `CREATE_NO_WINDOW`; the app has no
+  console of its own, and without the flag Windows opens one beside the tray icon.
 - **Its log is outside the vault**, in the data directory, and is never run verbose: verbose output
   includes prompts.
 

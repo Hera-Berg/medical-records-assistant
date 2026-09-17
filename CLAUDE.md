@@ -54,6 +54,9 @@ write plain files and let the sync client do its job.
   alongside it as a cross-check. See "dual-path extraction" in `MODELS.md`.
 - **Index**: SQLite at `.agent/index.sqlite`, treated as a disposable cache. Never the only home of
   any fact.
+- **Desktop app**: `health-agent app`, frozen with PyInstaller into a `.dmg` (Apple Silicon) and a
+  Windows installer, with a `pystray` icon. A launcher around the same server, never a webview — see
+  phase 12's settled decisions. `llama-server` and weights are never bundled.
 - **Config**: single `config.toml` at the vault root. Vault path, port, model endpoint, model names.
   **No secrets in it, ever.** The vault syncs to Dropbox/Drive/Nextcloud, so anything in that file has
   been handed to a third party by definition. Credentials live outside the vault — see `MODELS.md`.
@@ -363,6 +366,60 @@ separate fields; a name with a digit or unit is refused; strength without freque
 The dose comparison key keeps words it does not understand as `instruction` and counts other than one
 as `per_dose`, so two readings never compare equal by dropping what differs.
 
+Added in phase 12:
+
+**A launcher, never a webview.** The consultation summary is a printable A4 sheet and it is the
+project's whole output; real browsers print and print to PDF reliably and embedded webviews do not. The
+app starts the server, opens the person's own browser at `127.0.0.1`, and sits in the menu bar or tray
+with four items: Open, the reader's state (the sidebar's words), Open the folder, Quit. One process —
+tray on the main thread, server on a thread — so quitting is the server's shutdown and the server's
+shutdown is the reader's. The launcher has no host parameter. `health-agent app` runs the same launcher
+from a pip install, and the CLI stays complete.
+
+**No instruction in the app names a command.** The downloaded app has no pip and possibly no terminal
+its owner can open. `agent/distribution.py` decides: a command appears only through `for_terminal()`,
+on a pip install; a bundled library that fails to import is reported as a fault in how that copy was
+built; and **stored text — job reasons, event notes, wiki footnotes — names no command on either
+installation**, because the vault syncs between a pip install and the app. Every instruction has an
+in-app path: a Settings field, a Details expander carrying the probe's code-written steps, a "Try
+reading it again" button. `tests/test_no_terminal_in_the_app.py` walks every string literal and every
+interface source file.
+
+**Accepting every default on the first run ends in a working record.** The first location offered is
+"A folder on this computer (recommended)", preselected; Dropbox, Google Drive and Nextcloud follow when
+their clients' own files on this disk say where they are, and no service is contacted. A folder holding
+`config.toml` is **joined** and nothing in it is written; an empty or new folder is **created**; a
+folder with other things in it is refused. A new record's `config.toml` explains every value in words
+and has no `[models.vlm]` table — the hand-written template's placeholder address would have sent a new
+record's documents to a computer that does not exist. The reader question is asked on the record's own
+Welcome screen, marked pending per machine beside the device identity, never in the vault.
+
+**A record that cannot open is a page, not a crash.** A folder not where it was, a settings file that
+will not load, an identity issued on another computer. A missing identity is issued as `check --fix`
+does; one from another computer is replaced only when the person asks, and the old file is kept beside
+it.
+
+**Unsigned, and said plainly.** No certificates. The release is a draft that a person publishes after
+reading per-platform results the workflow wrote into its notes. `SHA256SUMS.txt` sits beside the files,
+and each file carries a build provenance attestation naming the workflow run and commit. **An
+attestation is never called signing anywhere a user reads**: it says where a file came from, nobody
+vouches for it, and Gatekeeper and SmartScreen are unaffected.
+
+**The release checks the file people download.** On each platform the workflow installs the `.dmg` or
+installer as a person would and runs the frozen app's `--selftest`: first run over real HTTP with every
+bundled library imported, then the reader downloaded through the app's own routes with the size
+confirmation, started, and passed through the full probe, then Quit — and separately a hard kill — with
+the reader's process checked gone from outside. The dependencies are a hash-pinned lock that the test
+workflow installs on Linux, macOS and Windows, so what is tested is what is frozen.
+
+**A platform that cannot be built from the tested dependencies is dropped, and the release page says
+so.** Intel Macs: onnxruntime, which faster-whisper needs, publishes no macOS x86-64 wheel at the locked
+version. Pinning older libraries for one platform would ship code none of the tests ran.
+
+**Log records are scrubbed where they are created.** A filter on the `agent` logger never saw records
+from `agent.runtime` or `agent.llm.client`, which propagate past it; the log record factory scrubs every
+record regardless of logger or handler.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -614,7 +671,22 @@ GET  /api/reader                the bundled reader: files, download progress, st
 POST /api/reader/download       start or continue the one-time download. Never automatic.
 POST /api/reader/cancel         stop a download, keeping what has arrived
 POST /api/reader/retry          start a reader that stopped after repeated crashes
+POST /api/artifact/{hash}/read-again  re-queue a reading stopped waiting on a person
+POST /api/welcome/done          the first run's reader question has been answered
 ```
+
+Before a record folder exists, or when it cannot be opened, the desktop app serves a separate setup
+app on the same port and origin, behind the same guard: `GET /api/setup`, `POST /api/setup/examine`
+(what choosing a folder would do; writes nothing), `POST /api/setup/choose`, `POST /api/setup/retry`,
+`POST /api/setup/new-identity`. The interface asks `/api/setup` first and shows the setup pages when it
+answers.
+
+**Only loopback hostnames are answered, and only loopback pages may write.** Every request whose `Host`
+is not a loopback name is refused (421) before any route runs: that is DNS rebinding, a page that
+re-points its own hostname at `127.0.0.1` and becomes same-origin with the record. Every `POST`, `PUT`,
+`PATCH` and `DELETE` needs a loopback `Origin`, or a `Sec-Fetch-Site` of `same-origin`/`none`: any page
+can otherwise submit a form to `/api/capture` with no preflight. A request with neither header is not
+one a web page can make, and is allowed. See `agent/server/origin.py`.
 
 **Connecting is one action.** `connect` asks the box what it runs, runs the
 startup probe against it — vision included — and writes `config.toml` only if
@@ -747,7 +819,9 @@ Do not start a phase before the previous one's tests pass.
 11. **Reading on this computer.** A managed `llama-server` and `Qwen3.5-4B`, downloaded and verified
     on first run, as the default reader. See "Where documents are read" in `MODELS.md`. Not the default
     until the bundled reader meets the eval bar in its own right: wrong 0%, correct + abstained 100%.
-12. **The `indication` predicate.** What a medication is *for*, read off the
+12. **Desktop app.** A tray launcher, a first run with no terminal, GitHub Releases, unsigned. See
+    phase 12's settled decisions.
+13. **The `indication` predicate.** What a medication is *for*, read off the
     documents that say it. Its own piece of work — see "Next: the `indication`
     predicate".
 
