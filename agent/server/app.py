@@ -43,6 +43,7 @@ from .routes import (
     review,
     settings,
     summary,
+    welcome,
 )
 from .serving import API_HEADERS
 from .state import RecordState, under_pytest
@@ -159,6 +160,7 @@ def create_app(
         files,
         settings,
         summary,
+        welcome,
     ):
         app.include_router(module.router)
 

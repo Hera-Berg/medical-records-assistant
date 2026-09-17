@@ -39,6 +39,9 @@ ocr = ["pytesseract>=0.3"]
 # The default credential store. Without it the env var and the credentials file
 # still work; see MODELS.md, "Credentials".
 keychain = ["keyring>=24"]
+# The desktop app's tray icon: `health-agent app`. Not needed by `serve` or any
+# other command, and the downloaded app bundles it. On macOS it brings PyObjC.
+app = ["pystray>=0.19"]
 # Kept so `pip install 'health-agent[speech]'` from older instructions still
 # resolves. Speech is a default dependency now.
 speech = []

@@ -28,7 +28,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from ... import distribution
+from ... import distribution, firstrun
 from ... import vault as vault_mod
 from ...extract import jobs as jobs_mod
 from ...llm import redaction
@@ -68,6 +68,9 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
         # Whether an instruction may name a command. The interface remembers it,
         # because it matters most once the server has stopped answering.
         "packaged": distribution.packaged(),
+        # This computer has chosen a record folder and not yet been asked which
+        # computer reads its documents. The interface asks before anything else.
+        "welcome": firstrun.pending(),
         "vault": {
             "root": str(vault.root),
             "writable": vault_mod.is_writable(vault.root),

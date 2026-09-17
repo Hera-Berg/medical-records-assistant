@@ -865,6 +865,21 @@ def cmd_serve(args: argparse.Namespace, out: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_app(args: argparse.Namespace, out: TextIO) -> int:
+    """The desktop app's launcher, exactly as the downloaded app runs it.
+
+    It finds its own record folder the way the app does — the pointer file —
+    and asks for one in the browser when there is none. ``--vault`` opens another
+    folder for this run without changing the remembered one.
+    """
+    from .app import launcher  # noqa: PLC0415 - uvicorn and the tray are slow to import
+
+    rest = list(args.rest)
+    if getattr(args, "vault", None):
+        rest = ["--vault", args.vault, *rest]
+    return launcher.main(rest)
+
+
 def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
     """Score the model against the golden corpus. Run before accepting a swap.
 
@@ -1433,6 +1448,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_vault(serve)
     serve.set_defaults(func=cmd_serve)
 
+    app = subparsers.add_parser(
+        "app",
+        help=(
+            "run the record as a desktop app: the server on 127.0.0.1, your browser "
+            "opened at it, and an icon in the menu bar or system tray"
+        ),
+        add_help=False,
+    )
+    app.add_argument("rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    _add_vault(app)
+    app.set_defaults(func=cmd_app)
+
     reader = subparsers.add_parser(
         "reader",
         help=(
@@ -1501,6 +1528,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
+    arguments = sys.argv[1:] if argv is None else argv
+    if arguments[:1] == ["app"]:
+        # Handed over whole, flags included: the launcher has its own parser,
+        # and argparse will not pass "--help" through a subcommand's remainder.
+        return cmd_app(argparse.Namespace(rest=arguments[1:]), out or sys.stdout)
     parser = build_parser()
     args = parser.parse_args(argv)
     stream = out or sys.stdout

@@ -60,6 +60,69 @@ name         = "faster-whisper-small"
 compute_type = "int8"
 """
 
+#: What a record created by the app starts with. Written for the person who opens
+#: the folder in five years with nothing installed: every value says what it is,
+#: in words, and nothing in it points anywhere. Unlike :data:`CONFIG_TEMPLATE`,
+#: which shows every table a hand-written file may have, it has no
+#: ``[models.vlm]`` — a placeholder address there would send the new record's
+#: documents to a computer that does not exist, because a vault with that table
+#: is read on another computer by default.
+NEW_VAULT_CONFIG = """\
+# Settings for this health record.
+#
+# This file is part of the record folder, so it is copied wherever the folder
+# is synced. It holds settings only. Never put a password or key in it: the app
+# refuses to start if it finds one, because by then it has already been copied.
+#
+# Any text editor can open it. When the app changes a value it changes that one
+# line and leaves the rest, comments included.
+
+# Where this folder lives. It decides which copies made by a sync service the
+# app watches for, and how carefully it checks that a write has landed.
+#   "local"      a folder on this computer only
+#   "dropbox"    synced by Dropbox
+#   "gdrive"     synced by Google Drive
+#   "nextcloud"  synced by Nextcloud
+#   "other"      synced by something else
+sync_profile = "{profile}"
+
+# The app answers at http://127.0.0.1 on this port, on this computer only.
+port = {port}
+
+# The language voice notes are typed up in.
+locale = "{locale}"
+
+# Reading documents on another computer, if that is ever set up, adds a
+# [models.vlm] section below this line. Reading on this computer needs nothing
+# here: which computer reads documents is decided on each computer, not in a
+# file that every computer shares.
+"""
+
+
+def write_new_vault_config(
+    path: Path, profile: SyncProfile, port: int = DEFAULT_PORT, locale: str = DEFAULT_LOCALE
+) -> Config:
+    """Create ``config.toml`` for a record the owner is creating now.
+
+    ``check --fix`` never writes this file, because a config this program
+    invented is a config nobody has read. This is the owner creating a record
+    and choosing where it lives, on a screen that shows them the file — the
+    same reasoning that lets :func:`set_sync_profile` write one line. It never
+    replaces a file that exists: an existing ``config.toml`` means the folder is
+    already a record, and joining it is a different act.
+    """
+    body = NEW_VAULT_CONFIG.format(profile=profile.value, port=port, locale=locale)
+    try:
+        with open(path, "x", encoding="utf-8", newline="\n") as handle:
+            handle.write(body)
+    except FileExistsError:
+        raise ConfigError(
+            f"{path} already exists, so this folder is already a record; it was "
+            f"left exactly as it is"
+        ) from None
+    return load(path)
+
+
 # Filename fragments that unambiguously mean "a sync client forked this file".
 _DROPBOX_CONFLICT = re.compile(r"conflicted copy", re.IGNORECASE)
 _NEXTCLOUD_CONFLICT = re.compile(r"_conflict-\d{8}-\d{6}", re.IGNORECASE)
