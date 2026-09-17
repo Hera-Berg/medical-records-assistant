@@ -200,9 +200,26 @@ def _percent(value: Fraction | None) -> str:
 
 
 def score(fixture, claims: Sequence[ReadClaim], readable: bool = True, error: str | None = None) -> FixtureResult:
-    """Compare one fixture's expected claims against what the model produced."""
+    """Compare one fixture's expected claims against what the model produced.
+
+    An error is scored as a miss of everything the fixture expected. It used to
+    leave the fixture's claims out of recall altogether, so a recording that
+    errored raised the headline number by removing two critical claims from the
+    denominator — a harness that improves when a read fails is not a gate.
+    """
     if error is not None:
-        return FixtureResult(fixture.name, error=error, expected_readable=fixture.readable)
+        expected_all = tuple(
+            sorted(_key(e.subject, e.predicate, e.value) for e in fixture.expected)
+        )
+        return FixtureResult(
+            fixture.name,
+            missed=expected_all,
+            missed_critical=tuple(
+                sorted(_key(e.subject, e.predicate, e.value) for e in fixture.critical)
+            ),
+            error=error,
+            expected_readable=fixture.readable,
+        )
 
     expected = {_key(e.subject, e.predicate, e.value): e for e in fixture.expected}
     produced = {_key(c.subject, c.predicate, c.value_literal) for c in claims}
@@ -283,6 +300,7 @@ def run_corpus(
     condition a golden corpus exists to prevent — two fixtures carrying
     hand-written expected claims that no run ever compared against.
     """
+    from . import budget as budget_mod  # noqa: PLC0415 - avoids an import cycle
     from . import images as images_mod  # noqa: PLC0415 - avoids an import cycle
     from . import prompts as prompts_mod
     from . import transcripts as transcripts_mod
@@ -324,10 +342,10 @@ def run_corpus(
             answers = []
             for page in document.pages:
                 prompt = prompts_mod.build(page, total_pages=len(document.pages))
-                completion = client.complete(
-                    prompt.to_list(),
-                    schema=EXTRACTION_SCHEMA,
-                    schema_name=SCHEMA_NAME,
+                # The same ladder real extraction climbs, so a page that needs a
+                # second call with more room is scored on that second call.
+                completion, _raised = budget_mod.ask(
+                    client, prompt.to_list(), EXTRACTION_SCHEMA, SCHEMA_NAME
                 )
                 try:
                     payload = parse_completion(completion)
@@ -360,7 +378,8 @@ def run_corpus(
             )
         except HealthAgentError as exc:
             results.append(score(fixture, [], error=str(exc)))
-    return report(results, model=model)
+    runtime = (getattr(client, "runtime", None) or {}).get("kind", "endpoint")
+    return report(results, model=model, tier=runtime)
 
 
 def _score_recording(
@@ -404,11 +423,14 @@ def _score_recording(
         # which for that fixture is the expected result rather than a failure.
         return score(fixture, [], readable=False, error=None)
 
+    from . import budget as budget_mod  # noqa: PLC0415
+
     prompt = transcripts_mod.build(transcript.text)
-    completion = client.complete(
+    completion, _raised = budget_mod.ask(
+        client,
         prompt.to_list(),
-        schema=transcripts_mod.TRANSCRIPT_SCHEMA,
-        schema_name=transcripts_mod.SCHEMA_NAME,
+        transcripts_mod.TRANSCRIPT_SCHEMA,
+        transcripts_mod.SCHEMA_NAME,
     )
     try:
         payload = parse_completion(completion)

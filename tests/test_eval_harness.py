@@ -267,6 +267,9 @@ def test_an_error_fails_rather_than_scoring_zero_quietly():
     assert not result.ok
     assert not report.ok
     assert "the box was asleep" in result.describe()
+    # Counted, not left out: an errored fixture's claims are misses.
+    assert len(result.missed_critical) == len(fixture.critical) == 2
+    assert report.critical_recall() == 0
 
 
 def test_the_failure_message_names_what_was_missed():

@@ -499,27 +499,7 @@ class Extractor:
         page needed two calls" is provenance, and the extraction event records
         the ceiling it finally answered under.
         """
-        ceiling = budget_mod.START
-        notes: list[str] = []
-        prefix = f"{where}: " if where else ""
-        while True:
-            completion = self.client.complete(
-                messages, schema=schema, schema_name=schema_name, max_tokens=ceiling
-            )
-            if not completion.truncated:
-                return completion, tuple(notes)
-            ctx = self.client.settings.ctx
-            nxt = budget_mod.next_budget(ceiling, ctx, completion.prompt_tokens)
-            if nxt is None:
-                return completion, tuple(notes)
-            log.info(
-                "answer cut off at %d tokens%s; asking again with %d",
-                ceiling,
-                f" ({where})" if where else "",
-                nxt,
-            )
-            notes.append(prefix + budget_mod.describe_raise(ceiling, nxt))
-            ceiling = nxt
+        return budget_mod.ask(self.client, messages, schema, schema_name, where=where)
 
     def _read_one(self, completion, mime: str, where: str | None = None) -> Extraction:
         """Parse and validate one page's answer. Never repairs, never raises."""

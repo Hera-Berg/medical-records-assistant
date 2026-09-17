@@ -82,6 +82,38 @@ def next_budget(current: int, ctx: int, prompt_tokens: int | None) -> int | None
     return wanted if wanted - current >= MIN_GAIN else None
 
 
+def ask(client, messages, schema, schema_name: str, where: str | None = None):
+    """Ask once, and again with more room while the box says it ran out.
+
+    The one implementation of the ladder. Extraction and the eval harness both
+    call this, so the harness scores what extraction actually does — an eval
+    that asked once at a fixed ceiling scored a recording as a failure that
+    real extraction would have read on its second call.
+
+    Returns the final completion and the notes recording each raise.
+    """
+    import logging  # noqa: PLC0415
+
+    ceiling = START
+    notes: list[str] = []
+    prefix = f"{where}: " if where else ""
+    while True:
+        completion = client.complete(
+            messages, schema=schema, schema_name=schema_name, max_tokens=ceiling
+        )
+        if not completion.truncated:
+            return completion, tuple(notes)
+        nxt = next_budget(ceiling, client.settings.ctx, completion.prompt_tokens)
+        if nxt is None:
+            return completion, tuple(notes)
+        logging.getLogger("agent.extract").info(
+            "answer cut off at %d tokens%s; asking again with %d",
+            ceiling, f" ({where})" if where else "", nxt,
+        )
+        notes.append(prefix + describe_raise(ceiling, nxt))
+        ceiling = nxt
+
+
 def describe_raise(previous: int, nxt: int) -> str:
     """The note recorded against the extraction when the ceiling was raised."""
     return (
