@@ -63,6 +63,11 @@ _FREQUENCY_CANON: dict[str, str] = {
     "fortnightly": "1/2weeks", "monthly": "1/month",
     "as needed": "prn", "as required": "prn", "prn": "prn",
     "when required": "prn", "when needed": "prn",
+    # French, for a script in the patient's second language. A short explicit
+    # table like the rest, never a translation step: an instruction that is not
+    # listed here stays unrecognised.
+    "par jour": "1/day", "une fois par jour": "1/day", "le soir": "1/day",
+    "le matin": "1/day", "deux fois par jour": "2/day", "trois fois par jour": "3/day",
 }
 
 #: Canonical label -> doses per day, as an exact fraction. ``None`` means the
@@ -98,6 +103,10 @@ ARTICLES: dict[str, int] = {"a": 1, "an": 1}
 
 ZERO_WORDS: dict[str, int] = {"no": 0, "nil": 0, "none": 0, "zero": 0}
 
+#: Counts per dose only — "un comprimé", "une gélule", "deux comprimés". Never a
+#: strength: an amount still needs a digit or an English cardinal and a unit.
+_COUNT_WORDS_FR: dict[str, int] = {"un": 1, "une": 1, "deux": 2, "trois": 3}
+
 #: The union, used only where any of the three readings is acceptable — such as
 #: normalising "one daily" to "1 daily" before a frequency lookup.
 NUMBER_WORDS: dict[str, int] = {**CARDINALS, **ARTICLES, **ZERO_WORDS}
@@ -108,6 +117,43 @@ _UNIT_ALTERNATION = "|".join(
 _AMOUNT_RE = re.compile(
     rf"(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>{_UNIT_ALTERNATION})\b",
     re.IGNORECASE,
+)
+#: A spoken amount — "forty milligrams". Only a cardinal, and only when a
+#: recognised unit follows it: the settled rule is that number words parse
+#: conservatively, and "a tablet" is not a quantity here.
+_WORD_AMOUNT_RE = re.compile(
+    r"\b(?P<amount>"
+    + "|".join(sorted(CARDINALS, key=len, reverse=True))
+    + rf")\s+(?P<unit>{_UNIT_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
+#: Dose forms taken per administration. Kept apart from the strength units
+#: because "5mg" is how strong a tablet is and "two tablets" is how many.
+_DOSE_FORMS = {
+    "tablet": "tablet", "tablets": "tablet", "tab": "tablet", "tabs": "tablet",
+    "capsule": "capsule", "capsules": "capsule", "cap": "capsule", "caps": "capsule",
+    "puff": "puff", "puffs": "puff", "drop": "drop", "drops": "drop",
+    "patch": "patch", "patches": "patch", "comprime": "tablet", "comprimes": "tablet",
+    "comprimé": "tablet", "comprimés": "tablet", "gélule": "capsule", "gélules": "capsule",
+}
+_COUNTS = {**CARDINALS, **ARTICLES, **_COUNT_WORDS_FR}
+_PER_DOSE_RE = re.compile(
+    r"\b(?P<count>\d+(?:\.\d+)?|half|"
+    + "|".join(sorted(_COUNTS, key=len, reverse=True))
+    + r")\s+(?P<form>"
+    + "|".join(sorted(_DOSE_FORMS, key=len, reverse=True))
+    + r")\b",
+    re.IGNORECASE,
+)
+
+#: Words around a schedule that say nothing about how much or how often. Only
+#: these are ignored when a frequency is found inside a longer instruction;
+#: anything else left over means the instruction is not understood, and it
+#: stays in the comparison key rather than vanishing from it.
+_FILLER = (
+    "take", "with food", "after food", "before food", "with meals", "by mouth",
+    "orally", "and",
 )
 _WS_RE = re.compile(r"\s+")
 
@@ -164,6 +210,11 @@ def canonical_frequency(text: str) -> tuple[str, Fraction | None] | None:
     ``None`` when the wording is not recognised at all — which is reported, not
     guessed at. A rate of ``None`` inside a returned pair is different: the
     schedule is understood ("as needed") and genuinely has no rate.
+
+    A longer instruction — "daily in the morning", "at night with food" — is
+    understood only when every schedule phrase found in it means the same thing
+    and nothing is left over but :data:`_FILLER`. "Twice daily in the morning"
+    names two rates and is not guessed at.
     """
     key = normalise_text(text)
     words = [str(NUMBER_WORDS[w]) if w in NUMBER_WORDS else w for w in key.split()]
@@ -171,7 +222,25 @@ def canonical_frequency(text: str) -> tuple[str, Fraction | None] | None:
         label = _FREQUENCY_CANON.get(candidate)
         if label is not None:
             return label, _FREQUENCY_RATES[label]
-    return None
+    return _frequency_within(key)
+
+
+def _frequency_within(key: str) -> tuple[str, Fraction | None] | None:
+    remainder = f" {key} "
+    labels: set[str] = set()
+    for phrase in sorted(_FREQUENCY_CANON, key=len, reverse=True):
+        needle = f" {phrase} "
+        while needle in remainder:
+            labels.add(_FREQUENCY_CANON[phrase])
+            remainder = remainder.replace(needle, " ", 1)
+    if len(labels) != 1:
+        return None
+    for filler in sorted(_FILLER, key=len, reverse=True):
+        remainder = remainder.replace(f" {filler} ", " ")
+    if remainder.strip():
+        return None
+    (label,) = labels
+    return label, _FREQUENCY_RATES[label]
 
 
 @dataclass(frozen=True)
@@ -195,21 +264,66 @@ class Value:
 
 
 def _fields_from_text(text: str) -> dict[str, str]:
-    """Pull amount, unit and frequency out of a free-text dose span."""
+    """Pull amount, unit, count per dose and frequency out of a free-text dose span.
+
+    **Nothing understood is dropped, and nothing not understood is dropped
+    either.** Words after the strength that are not a recognised schedule used
+    to vanish from the key, so "5mg twice daily with food" and "5mg" compared as
+    the same dose. They are kept as ``instruction`` now, which makes two
+    readings differ where they genuinely might, rather than agree where they
+    might not. A count other than one per dose — "TWO tablets" — is kept too:
+    "5mg, two tablets daily" is not the dose "5mg, one tablet daily" is.
+    """
     fields: dict[str, str] = {}
     remainder = text
     match = _AMOUNT_RE.search(text)
+    amount: str | None = None
+    unit_word: str | None = None
     if match:
         amount = format_number(match.group("amount"))
+        unit_word = match.group("unit")
+    else:
+        match = _WORD_AMOUNT_RE.search(text)
+        if match:
+            amount = str(CARDINALS[match.group("amount").lower()])
+            unit_word = match.group("unit")
+    if match and unit_word is not None:
         if amount is not None:
             fields["amount"] = amount
-        fields["unit"] = _UNIT_SYNONYMS[match.group("unit").lower()]
+        fields["unit"] = _UNIT_SYNONYMS[unit_word.lower()]
         remainder = (text[: match.start()] + " " + text[match.end() :]).strip()
-    frequency = canonical_frequency(remainder) if remainder else None
-    if frequency is not None:
-        fields["frequency"] = frequency[0]
-    elif remainder and not fields:
-        return {}
+    if not fields:
+        frequency = canonical_frequency(remainder) if remainder else None
+        return {"frequency": frequency[0]} if frequency is not None else {}
+
+    per_dose = _PER_DOSE_RE.search(remainder)
+    if per_dose:
+        word = per_dose.group("count").lower()
+        count = (
+            "1/2" if word == "half"
+            else str(_COUNTS.get(word, word))
+        )
+        count = format_number(count) or count
+        if count != "1":
+            fields["per_dose"] = f"{count} {_DOSE_FORMS[per_dose.group('form').lower()]}"
+        remainder = (remainder[: per_dose.start()] + " " + remainder[per_dose.end() :]).strip()
+
+    remainder = normalise_text(remainder) if remainder else ""
+    if remainder and not per_dose:
+        # "One at night": a bare count before a schedule is a count per dose,
+        # but only when what follows it is a schedule this table understands.
+        head, _, rest = remainder.partition(" ")
+        if rest and head in {**CARDINALS, **_COUNT_WORDS_FR} and canonical_frequency(rest):
+            count = str({**CARDINALS, **_COUNT_WORDS_FR}[head])
+            if count != "1":
+                fields["per_dose"] = count
+            remainder = rest
+    if remainder:
+        frequency = canonical_frequency(remainder)
+        if frequency is not None:
+            fields["frequency"] = frequency[0]
+        else:
+            fields["instruction"] = remainder
     return fields
 
 
