@@ -274,10 +274,46 @@ export type EndpointState =
   | "starting"
   | "stopped";
 
+/** A place the record folder could be made inside. The first is always this computer. */
+export interface SetupLocation {
+  key: string;
+  label: string;
+  parent: string;
+  profile: string;
+  profile_label: string;
+  explanation: string;
+  recommended: boolean;
+  warning: string | null;
+}
+
+/** What the setup server says before a record exists, or when it cannot open. */
+export interface SetupState {
+  stage: "choose" | "problem";
+  problem: { code: "folder-missing" | "identity-elsewhere" | "cannot-open"; message: string; root: string | null } | null;
+  packaged: boolean;
+  platform: string | null;
+  platform_label: string;
+  locations: SetupLocation[];
+  default_name: string;
+}
+
+/** What choosing a folder would do, worked out without touching anything. */
+export interface SetupPlan {
+  target: string;
+  action: "create" | "join" | null;
+  profile: string;
+  profile_label: string;
+  warning: string | null;
+  refusal: string | null;
+  config_text: string | null;
+}
+
 export interface Health {
   ok: boolean;
   /** The downloaded app rather than a pip install. Decides whether a command may be shown. */
   packaged: boolean;
+  /** A folder was just chosen on this computer, and which computer reads documents is still to ask. */
+  welcome: boolean;
   vault: {
     root: string;
     writable: boolean;

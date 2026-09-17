@@ -24,6 +24,8 @@ import type {
   ReadsOn,
   ReviewQueue,
   Settings,
+  SetupPlan,
+  SetupState,
   Summary,
   SummaryList,
   SummaryResponse,
@@ -69,7 +71,30 @@ async function detailOf(response: Response): Promise<string> {
   return `${response.status} ${response.statusText}`.trim();
 }
 
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * The setup server, which answers only before a record is open. `state()`
+ * failing is how the interface knows it is talking to the record instead.
+ */
+export const setupApi = {
+  state: () => request<SetupState>("/api/setup"),
+  examine: (parent: string, name: string) =>
+    post<SetupPlan>("/api/setup/examine", { parent, name }),
+  choose: (parent: string, name: string, action: string) =>
+    post<{ done: boolean; target: string }>("/api/setup/choose", { parent, name, action }),
+  retry: () => post<{ retrying: boolean }>("/api/setup/retry", {}),
+  newIdentity: () => post<{ retrying: boolean }>("/api/setup/new-identity", {}),
+};
+
 export const api = {
+  welcomeDone: () => post<{ welcome: boolean }>("/api/welcome/done", {}),
   health: () => request<Health>("/api/health"),
   wiki: () => request<WikiIndex>("/api/wiki"),
   entity: (id: string) => request<EntityDetail>(`/api/wiki/${encodeURIComponent(id)}`),

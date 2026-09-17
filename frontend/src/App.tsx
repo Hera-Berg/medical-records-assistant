@@ -50,6 +50,7 @@ import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { SummaryScreen } from "./components/Summary";
 import { Timeline } from "./components/Timeline";
+import { Welcome } from "./components/Welcome";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
@@ -91,6 +92,8 @@ export function App() {
           if (!live) return;
           rememberInstallation(result.packaged);
           setHealth(result);
+          // The first run's last question comes before anything else, once.
+          if (result.welcome && window.location.pathname === "/") navigate("/welcome");
           setHealthError(null);
         })
         .catch((exc: Error) => live && setHealthError(exc.message));
@@ -155,6 +158,8 @@ export function App() {
     screen = <Ask navigate={navigate} onBoxState={refresh} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
+  } else if (first === "welcome") {
+    screen = <Welcome navigate={navigate} onChanged={refresh} />;
   } else if (first === "settings") {
     screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
   } else {
@@ -219,7 +224,7 @@ export function App() {
             error={healthError}
             /* The settings screen holds the control for the box and reports
                what stopped in its own words. One telling, not two. */
-            quietEndpoint={first === "settings"}
+            quietEndpoint={first === "settings" || first === "welcome"}
           />
 
           {/*
@@ -277,6 +282,12 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "files") {
     return { title: "Your folder", subtitle: "Reading…" };
+  }
+  if (first === "welcome") {
+    return {
+      title: "Your record is ready",
+      subtitle: "One more question, then it is yours to use. Everything else is in Settings.",
+    };
   }
   if (first === "ask") {
     return {

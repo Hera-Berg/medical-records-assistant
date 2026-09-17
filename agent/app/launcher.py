@@ -360,6 +360,9 @@ class Controller:
             log.exception("the tray did not update")
 
 
+_SIGNAL_SOCKETS: list[socket.socket] = []
+
+
 def _signals_quit(controller: Controller) -> None:
     """SIGTERM and SIGINT quit the app, even while the tray's event loop holds the main thread.
 
@@ -372,6 +375,11 @@ def _signals_quit(controller: Controller) -> None:
         return
     reader, writer = socket.socketpair()
     writer.setblocking(False)
+    # Held for the life of the process. Only the descriptor number is handed to
+    # the signal machinery; were the socket objects collected when this returns,
+    # a signal would be written to a closed descriptor and ignored — or to
+    # whatever file was opened next under the same number.
+    _SIGNAL_SOCKETS.extend((reader, writer))
     for number in (signal.SIGTERM, signal.SIGINT):
         signal.signal(number, lambda *_: None)
     signal.set_wakeup_fd(writer.fileno(), warn_on_full_buffer=False)

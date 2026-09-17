@@ -212,3 +212,48 @@ def test_quit_before_start_still_stops(controller):
 
 def test_first_run_marker_lives_outside_the_vault():
     assert firstrun.path().parent == device_mod.config_home()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM is POSIX")
+def test_sigterm_quits_the_app_process(tmp_path):
+    """A logout or a service manager ends the app with SIGTERM, not with the tray.
+
+    Run as a real process, because the handler is only installed on a process's
+    main thread — and because the first version of it received the signal on a
+    socket that had already been garbage-collected, and ignored it.
+    """
+    import os
+    import signal
+    import subprocess
+
+    port = _free_port()
+    env = dict(os.environ)
+    env.update(
+        HOME=str(tmp_path / "home"),
+        HEALTH_AGENT_CONFIG_HOME=str(tmp_path / "config"),
+        HEALTH_AGENT_DATA_HOME=str(tmp_path / "data"),
+    )
+    (tmp_path / "home" / "Documents").mkdir(parents=True)
+    process = subprocess.Popen(
+        [sys.executable, "-m", "agent.cli", "app", "--no-browser", "--no-tray", "--port", str(port)],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert _until(
+            lambda: _answers(f"http://127.0.0.1:{port}/api/setup"), 60
+        ), "the app did not start"
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=30) == 0
+        assert launcher_mod.port_free(port)
+    finally:
+        if process.poll() is None:
+            process.kill()
+
+
+def _answers(url: str) -> bool:
+    try:
+        return httpx.get(url, timeout=1).status_code == 200
+    except httpx.HTTPError:
+        return False

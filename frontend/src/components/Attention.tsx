@@ -54,8 +54,9 @@ export function Attention({
   /**
    * Suppress the banner about the inference box.
    *
-   * Set on the settings screen, and only there. The banner exists so a rejected
-   * key cannot be missed from any other screen; on the one screen that holds
+   * Set on the settings screen and the first run's welcome screen, which holds
+   * the same controls. The banner exists so a rejected
+   * key cannot be missed from any other screen; on a screen that holds
    * the control for it, and says in its own words what stopped, the banner is
    * the same event told twice in two voices two inches apart. The sidebar's
    * one-word state stays either way.
