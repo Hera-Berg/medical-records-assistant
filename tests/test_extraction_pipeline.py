@@ -437,7 +437,9 @@ def test_a_parked_queue_reports_rather_than_silently_doing_nothing(vault):
 
     assert calls == []
     assert report.is_parked
-    assert "health-agent extract --resume" in report.parked_reason
+    # Kept with the jobs and read by the app, so it points at Settings; the CLI
+    # prints the command beside it (see test_cli_extract).
+    assert "Set a new key in Settings" in report.parked_reason
 
 
 def test_resuming_puts_parked_jobs_back_in_the_queue(vault):

@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .distribution import for_terminal, packaged
 from .errors import DeviceIdentityError, DeviceIdentityMismatch
 
 ENV_DEVICE = "HEALTH_DEVICE"
@@ -121,8 +122,13 @@ class DeviceIdentity:
             f"{current_hostname()!r}/{current_platform()!r}. The identity file was "
             f"cloned or restored from a backup. Appending under a device id another "
             f"machine may also be using is how shards collide and events are lost. "
-            f"Re-issue it (delete {self.path} and run `health-agent check --fix`) or "
-            f"set {ENV_DEVICE} to a distinct id for this machine."
+            f"Give this computer a new identity"
+            + (
+                " — the app offers to when it starts."
+                if packaged()
+                else f" (delete {self.path} and run `health-agent check --fix`) or "
+                f"set {ENV_DEVICE} to a distinct id for this machine."
+            )
         )
 
     def require_appendable(self) -> None:
@@ -177,8 +183,12 @@ def _from_mapping(data: dict, source: str, path: Path | None) -> DeviceIdentity:
     missing = [k for k in ("id", "label", "created", "hostname", "platform") if k not in data]
     if missing:
         raise DeviceIdentityError(
-            f"device identity at {path} is missing {', '.join(missing)}; "
-            f"delete it and run `health-agent check --fix` to re-issue"
+            f"device identity at {path} is missing {', '.join(missing)}"
+            + (
+                "; the app offers to issue a new one when it starts"
+                if packaged()
+                else "; delete it and run `health-agent check --fix` to re-issue"
+            )
         )
     if not is_valid_device_id(data["id"]):
         raise DeviceIdentityError(
@@ -223,9 +233,14 @@ def load(path: Path | None = None) -> DeviceIdentity:
     target = path or identity_path()
     if not target.exists():
         raise DeviceIdentityError(
-            f"no device identity at {target}. Run `health-agent check --fix` to issue "
-            f"one, or set {ENV_DEVICE}. It lives outside the vault on purpose: an id "
-            f"shared through the synced config would put two machines on one shard."
+            f"no device identity at {target}."
+            + (
+                " The app gives this computer one when it starts; quit it and open it again."
+                if packaged()
+                else f" Run `health-agent check --fix` to issue one, or set {ENV_DEVICE}."
+            )
+            + " It lives outside the vault on purpose: an id shared through the "
+            "synced config would put two machines on one shard."
         )
     try:
         raw = target.read_text(encoding="utf-8")

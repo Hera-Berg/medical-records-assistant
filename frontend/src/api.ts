@@ -75,6 +75,10 @@ export const api = {
   entity: (id: string) => request<EntityDetail>(`/api/wiki/${encodeURIComponent(id)}`),
   artifactMeta: (short: string) =>
     request<ArtifactMeta>(`/api/artifact/${encodeURIComponent(short)}/meta`),
+  readAgain: (short: string) =>
+    request<{ queued: string }>(`/api/artifact/${encodeURIComponent(short)}/read-again`, {
+      method: "POST",
+    }),
 
   timeline: (params: {
     from?: string;

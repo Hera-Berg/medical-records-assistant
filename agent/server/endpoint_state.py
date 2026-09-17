@@ -16,8 +16,12 @@ it — so this layer never *relies* on scrubbing. Every sentence the frontend ca
 display is written below, selected by a code, and contains no interpolation from
 anything the far end said.
 
-The detail an operator needs to fix a broken endpoint is not lost; it is what
-``health-agent probe`` prints, on a terminal, where no browser is involved.
+The detail a person needs to fix a broken endpoint is not lost either, and it
+does not need a terminal. ``steps`` carries the startup probe's checks as
+:mod:`agent.server.endpoint_check` words them — which check passed, which failed,
+and what to change — every sentence written in that module and selected by the
+check's name, exactly as the Connect button's own report is. The probe's prose,
+which can quote what was sent, stays on the terminal.
 """
 
 from __future__ import annotations
@@ -76,13 +80,14 @@ MESSAGES: dict[str, str] = {
         "artefacts. Capture still works and everything you add is kept."
     ),
     "no-credential": (
-        "No credential is set for the inference box. Run `health-agent set-key` "
-        "to store one in the OS keychain."
+        "No password is stored for the computer that reads your documents. Put "
+        "it in Settings, under Read on another computer. It is kept in this "
+        "computer's keychain, never in your settings file."
     ),
     "credential-unreadable": (
-        "A credential was found but could not be used — most often a file whose "
-        "permissions are wider than 0600. Run `health-agent probe` for the "
-        "detail."
+        "A password was found for the computer that reads your documents but "
+        "could not be used. Put it in Settings again, under Read on another "
+        "computer; that replaces the one that could not be read."
     ),
     "address-not-private": (
         "The configured endpoint does not resolve inside private address space. "
@@ -108,16 +113,17 @@ MESSAGES: dict[str, str] = {
     "vision-blind": (
         "The box answers text but did not read known text out of a test image, "
         "so it is most likely discarding images. Every document would be "
-        "silently ignored. Run `health-agent probe` for what to check."
+        "silently ignored. The details say what to check, and Connect in "
+        "Settings runs every check again."
     ),
     "grammar-not-enforced": (
         "The box answers, but it is not holding replies to the shape the record "
-        "asks for, so nothing it reads can be filed. Run `health-agent probe` "
-        "for what to change on the server."
+        "asks for, so nothing it reads can be filed. The details say what to "
+        "change on that computer, and Connect in Settings checks it again."
     ),
     "endpoint-unusable": (
-        "The endpoint could not be used. Run `health-agent probe` for the "
-        "detail, which is not shown here because it can quote what was sent."
+        "The computer that reads your documents could not be used. Connect in "
+        "Settings runs each check and says which one fails."
     ),
     **reader_states.MESSAGES,
 }
@@ -135,6 +141,9 @@ class EndpointState:
     #: Which computer this state is about. The interface says nothing about
     #: keys or addresses for the reader on this computer, which has neither.
     where: str = ANOTHER_COMPUTER
+    #: The last probe's checks, as ``endpoint_check.Step.to_dict`` words them.
+    #: Empty when the state came from an error rather than a probe.
+    steps: tuple[dict[str, str], ...] = ()
 
     @property
     def is_terminal(self) -> bool:
@@ -157,6 +166,7 @@ class EndpointState:
             "model": self.model,
             "checked_ts": self.checked_ts,
             "where": self.where,
+            "steps": [dict(step) for step in self.steps],
         }
 
 

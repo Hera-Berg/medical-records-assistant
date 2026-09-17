@@ -22,6 +22,7 @@
  */
 
 import { Component } from "react";
+import { StartItAgain } from "../installation";
 
 interface Props {
   /** Changing this resets the boundary — navigating away from a broken screen. */
@@ -63,8 +64,9 @@ export class Boundary extends Component<Props, State> {
         <p className="mt-2">
           The usual cause is that the app was updated while the server was still running,
           so the screen you are looking at is newer than the program answering it.{" "}
-          <strong>Stop the server and start it again</strong> with{" "}
-          <code className="font-mono">health-agent serve</code>, then reload this page.
+          <strong>
+            <StartItAgain then="then reload this page" />
+          </strong>
         </p>
         <p className="mt-2 text-[color:var(--color-muted)]">
           The other screens still work — the rail on the left will take you to them.

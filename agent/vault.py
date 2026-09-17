@@ -21,6 +21,7 @@ from . import config as config_mod
 from . import device as device_mod
 from .config import CONFIG_FILENAME, Config, SyncProfile
 from .device import DeviceIdentity
+from .distribution import for_terminal, packaged
 from .errors import ConfigError, DeviceIdentityError, VaultError
 from .events import log
 from .events.envelope import Event
@@ -177,7 +178,12 @@ class Vault:
         if not resolved.path.is_dir():
             raise VaultError(
                 f"vault root {resolved.path} does not exist (resolved from "
-                f"{resolved.source}). Create it, or run `health-agent check --fix`."
+                f"{resolved.source})."
+                + (
+                    " If it has moved, choose where it is now when the app starts."
+                    if packaged()
+                    else " Create it, or run `health-agent check --fix`."
+                )
             )
         config = config_mod.load(resolved.path / CONFIG_FILENAME)
         return cls(resolved.path, config, identity)
@@ -286,8 +292,8 @@ def diagnose(
 
     if not vault_info["exists"]:
         problems.append(
-            f"vault root {root} does not exist (resolved from {resolved.source}); "
-            f"run `health-agent check --fix` to create it"
+            f"vault root {root} does not exist (resolved from {resolved.source})"
+            + for_terminal("; run `health-agent check --fix` to create it")
         )
         report["ok"] = False
         return report
@@ -296,8 +302,8 @@ def diagnose(
     if missing:
         vault_info["missing_dirs"] = missing
         problems.append(
-            f"missing vault directories: {', '.join(missing)} — run "
-            f"`health-agent check --fix`"
+            f"missing vault directories: {', '.join(missing)}"
+            + for_terminal(" — run `health-agent check --fix`")
         )
     vault_info["writable"] = is_writable(root, probe=fix)
     if not vault_info["writable"]:
@@ -463,7 +469,7 @@ def diagnose(
     for rel in raw.orphans:
         problems.append(
             f"{rel} is in raw/ but no artifact.ingested event records it; it is not "
-            f"part of the record. Re-ingest it with `health-agent ingest`."
+            f"part of the record. Adding the same file again records it."
         )
     for rel in raw.sidecar_missing:
         problems.append(

@@ -276,6 +276,8 @@ export type EndpointState =
 
 export interface Health {
   ok: boolean;
+  /** The downloaded app rather than a pip install. Decides whether a command may be shown. */
+  packaged: boolean;
   vault: {
     root: string;
     writable: boolean;
@@ -293,6 +295,8 @@ export interface Health {
     checked_ts: string | null;
     /** Which computer this state describes. The reader on this one has no key. */
     where: "this-computer" | "another-computer";
+    /** The last check's steps, worded on the server. Empty when no check produced this state. */
+    steps: EndpointStep[];
   };
   /** Present when this computer reads documents. Measured here, never elsewhere. */
   reading: ReadingSpeed | null;
@@ -388,6 +392,8 @@ export interface Reading {
   /** True where nothing in this build will read it further. Phase 6: transcripts. */
   deferred: boolean;
   job?: string | null;
+  /** The reading stopped for something a person can fix, and can be asked for again. */
+  may_retry?: boolean;
 }
 
 /** Where an artefact has got to in the queue. Null once nothing is tracking it. */

@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import device as device_mod
+from ..distribution import for_terminal, missing_library, packaged
 from ..errors import CredentialError
 
 KEYRING_SERVICE = "health-agent"
@@ -123,9 +124,14 @@ def _from_file(path: Path, vault_root: Path | None) -> Credential | None:
     if mode & ~MAX_FILE_MODE:
         raise CredentialError(
             f"the credentials file {resolved} has mode {mode:04o}, which is wider "
-            f"than {MAX_FILE_MODE:04o}. Refusing to read it — run "
-            f"`chmod 600 {resolved}`, and treat the key as disclosed if the machine "
-            f"is shared."
+            f"than {MAX_FILE_MODE:04o}. Refusing to read it"
+            + (
+                ". Put the password in Settings instead, where it goes into the "
+                "keychain and is read before this file"
+                if packaged()
+                else f" — run `chmod 600 {resolved}`"
+            )
+            + ", and treat the key as disclosed if the computer is shared."
         )
     try:
         raw = resolved.read_text(encoding="utf-8")
@@ -184,8 +190,10 @@ def resolve(
         f"no credential found for the inference endpoint. Looked in:{named} the "
         f"environment; the OS keychain under {KEYRING_SERVICE}/{KEYRING_ACCOUNT}; and "
         f"{credentials_path()}.\n\n"
-        f"Set one with `health-agent set-key`, which writes to the keychain. It "
-        f"cannot go in config.toml — that file syncs with the vault."
+        f"Set one in Settings, under Read on another computer"
+        + for_terminal(", or with `health-agent set-key`")
+        + ". It is kept in this computer's keychain and cannot go in config.toml — "
+        "that file syncs with the vault."
     )
 
 
@@ -208,9 +216,8 @@ NEVER_IN_CONFIG = (
 #: first option was the one they wanted. The alternatives are real and are kept
 #: — one tap away, in :func:`keychain_alternatives` — for the machine where
 #: installing a package is not the answer.
-KEYCHAIN_MISSING = (
-    "there is no keychain on this machine to write to. Install the keychain "
-    "package: pip install keyring"
+KEYCHAIN_MISSING = missing_library(
+    "keyring", "keychain", "there is no keychain on this machine to write to"
 )
 
 
@@ -221,8 +228,13 @@ def keychain_alternatives() -> str:
     ``HEALTH_AGENT_CONFIG_HOME``, which the tests and the screenshot tool both
     redirect; a module-level string would freeze whatever the environment said
     at import.
+
+    Both alternatives need a terminal — an environment variable the app is
+    started with, a file with owner-only permissions — so the app offers
+    neither. On macOS and Windows a keychain is always there, and a failure to
+    reach it is said on its own, in :func:`store`.
     """
-    return (
+    return for_terminal(
         f"On a machine with no keychain — a headless server, a container — a key "
         f"can also live in the environment variable named by [models.vlm.auth] "
         f"api_key_env, or in a 0600 file at {credentials_path()}. Both are read "
@@ -255,10 +267,15 @@ def store(value: str) -> str:
         keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, value.strip())
     except Exception as exc:  # keyring raises backend-specific errors
         raise CredentialError(
-            f"the OS keychain would not accept the key: {exc}. On a headless "
-            f"machine there may be no Secret Service running — set the key in an "
-            f"environment variable instead and name it in config.toml under "
-            f"[models.vlm.auth] api_key_env."
+            f"the OS keychain would not accept the key: {exc}."
+            + (
+                " If this computer asked for permission to use the keychain, allow "
+                "it and put the password in again."
+                if packaged()
+                else " On a headless machine there may be no Secret Service running "
+                "— set the key in an environment variable instead and name it in "
+                "config.toml under [models.vlm.auth] api_key_env."
+            )
         ) from None
     return f"{SOURCE_KEYCHAIN} ({KEYRING_SERVICE}/{KEYRING_ACCOUNT})"
 

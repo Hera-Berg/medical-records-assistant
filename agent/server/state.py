@@ -31,7 +31,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -211,7 +211,10 @@ class RecordState:
         self.set_endpoint(endpoint_state.from_error(exc, format_ts(self.now())))
 
     def record_probe(self, report) -> None:
-        self.set_endpoint(endpoint_state.from_probe(report, format_ts(self.now())))
+        from . import endpoint_check  # noqa: PLC0415 - it imports this module's neighbours
+
+        found = endpoint_state.from_probe(report, format_ts(self.now()))
+        self.set_endpoint(replace(found, steps=endpoint_check.probe_steps(report)))
 
     # -- writing -----------------------------------------------------------
 

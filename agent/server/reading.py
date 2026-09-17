@@ -66,6 +66,10 @@ def describe(
 
     job = queue.for_artifact(state.short)
     result["job"] = job.state if job is not None else None
+    # A job that stopped for a reason a person can fix — the file was restored,
+    # the box was reconnected — can be asked for again from its page. That is
+    # the in-app path; the terminal's is `health-agent extract --artifact`.
+    result["may_retry"] = job is not None and job.state == jobs_mod.NEEDS_ATTENTION
 
     if is_speech(mime):
         # Waiting for the local speech model, which needs no box and no key. A

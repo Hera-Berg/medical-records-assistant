@@ -24,6 +24,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..distribution import missing_library, packaged
+
 log = logging.getLogger("agent.extract")
 
 METHOD_TEXT_LAYER = "pdf-text-layer"
@@ -71,11 +73,11 @@ def _pdf_text(data: bytes) -> DeterministicRead:
     except ImportError:
         return DeterministicRead(
             method=METHOD_NONE,
-            unavailable=(
-                "pdfplumber is not installed, so the PDF's text layer was not read. "
-                "Claims from this artefact are uncorroborated rather than "
-                "cross-verified: install with `pip install 'health-agent[documents]'`."
-            ),
+            unavailable=missing_library(
+                "pdfplumber", "documents", "the PDF's text layer was not read",
+                stored=True,
+            )
+            + " Claims from this artefact are uncorroborated rather than cross-verified.",
         )
     try:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
@@ -100,11 +102,16 @@ def _ocr(data: bytes) -> DeterministicRead:
     except ImportError:
         return DeterministicRead(
             method=METHOD_NONE,
+            # Not bundled with the app, deliberately: tesseract is a separate
+            # program per platform, and this path is a check on the reader rather
+            # than a reader. So in the app this is a fact, not a fault.
             unavailable=(
-                "pytesseract is not installed, so nothing checked the model's reading "
-                "of this image. Claims are uncorroborated rather than cross-verified: "
-                "install with `pip install 'health-agent[ocr]'` and the tesseract binary."
-            ),
+                "this app does not include a second reader for photographs"
+                if packaged()
+                else "pytesseract is not installed on the computer that tried"
+            )
+            + ", so nothing checked the model's reading of this image. Claims are "
+            "uncorroborated rather than cross-verified.",
         )
     try:
         with Image.open(io.BytesIO(data)) as image:

@@ -21,6 +21,8 @@
  */
 
 import type { Health } from "../types";
+import { StartItAgain } from "../installation";
+import { CheckSteps } from "./CheckSteps";
 
 type Tone = "alarm" | "warn" | "info";
 
@@ -63,8 +65,8 @@ export function Attention({
   if (error) {
     return (
       <Banner tone="alarm" title="The record app is not answering.">
-        Nothing has been lost — everything is a file in your folder. Start it again with{" "}
-        <code className="font-mono">health-agent serve</code>.
+        Nothing has been lost — everything is a file in your folder.{" "}
+        <StartItAgain then="then reload this page" />
       </Banner>
     );
   }
@@ -92,8 +94,8 @@ export function Attention({
         {health.queue.blocked_auth > 0
           ? `${countWord(health.queue.blocked_auth, "file is", "files are")} waiting for a new one. `
           : "the queue is paused. "}
-        Set a new password with <code className="font-mono">health-agent set-key</code>, then
-        start the queue again.
+        Put the new password in <strong>Settings</strong>, under Read on another computer, and
+        the waiting files start again by themselves.
       </Banner>,
     );
   } else if (endpoint.state === "stopped") {
@@ -123,6 +125,7 @@ export function Attention({
     banners.push(
       <Banner key="endpoint" tone="alarm" title="The reading box is not set up correctly.">
         {endpoint.message} Your files are stored and safe; they just have not been read.
+        <CheckSteps steps={endpoint.steps} summary="Details" />
       </Banner>,
     );
   }

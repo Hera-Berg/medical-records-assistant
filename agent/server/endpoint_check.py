@@ -227,8 +227,7 @@ _FAILED = {
         "It answers, but not in the fixed shape the record asks for, so nothing "
         "it reads could be filed. This is a setting on that computer — its "
         "guided-grammar or structured-output option needs turning on, and its "
-        "thinking mode turning off. Run `health-agent probe` on the machine for "
-        "the detail."
+        "thinking mode turning off."
     ),
     "vision": (
         "It answered, but it did not read the words out of a test picture, so it "
@@ -415,6 +414,16 @@ def _steps_from(report, skip_vision: bool) -> tuple[Step, ...]:
         if state == FAILED:
             stopped = True
     return tuple(steps)
+
+
+def probe_steps(report) -> tuple[dict[str, str], ...]:
+    """The steps of a probe the worker ran, for the details beside its state.
+
+    Vision counts as skipped only when the probe never attempted it — a wake
+    from sleep checks the reader's modalities rather than reading a picture.
+    """
+    skipped = not any(check.name == "vision" for check in report.checks)
+    return tuple(step.to_dict() for step in _steps_from(report, skip_vision=skipped))
 
 
 def _not_reached(name: str, skip_vision: bool) -> str:

@@ -288,8 +288,8 @@ class Client:
             raise AuthRejected(
                 f"authentication rejected by the inference box "
                 f"(HTTP {response.status_code}) — the key may have rotated. This is "
-                f"not a network problem and is not retried: set a new key with "
-                f"`health-agent set-key`, then `health-agent extract --resume`."
+                f"not a network problem and is not retried: set the new key in "
+                f"Settings, and the waiting documents carry on by themselves."
             )
         if response.status_code == 429:
             raise RateLimited(
@@ -414,10 +414,11 @@ class Client:
                 f"the inference box is running {reported.strip()!r}, but config.toml "
                 f"pins {self.settings.model!r}. Stopping rather than recording claims "
                 f"against the wrong model.\n\n"
-                f"If the box was deliberately changed, edit models.vlm.model yourself "
-                f"and re-extract with `health-agent rebuild --reextract`. This is "
-                f"never updated automatically: a config file describing a server's "
-                f"past state is worse than no record."
+                f"If the box was deliberately changed, connect to it again in "
+                f"Settings, which records the model it now runs, then choose "
+                f"\u201cTry reading it again\u201d on this document's page. This is never updated "
+                f"automatically: a config file describing a server's past state is "
+                f"worse than no record."
             )
 
     # -- startup checks ----------------------------------------------------

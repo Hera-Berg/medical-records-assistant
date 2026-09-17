@@ -35,6 +35,7 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
+from ..distribution import missing_library
 from ..errors import ExtractionError
 
 log = logging.getLogger("agent.extract")
@@ -231,12 +232,11 @@ def prepare_pdf(data: bytes, long_edge: int) -> Document:
         import pdfplumber  # noqa: PLC0415 - optional dependency
     except ImportError:
         return Document(
-            unreadable=(
-                "this build cannot render PDF pages: pdfplumber is not installed. "
-                "Install it with `pip install 'health-agent[documents]'` and "
-                "re-extract; nothing is lost in the meantime, the artefact stays "
-                "queued."
+            unreadable=missing_library(
+                "pdfplumber", "documents", "PDF pages could not be shown to the reader",
+                stored=True,
             )
+            + " Nothing is lost: the document stays in your record."
         )
 
     pages: list[PreparedImage] = []

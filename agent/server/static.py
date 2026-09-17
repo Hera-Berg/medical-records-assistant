@@ -25,6 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from ..distribution import RELEASES, for_terminal, packaged
 from .serving import API_HEADERS, APP_CONTENT_SECURITY_POLICY
 
 #: Where ``npm run build`` writes, and where the wheel carries it.
@@ -89,7 +90,11 @@ _NOT_BUILT = """<!doctype html>
  pre {{ background: #f4f4f4; padding: .75rem 1rem; overflow-x: auto; }}
  p {{ margin: 0 0 1rem; }}
 </style></head><body>
-<h1>The interface has not been built</h1>
+{body}
+</body></html>
+"""
+
+_NOT_BUILT_FOR_TERMINAL = """<h1>The interface has not been built</h1>
 <p>The server is running and the API is answering — your record is fine. What is
 missing is the compiled frontend, which normally ships committed to the
 repository at <code>{path}</code>.</p>
@@ -98,9 +103,24 @@ repository at <code>{path}</code>.</p>
 npm --prefix frontend run build</pre>
 <p>Until then the record is reachable at
 <a href="/api/health">/api/health</a>, and everything the interface does is
-also a <code>health-agent</code> subcommand on the terminal.</p>
-</body></html>
-"""
+also a <code>health-agent</code> subcommand on the terminal.</p>"""
+
+#: The app ships its interface inside itself. Missing there, it is a fault in
+#: the build, and the person reading this has no node and no terminal.
+_NOT_BUILT_APP = """<h1>This copy of the app is missing its screens</h1>
+<p>Your record is fine: nothing in your folder has been changed. The part of the
+app that draws its pages did not come with this copy, which is a fault in how it
+was built rather than anything you did.</p>
+<p>Quit the app, download it again from {releases}, and open the new copy.</p>"""
+
+
+def not_built_page(directory: Path) -> str:
+    """The page served at ``/`` when there is no bundle, for this installation."""
+    if packaged():
+        body = _NOT_BUILT_APP.format(releases=RELEASES)
+    else:
+        body = for_terminal(_NOT_BUILT_FOR_TERMINAL.format(path=directory))
+    return _NOT_BUILT.format(body=body)
 
 
 def mount(app) -> None:
@@ -139,7 +159,7 @@ def mount(app) -> None:
         index = directory / INDEX_FILENAME
         if not index.is_file():
             return HTMLResponse(
-                _NOT_BUILT.format(path=directory),
+                not_built_page(directory),
                 status_code=503,
                 headers={"cache-control": "no-store"},
             )

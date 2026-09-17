@@ -202,7 +202,8 @@ class Transcriber:
                 reason=(
                     f"the bytes for {short} are not in raw/ at {artifact.rel}. The "
                     f"event is intact, so this is a missing file rather than a lost "
-                    f"record — restore it and run `health-agent transcribe` again"
+                    f"record — restore it from a backup or the sync client's trash, "
+                    f"then choose \u201cTry typing it up again\u201d on its page"
                 ),
             )
 

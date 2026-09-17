@@ -33,6 +33,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, artifactUrl } from "../api";
 import type { InboxItem, ReviewQueue } from "../types";
 import { Cite, Empty, longDate, ReadByMark, TierMark } from "./marks";
+import { StartItAgain } from "../installation";
 
 const TIERS = ["high", "medium", "low"] as const;
 
@@ -151,8 +152,7 @@ export function Review({
       <Empty>
         This screen is newer than the program answering it, so the {items.length}{" "}
         {items.length === 1 ? "thing" : "things"} waiting cannot be shown here yet.
-        Nothing is lost. Stop the server and start it again with{" "}
-        <code className="font-mono">health-agent serve</code>, then reload this page.
+        Nothing is lost. <StartItAgain then="then reload this page" />
       </Empty>
     );
   }

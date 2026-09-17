@@ -38,20 +38,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { ConnectResult, EndpointSettings as EndpointData, Settings } from "../types";
-
-const RESULT_WORD: Record<string, string> = {
-  ok: "Worked",
-  failed: "Failed",
-  "not-checked": "Not checked",
-};
-
-/* Tone is a word first and a colour second — a colour-blind reader and a
-   printed page must both still say which step failed. */
-const RESULT_INK: Record<string, string> = {
-  ok: "var(--color-accent)",
-  failed: "var(--color-alarm)",
-  "not-checked": "var(--color-muted)",
-};
+import { CheckSteps } from "./CheckSteps";
 
 export function EndpointSettings({
   settings,
@@ -469,12 +456,17 @@ function Status({
   if (!result) {
     if (endpoint.configured) {
       return (
-        <p className="mt-3 text-[color:var(--color-muted)]">
-          Set up, reading with <span className="font-mono">{endpoint.model}</span>.
-          {endpoint.last_known.state !== "unknown"
-            ? ` Last time anything tried: ${endpoint.last_known.message}`
-            : ""}
-        </p>
+        <div className="mt-3 text-[color:var(--color-muted)]">
+          <p>
+            Set up, reading with <span className="font-mono">{endpoint.model}</span>.
+            {endpoint.last_known.state !== "unknown"
+              ? ` Last time anything tried: ${endpoint.last_known.message}`
+              : ""}
+          </p>
+          {endpoint.last_known.state !== "working" ? (
+            <CheckSteps steps={endpoint.last_known.steps} summary="Details" />
+          ) : null}
+        </div>
       );
     }
     return (
@@ -499,48 +491,9 @@ function Status({
         {withoutLead(result.status)}
       </p>
       {failed && result.detail ? <p className="mt-1 max-w-2xl">{result.detail}</p> : null}
-      {result.check ? (
-        <details className="mt-1">
-          {/* An action, not a label: "What was checked" is also the second
-              column's heading, and the same four words twice on one page reads
-              as a mistake. */}
-          <summary className="cursor-pointer text-[color:var(--color-muted)]">
-            See what was checked
-          </summary>
-          <div className="table-wrap mt-1">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Result</th>
-                  <th scope="col">What was checked</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.check.steps.map((step) => (
-                  <tr key={step.name}>
-                    <td className="whitespace-nowrap">
-                      <span
-                        className="font-semibold"
-                        style={{ color: RESULT_INK[step.state] }}
-                      >
-                        {RESULT_WORD[step.state]}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="block">{step.title}</span>
-                      {step.detail ? (
-                        <span className="mt-0.5 block text-[color:var(--color-muted)]">
-                          {step.detail}
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      ) : null}
+      {/* "See what was checked" is an action, not a label: "What was checked"
+          is also the table's second column heading. */}
+      {result.check ? <CheckSteps steps={result.check.steps} /> : null}
     </div>
   );
 }

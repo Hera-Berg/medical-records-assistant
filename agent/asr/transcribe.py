@@ -46,6 +46,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
+from ..distribution import missing_library
 from . import audio as audio_mod
 
 log = logging.getLogger("agent.asr")
@@ -302,8 +303,7 @@ PINNED_MODEL = "small"
 NOT_DOWNLOADED = (
     "the speech model has not been downloaded to this computer yet, so this "
     "recording is stored but not typed up. Nothing has been lost: download it "
-    "from Settings, or run `health-agent reader download`, and it is typed up "
-    "then."
+    "from Settings, and it is typed up then."
 )
 
 
@@ -343,9 +343,11 @@ def _load_uncached(model: str, compute_type: str) -> tuple[Any, dict[str, Any]]:
         from faster_whisper import WhisperModel  # noqa: PLC0415 - optional dependency
     except ImportError:
         raise audio_mod.DecodeUnavailable(
-            "faster-whisper is not installed, so recordings are stored but not "
-            "typed up. The audio is safe in raw/ and nothing is lost: reinstall "
-            "with `pip install health-agent` and run `health-agent transcribe`."
+            missing_library(
+                "faster-whisper", None, "recordings are stored but not typed up",
+                stored=True,
+            )
+            + " The audio is safe in raw/ and nothing is lost."
         ) from None
 
     pinned = pinned_directory(model)

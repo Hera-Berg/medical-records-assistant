@@ -28,6 +28,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from ...distribution import for_terminal
+from ...extract import jobs as jobs_mod
+from ...extract import runner as extract_runner
 from ...ingest import mime as mime_mod
 from ...ingest import sidecar as sidecar_mod
 from ...projection import reading as projection_reading
@@ -75,8 +78,8 @@ def artifact(
             detail=(
                 f"artefact {short} is recorded in the event log but its bytes are "
                 f"not in the vault. Restore it from a backup or the sync client's "
-                f"trash, or re-ingest the same file. `health-agent check` lists "
-                f"every artefact in this state."
+                f"trash, or add the same file again."
+                + for_terminal(" `health-agent check` lists every artefact in this state.")
             ),
         )
 
@@ -100,6 +103,40 @@ def artifact(
     for name, value in headers.items():
         response.headers[name] = value
     return response
+
+
+@router.post("/api/artifact/{token}/read-again")
+def read_again(
+    token: str,
+    state: RecordState = Depends(get_state),
+    index: Index = Depends(get_index),
+) -> dict[str, Any]:
+    """Put a document whose reading stopped back on the queue.
+
+    Only a job that stopped needing a person (``needs-attention``): its bytes
+    were missing, or the box reported another model. Once that is fixed, this is
+    the button that says so. A document that was read, or found unreadable, is
+    not re-read from here — re-reading one already extracted under the same
+    model would propose its claims a second time, and the log refuses that
+    anyway.
+    """
+    _, short = _resolve(state, index, token)
+    with state.lock:
+        queue = state.queue()
+        job = queue.for_artifact(short)
+        if job is None or job.state != jobs_mod.NEEDS_ATTENTION:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This document is not waiting for anything to be fixed, so there "
+                    "is nothing to try again. Reload the page to see where it has got to."
+                ),
+            )
+        extract_runner.enqueue_artifacts(state.vault, queue, [short])
+    worker = getattr(state, "worker", None)
+    if worker is not None:
+        worker.nudge()
+    return {"queued": short}
 
 
 @router.get("/api/artifact/{token}/meta")

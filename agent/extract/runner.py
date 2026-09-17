@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, ContextManager, Sequence
 
+from ..distribution import for_terminal
 from ..errors import (
     AuthRejected,
     EndpointNotPrivate,
@@ -257,7 +258,8 @@ class Extractor:
                 reason=(
                     f"the bytes for {short} are not in raw/ at {artifact.rel}. The "
                     f"event is intact, so this is a missing file rather than a lost "
-                    f"record — restore it and re-run, or run `health-agent check`"
+                    f"record — restore it from a backup or the sync client's trash, "
+                    f"then choose \u201cTry reading it again\u201d on its page"
                 ),
             )
 
@@ -391,8 +393,8 @@ class Extractor:
                 reading=READ_UNTRANSCRIBED,
                 reason=(
                     f"{short} is a recording that has not been typed up yet. The "
-                    f"speech model runs on this machine and needs no box — run "
-                    f"`health-agent transcribe`, and this reads the words it produces"
+                    f"speech model runs on this machine and needs no box; once it has "
+                    f"typed the recording up, this reads the words it produces"
                 ),
             )
 
@@ -585,7 +587,7 @@ def drain(
             parked=queue.blocked(),
             parked_reason=(
                 "the queue is parked: authentication was rejected by the inference "
-                "box. Set a new key, then run `health-agent extract --resume`."
+                "box. Set a new key in Settings."
             ),
         )
 
@@ -713,7 +715,8 @@ def explain_idle(
     if not artifacts:
         return (
             "there is nothing to read: no artefact.ingested event exists in this "
-            "vault. Add a document with `health-agent ingest <file>` first"
+            "vault"
+            + for_terminal(". Add a document with `health-agent ingest <file>` first")
         )
 
     unread = sorted(set(artifacts) - read_already)
@@ -749,7 +752,8 @@ def explain_idle(
         verb = "is a recording" if len(recordings) == 1 else "are recordings"
         note = (
             f"{len(recordings)} of them {verb}, which the speech model types up on "
-            f"this machine — run `health-agent transcribe`"
+            f"this machine"
+            + for_terminal(" — run `health-agent transcribe`")
         )
         unread = [short for short in unread if short not in set(recordings)]
         if not unread:
@@ -781,7 +785,8 @@ def explain_idle(
         verb = "is" if len(terminal) == 1 else "are"
         return (
             f"{done_note}the remaining {len(terminal)} {verb} not being retried "
-            f"({summary}). `health-agent extract --artifact <hash>` re-runs one"
+            f"({summary})"
+            + for_terminal(". `health-agent extract --artifact <hash>` re-runs one")
         )
 
     return (
@@ -814,7 +819,8 @@ def resolve_artifact(vault, token: str) -> str:
     raise ExtractionError(
         f"no artefact in this vault has the hash {token!r}. The hash is the six "
         f"characters before the extension in a raw/ filename, and the footnote key "
-        f"in a wiki citation. `health-agent check` lists what is stored"
+        f"in a wiki citation"
+        + for_terminal(". `health-agent check` lists what is stored")
     )
 
 

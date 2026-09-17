@@ -553,6 +553,13 @@ def cmd_extract(args: argparse.Namespace, out: TextIO) -> int:
         # Deliberately not phrased as a failure to process. A rotated key and a
         # sleeping Mac are different problems and only one of them needs a person.
         print(f"PARKED    {report.parked_reason}", file=out)
+        # The reason is stored with the jobs and read by the app too, so it
+        # names no command. The terminal is where the command belongs.
+        print(
+            "          set a new key with `health-agent set-key`, then run "
+            "`health-agent extract --resume`",
+            file=out,
+        )
         return EXIT_PROBLEMS
     depth = queue.depth()
     if depth:

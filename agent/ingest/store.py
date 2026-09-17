@@ -292,15 +292,15 @@ class RawStore:
         except OSError as exc:
             raise IngestError(
                 f"wrote {self.relative(path)} but could not read it back: {exc}. "
-                f"Nothing was recorded; the file is on disk and will be reported "
-                f"as unrecorded by `health-agent check`."
+                f"Nothing was recorded. The file is on disk, and adding the same "
+                f"file again records it."
             ) from exc
         if stored != digest:
             raise IngestError(
                 f"wrote {self.relative(path)} but it read back with a different hash. "
                 f"The sync client may not have committed the write. Nothing was "
-                f"recorded; the file is on disk and will be reported as unrecorded "
-                f"by `health-agent check`."
+                f"recorded. The file is on disk, and adding the same file again "
+                f"records it once the sync client has caught up."
             )
 
     # --- reading ------------------------------------------------------------

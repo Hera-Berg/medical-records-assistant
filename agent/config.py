@@ -22,6 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .distribution import for_terminal
 from .errors import ConfigError, SecretInConfigError
 
 CONFIG_FILENAME = "config.toml"
@@ -423,9 +424,10 @@ def _guarded_write(
     """
     if not path.exists():
         raise ConfigError(
-            f"no {CONFIG_FILENAME} at {path} to change. This program does not "
-            f"invent one: create it first, with the template from `health-agent "
-            f"check`."
+            f"no {CONFIG_FILENAME} at {path} to change, so this folder is not a "
+            f"complete record. This program does not invent one"
+            + for_terminal(": create it first, with the template from `health-agent check`")
+            + "."
         )
 
     forks = conflict_forks(path)

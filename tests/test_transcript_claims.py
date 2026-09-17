@@ -222,7 +222,10 @@ def test_a_recording_waiting_to_be_typed_up_is_not_a_failure(vault, recorded):
 
     assert box.requests == [], "the box was not asked about a recording with no words"
     assert outcome.reading == extract_runner.READ_UNTRANSCRIBED
-    assert "health-agent transcribe" in outcome.reason
+    # Stored as the job's reason and read by the app as well as the terminal,
+    # so it says what happens next rather than naming a command.
+    assert "once it has typed the recording up" in outcome.reason
+    assert "health-agent" not in outcome.reason
 
 
 def test_claims_from_a_recording_are_patient_reported_whatever_the_model_says(

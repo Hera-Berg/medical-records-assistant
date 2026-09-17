@@ -39,10 +39,11 @@ export function Artifact({
 }) {
   const [meta, setMeta] = useState<ArtifactMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [asked, setAsked] = useState(0);
 
   useEffect(() => {
     let live = true;
-    setMeta(null);
+    if (asked === 0) setMeta(null);
     setError(null);
     api
       .artifactMeta(short)
@@ -51,7 +52,7 @@ export function Artifact({
     return () => {
       live = false;
     };
-  }, [short, version]);
+  }, [short, version, asked]);
 
   useEffect(() => {
     if (!meta) return;
@@ -83,7 +84,7 @@ export function Artifact({
       {!meta.present ? (
         <Empty>
           The record says this exists, but its bytes are not in the vault. Restore it
-          from a backup or the sync client's trash, or re-ingest the same file — every
+          from a backup or the sync client's trash, or add the same file again — every
           citation pointing here resolves to nothing until you do.
         </Empty>
       ) : (
@@ -92,7 +93,7 @@ export function Artifact({
 
       {meta.is_recording ? <Spoken meta={meta} /> : null}
 
-      <WhatNext meta={meta} />
+      <WhatNext meta={meta} onAsked={() => setAsked((count) => count + 1)} />
 
       <Heading>What the record knows about this file</Heading>
       <dl className="grid grid-cols-[14rem_1fr] gap-x-4 gap-y-1">
@@ -142,9 +143,21 @@ export function Artifact({
  * three different ways in three places is how a reader stops trusting any of
  * them.
  */
-function WhatNext({ meta }: { meta: ArtifactMeta }) {
+function WhatNext({ meta, onAsked }: { meta: ArtifactMeta; onAsked: () => void }) {
   const reading = meta.reading;
+  const [asking, setAsking] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   if (!reading) return null;
+
+  const again = () => {
+    setAsking(true);
+    setProblem(null);
+    api
+      .readAgain(meta.short)
+      .then(onAsked)
+      .catch((exc: Error) => setProblem(exc.message))
+      .finally(() => setAsking(false));
+  };
   const wanted = reading.awaiting > 0 || reading.deferred;
   return (
     <>
@@ -168,6 +181,23 @@ function WhatNext({ meta }: { meta: ArtifactMeta }) {
           It is stored in your folder either way, and nothing is lost while it
           waits.
         </p>
+      ) : null}
+      {/* The in-app answer to "then read it again": once whatever stopped it is
+          fixed — the file restored, the reading computer reconnected — this puts
+          it back in the queue. Offered only for a reading that stopped waiting
+          on a person; the server refuses anything else. */}
+      {reading.may_retry ? (
+        <div className="mt-2 no-print">
+          <button type="button" className="btn" onClick={again} disabled={asking}>
+            {meta.is_recording ? "Try typing it up again" : "Try reading it again"}
+          </button>
+          <span className="ml-2 text-[color:var(--color-muted)]">
+            {asking
+              ? "Asking…"
+              : "Once what stopped it is fixed. Nothing is lost if it stops again."}
+          </span>
+          {problem ? <p className="mt-1">{problem}</p> : null}
+        </div>
       ) : null}
       {reading.awaiting > 0 ? (
         <p className="mt-1 text-[color:var(--color-muted)]">

@@ -36,6 +36,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Link, useRoute } from "./router";
 import type { Health } from "./types";
+import { rememberInstallation } from "./installation";
 import { Artifact } from "./components/Artifact";
 import { Ask } from "./components/Ask";
 import { Attention } from "./components/Attention";
@@ -88,6 +89,7 @@ export function App() {
         .health()
         .then((result) => {
           if (!live) return;
+          rememberInstallation(result.packaged);
           setHealth(result);
           setHealthError(null);
         })

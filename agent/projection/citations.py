@@ -186,8 +186,10 @@ def missing(key: str) -> Citation:
     return Citation(
         key=key,
         text=(
-            f"artefact {key} is cited by a claim but no ingest event describes it; "
-            f"run `health-agent check`"
+            # Written into the wiki, so it names no command: a derived file
+            # reads the same whichever installation rebuilt it.
+            f"artefact {key} is cited by a claim but no ingest event describes it, "
+            f"so the file it came from cannot be located"
         ),
         target=None,
         resolved=False,

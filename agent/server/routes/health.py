@@ -28,6 +28,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ... import distribution
 from ... import vault as vault_mod
 from ...extract import jobs as jobs_mod
 from ...llm import redaction
@@ -64,6 +65,9 @@ def health(state: RecordState = Depends(get_state)) -> dict[str, Any]:
 
     return {
         "ok": not problems,
+        # Whether an instruction may name a command. The interface remembers it,
+        # because it matters most once the server has stopped answering.
+        "packaged": distribution.packaged(),
         "vault": {
             "root": str(vault.root),
             "writable": vault_mod.is_writable(vault.root),

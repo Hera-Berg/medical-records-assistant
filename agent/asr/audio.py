@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+from ..distribution import missing_library
+
 #: What Whisper wants. Anything else is resampled by the library at load time,
 #: so doing it once here is both faster and one fewer thing to be surprised by.
 SAMPLE_RATE = 16000
@@ -166,13 +168,14 @@ def working_copy(source: Path) -> Iterator[WorkingCopy]:
                 return
 
         if ffmpeg is None:
+            # Stored as the job's reason, so it names no command: see
+            # agent.distribution. ffmpeg is the fallback only a pip install has.
             raise DecodeUnavailable(
-                "nothing on this computer can decode this recording: the PyAV "
-                "library that comes with the speech model is missing, and ffmpeg "
-                "is not installed. The recording itself is safe in raw/ and "
-                "nothing has been lost: reinstall with `pip install "
-                "health-agent`, or install ffmpeg, then run `health-agent "
-                "transcribe` to type it up."
+                missing_library(
+                    "PyAV", None, "nothing on this computer can decode this recording",
+                    stored=True,
+                )
+                + " The recording itself is safe in raw/ and nothing has been lost."
             )
         result = subprocess.run(
             [
