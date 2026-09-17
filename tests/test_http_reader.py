@@ -150,3 +150,80 @@ def test_no_route_here_returns_a_key(vault):
     with api_client(vault) as client:
         body = client.get("/api/reader").text
     assert "LLAMA_API_KEY" not in body and "Bearer" not in body
+
+
+# --- choosing a local model --------------------------------------------------
+
+
+@pytest.fixture
+def measured(tmp_path, monkeypatch):
+    """A measurements file of the test's own, so the real one can change freely."""
+    from agent.runtime import measurements
+
+    path = tmp_path / "measurements.json"
+    monkeypatch.setattr(measurements, "PATH", path)
+    measurements.record(
+        manifest.QWEN_4B.alias,
+        measurements.Accuracy(correct=7, abstained=0, wrong=5, fixtures=10, prompt_version=2, measured="2026-09-17"),
+        platforms.current(),
+        measurements.Speed(seconds_per_document=112, generation_tokens_per_second=8.0,
+                           machine="an Intel Core Ultra 7 155U machine", measured="2026-09-17"),
+        path=path,
+    )
+    import json as json_mod
+
+    data = json_mod.loads(path.read_text())
+    data["models"][manifest.QWEN_4B.alias]["known_failures"] = ["It read metformin as mefenamic acid."]
+    path.write_text(json_mod.dumps(data))
+    return path
+
+
+def _models(client):
+    return {entry["id"]: entry for entry in client.get("/api/reader").json()["models"]}
+
+
+def test_the_list_shows_every_number_at_the_point_of_choosing(vault, measured, monkeypatch):
+    monkeypatch.setattr(platforms, "total_memory_bytes", lambda: 32 * 1024**3)
+    with api_client(vault) as client:
+        models = _models(client)
+
+    small, large = models[manifest.QWEN_4B.id], models[manifest.QWEN_9B.id]
+    assert small["recommended"] and small["current"], "the recommended model is preselected"
+    assert not large["current"]
+    assert small["size_bytes"] == manifest.QWEN_4B.bundle.size
+    assert small["ram_needed_bytes"] == 8 * 1024**3 and large["ram_needed_bytes"] == 16 * 1024**3
+    assert "7 read correctly, 0 left for you to check, 5 wrong" in small["accuracy"]["sentence"]
+    assert "measured on an Intel Core Ultra 7 155U machine" in small["speed"]["sentence"]
+    assert small["known_failures"] == ["It read metformin as mefenamic acid."]
+    # Not measured is said, never left blank or guessed.
+    assert large["accuracy"]["sentence"] == "Accuracy not measured."
+    assert large["speed"]["sentence"].startswith("Speed not measured on")
+    assert small["memory_warning"] is None and large["memory_warning"] is None
+
+
+def test_too_little_memory_is_warned_about_and_never_refused(vault, measured, monkeypatch, no_real_download):
+    monkeypatch.setattr(platforms, "total_memory_bytes", lambda: 8 * 1024**3)
+    with api_client(vault) as client:
+        warning = _models(client)[manifest.QWEN_9B.id]["memory_warning"]
+        chosen = client.post(
+            "/api/settings/reader",
+            json={"reads_on": "this-computer", "model": manifest.QWEN_9B.id},
+        )
+    assert "8 GB of memory" in warning and "about 16 GB" in warning
+    assert "It will still run" in warning
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["choice"]["model"] == manifest.QWEN_9B.id
+    # The files wanted now are the chosen model's, and the size confirmation asks
+    # for exactly those bytes.
+    expected = sum(b.size for b in manifest.required(platforms.current(), True, manifest.QWEN_9B.id))
+    assert body["files"]["total_bytes"] == expected
+    assert manifest.QWEN_9B.bundle.size <= body["files"]["remaining_bytes"]
+
+
+def test_an_unknown_model_is_refused(vault):
+    with api_client(vault) as client:
+        response = client.post(
+            "/api/settings/reader", json={"reads_on": "this-computer", "model": "qwen9000"}
+        )
+    assert response.status_code == 400

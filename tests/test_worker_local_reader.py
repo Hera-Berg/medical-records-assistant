@@ -236,9 +236,10 @@ def test_a_claim_says_what_read_it_on_which_device():
     )
     assert facts == {
         "model": manifest.ALIAS,
+        "name": "Qwen3.5-4B",
         "runtime": "bundled",
         "device": "elbook-yar0",
-        "sentence": "Read by Qwen3.5-4B Q4_K_M running on elbook-yar0.",
+        "sentence": "Read by Qwen3.5-4B Q4 running on elbook-yar0.",
     }
 
 

@@ -16,6 +16,16 @@
  *
  * **A disabled control says why, beside itself.**
  *
+ * **The model is a real choice, and it is chosen knowing.** Every model in the
+ * list shows its download size, the memory it needs, its speed here or "not
+ * measured", and what it got correct, left for you, and wrong on the sample
+ * documents — in the list, not behind a link. A failure someone found that
+ * nothing in the app can catch is said beside the model it belongs to. That is
+ * why offering a model that did not pass every test is acceptable: the person
+ * picking it can see what it did. A list of radio options rather than a
+ * drop-down, because a drop-down's options cannot carry those sentences and the
+ * numbers would be hidden until something was already chosen.
+ *
  * **Honest about speed.** A small model on a laptop is slow, and a queue that is
  * slow must not look like one that is broken. Before anything has been read
  * here the screen gives the range for this kind of computer; after, what it
@@ -194,6 +204,8 @@ function ThisComputer({
 
   return (
     <div className="mt-4 space-y-3">
+      <ModelList info={info} saving={saving} act={act} />
+
       {!info.platform.verified ? (
         <Note tone="warn" title={`Not yet tried on ${info.platform.label}.`}>
           The reader is set up for this kind of computer but nobody has run it on one yet. If
@@ -390,6 +402,82 @@ function ThisComputer({
   );
 }
 
+function ModelList({
+  info,
+  saving,
+  act,
+}: {
+  info: ReaderInfo;
+  saving: boolean;
+  act: (call: () => Promise<ReaderInfo>) => void;
+}) {
+  return (
+    <fieldset disabled={saving}>
+      <legend className="font-semibold">Which model reads them</legend>
+      <p className="text-[color:var(--color-muted)]">
+        Each one says what it was measured to do. You can change this at any time; a model
+        you have not downloaded yet asks before it downloads anything.
+      </p>
+      {saving ? <p className="text-[color:var(--color-muted)]">Saving…</p> : null}
+      {info.models.map((model) => (
+        <label
+          key={model.id}
+          className={
+            "mt-2 flex gap-3 rounded-lg border p-3 " +
+            (model.current
+              ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]"
+              : "border-[color:var(--color-rule)] bg-[color:var(--color-paper)]")
+          }
+        >
+          <input
+            type="radio"
+            name="local_model"
+            value={model.id}
+            checked={model.current}
+            onChange={() =>
+              act(() =>
+                readerApi.choose("this-computer", info.choice.sleep_after_minutes, model.id),
+              )
+            }
+            className="mt-1 self-start"
+          />
+          <span className="block">
+            <span className="block font-semibold">
+              {model.title}
+              {model.recommended ? (
+                <span className="font-normal"> — recommended</span>
+              ) : null}
+              {model.current ? (
+                <span className="font-normal text-[color:var(--color-muted)]">
+                  {" "}
+                  (chosen on this computer)
+                </span>
+              ) : null}
+            </span>
+            <span className="block">
+              {gigabytes(model.size_bytes)} download
+              {model.downloaded ? " (already downloaded)" : ""} · needs about{" "}
+              {gigabytes(model.ram_needed_bytes)} of memory · {model.licence} licence
+            </span>
+            <span className="block">{model.speed.sentence}</span>
+            <span className="block">{model.accuracy.sentence}</span>
+            {model.known_failures.map((failure) => (
+              <span key={failure} className="mt-1 block">
+                <strong>Found in testing:</strong> {failure}
+              </span>
+            ))}
+            {model.memory_warning ? (
+              <span className="mt-1 block">
+                <strong>Memory:</strong> {model.memory_warning}
+              </span>
+            ) : null}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 const STATE_WORDS: Record<string, string> = {
   "not-downloaded": "Not downloaded.",
   sleeping: "Sleeping.",
@@ -439,5 +527,7 @@ function Note({
 
 function gigabytes(bytes: number): string {
   if (bytes < 1024 ** 3) return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  const value = bytes / 1024 ** 3;
+  // "8 GB", not "8.0 GB"; "3.2 GB" where the tenth says something.
+  return Number.isInteger(value) ? `${value} GB` : `${value.toFixed(1)} GB`;
 }

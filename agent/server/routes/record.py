@@ -162,6 +162,10 @@ def wiki_entity(
         if row.subject_id == subject.id
     ]
     detail["as_of"] = snapshot.built_ts
+    try:
+        detail["this_device"] = state.vault.identity.id
+    except Exception:  # noqa: BLE001 - no identity: every reading is from elsewhere
+        detail["this_device"] = None
     return detail
 
 

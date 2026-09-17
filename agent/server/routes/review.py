@@ -69,7 +69,17 @@ def _queue_payload(state: RecordState) -> dict[str, Any]:
             "items": list(snapshot.anomalies()),
         },
         "as_of": snapshot.built_ts,
+        # So "read by … on this computer" can be said of a reading made here,
+        # and a device's name used for one made anywhere else.
+        "this_device": _this_device(state),
     }
+
+
+def _this_device(state: RecordState) -> str | None:
+    try:
+        return state.vault.identity.id
+    except Exception:  # noqa: BLE001 - no identity: every reading is from elsewhere
+        return None
 
 
 @router.get("/api/review")

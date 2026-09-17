@@ -311,11 +311,11 @@ export const reader = {
   retry: () => request<ReaderInfo>("/api/reader/retry", { method: "POST" }),
 
   /** Which computer reads documents — for this computer only, never the synced settings file. */
-  choose: (reads_on: ReadsOn, sleep_after_minutes?: number) =>
+  choose: (reads_on: ReadsOn, sleep_after_minutes?: number, model?: string) =>
     request<ReaderInfo>("/api/settings/reader", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reads_on, sleep_after_minutes }),
+      body: JSON.stringify({ reads_on, sleep_after_minutes, model }),
     }),
 };
 

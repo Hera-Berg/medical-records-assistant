@@ -85,9 +85,15 @@ def retry(state: RecordState = Depends(get_state)) -> dict[str, Any]:
 def choose(
     reads_on: str = Body(..., embed=True),
     sleep_after_minutes: int | None = Body(None, embed=True),
+    model: str | None = Body(None, embed=True),
     state: RecordState = Depends(get_state),
 ) -> dict[str, Any]:
-    """Which computer reads this machine's documents, and how long its reader idles."""
+    """Which computer reads this machine's documents, with which model, and how long it idles.
+
+    A model that needs more memory than this computer has is warned about in
+    the list and never refused here: saying what will happen is the job, and the
+    person may know something about their machine this does not.
+    """
     if reads_on == choice_mod.THIS_COMPUTER and not manifest.reader_bundles(platforms.current()):
         raise HTTPException(
             status_code=409,
@@ -99,12 +105,15 @@ def choose(
     current = choice_mod.load(state.vault)
     minutes = current.sleep_after_minutes if sleep_after_minutes is None else sleep_after_minutes
     try:
-        chosen = choice_mod.save(reads_on, minutes)
+        chosen = choice_mod.save(reads_on, minutes, model or current.model)
     except ConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
     local = supervisor.get(state.vault)
     local.sleep_after_minutes = chosen.sleep_after_minutes
+    # The files for a newly chosen model may not be here; the reader stops, says
+    # so, and the download it needs is asked for like any other.
+    local.set_model(chosen.model)
     if not chosen.reads_here:
         # Nothing on this machine reads documents any more. Its memory goes back
         # now, not after the idle timer.

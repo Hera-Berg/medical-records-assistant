@@ -146,7 +146,8 @@ class VisionModel:
 
     @property
     def title(self) -> str:
-        return f"{self.name} {self.quant}"
+        """"Qwen3.5-4B Q4" — the bit width a person can compare, not the quant's full code."""
+        return f"{self.name} {self.quant.split('_', 1)[0]}"
 
     @property
     def bundle(self) -> Bundle:

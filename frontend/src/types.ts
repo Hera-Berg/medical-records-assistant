@@ -67,7 +67,13 @@ export interface Claim {
    * never a judgement of quality, and never the evidence tier. Null for a
    * correction you typed.
    */
-  read_by: { model: string; runtime: string | null; device: string; sentence: string } | null;
+  read_by: {
+    model: string;
+    name: string;
+    runtime: string | null;
+    device: string;
+    sentence: string;
+  } | null;
 }
 
 export interface Slot {
@@ -151,6 +157,8 @@ export interface ReviewQueue {
   actionable: boolean;
   anomalies: { count: number; items: string[] };
   as_of: string;
+  /** This machine's device id, so a reading made here can say "on this computer". */
+  this_device: string | null;
   /** Present on the answer to a decision, including one that came too late. */
   decided?: {
     id: string;
@@ -190,6 +198,8 @@ export interface EntitySummary {
 }
 
 export interface EntityDetail extends EntitySummary {
+  /** This machine's device id, so a reading made here can say "on this computer". */
+  this_device: string | null;
   slots: Slot[];
   conflicts: { predicate: string; readings: Claim[] }[];
   review: ReviewItem[];
@@ -791,6 +801,7 @@ export interface ReaderInfo {
     label: string;
     sleep_after_minutes: number;
     source: "file" | "default";
+    model: string;
   };
   options: { value: ReadsOn; label: string; current: boolean }[];
   demo: boolean;
@@ -818,4 +829,27 @@ export interface ReaderInfo {
     log_path: string | null;
   } | null;
   speed: ReadingSpeed | null;
+  /** Every local model offered, with what it was measured to do. */
+  models: LocalModel[];
+}
+
+/**
+ * One model in the list, with every number shown where it is chosen.
+ *
+ * Sentences are written on the server. "Not measured" is said, never left out.
+ */
+export interface LocalModel {
+  id: string;
+  title: string;
+  recommended: boolean;
+  current: boolean;
+  size_bytes: number;
+  ram_needed_bytes: number;
+  downloaded: boolean;
+  licence: string;
+  speed: { sentence: string; measured: boolean };
+  accuracy: { sentence: string; correct?: number; abstained?: number; wrong?: number; fixtures?: number };
+  /** Failures a person found that nothing in the app can catch, in plain words. */
+  known_failures: string[];
+  memory_warning: string | null;
 }

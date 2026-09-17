@@ -79,6 +79,33 @@ export function TierMark({ tier }: { tier: Tier }) {
   );
 }
 
+/**
+ * Which model read the document, beside the evidence tier and never merged into
+ * it. The tier says what kind of document it is; this says what read it — a
+ * fact from the event, not a grade.
+ */
+export function ReadByMark({
+  readBy,
+  thisDevice,
+}: {
+  readBy: { name: string; runtime: string | null; device: string } | null;
+  thisDevice: string | null;
+}) {
+  if (!readBy) return null;
+  let where = "";
+  if (readBy.runtime === "bundled") {
+    where = readBy.device === thisDevice ? " on this computer" : ` on ${readBy.device}`;
+  } else if (readBy.runtime === "endpoint") {
+    where = " on another computer";
+  }
+  return (
+    <span className="text-[color:var(--color-muted)]">
+      read by {readBy.name}
+      {where}
+    </span>
+  );
+}
+
 export function tierLabel(tier: Tier): string {
   return (TIERS[tier] ?? TIERS.artefact).label;
 }

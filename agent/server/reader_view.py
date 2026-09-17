@@ -23,7 +23,7 @@ from ..events.envelope import Event
 from ..extract import propose
 from ..runtime import choice as choice_mod
 from ..runtime import download as download_mod
-from ..runtime import manifest, platforms, states, supervisor
+from ..runtime import manifest, measurements, platforms, states, supervisor
 from ..runtime.store import Store
 
 #: How many recent readings the measured speed is the median of.
@@ -50,15 +50,14 @@ def downloader(state) -> download_mod.Downloader:
         store = Store(vault_root=state.vault.root)
 
         def bundles() -> tuple[manifest.Bundle, ...]:
-            reads_here = choice_mod.load(state.vault).reads_here
-            return manifest.required(platforms.current(), reads_here)
+            chosen = choice_mod.load(state.vault)
+            return manifest.required(platforms.current(), chosen.reads_here, chosen.model)
 
         state.downloader = download_mod.Downloader(store, bundles)  # type: ignore[attr-defined]
         return state.downloader  # type: ignore[attr-defined]
 
 
-def speed(events: Sequence[Event], device: str | None, platform: str | None, waiting: int) -> dict[str, Any]:
-    """What to expect, from this device's own recent readings where there are any."""
+def _own_readings(events: Sequence[Event], device: str | None, alias: str | None) -> list[tuple[str, float]]:
     readings: list[tuple[str, float]] = []
     for event in events:
         if event.type != propose.EXTRACTION_COMPLETED or event.device != device:
@@ -66,14 +65,35 @@ def speed(events: Sequence[Event], device: str | None, platform: str | None, wai
         runtime = event.payload.get("runtime")
         if not isinstance(runtime, dict) or runtime.get("kind") != "bundled":
             continue
+        if alias is not None and event.payload.get("model_reported") != alias:
+            continue
         elapsed = runtime.get("elapsed_s")
         if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool) and elapsed > 0:
             readings.append((event.ts, float(elapsed)))
+    return readings
+
+
+def speed(
+    events: Sequence[Event],
+    device: str | None,
+    platform: str | None,
+    waiting: int,
+    alias: str | None = None,
+) -> dict[str, Any]:
+    """What to expect, from this device's own recent readings with this model where there are any."""
+    readings = _own_readings(events, device, alias)
     recent = [seconds for _, seconds in sorted(readings)[-SPEED_SAMPLE:]]
     measured = round(statistics.median(recent)) if recent else None
 
     if measured is None:
-        pace = f"Reading on this computer takes {states.speed_estimate(platform)}."
+        known = measurements.for_model(alias).speed.get(platform or "") if alias else None
+        if known is not None:
+            pace = (
+                f"Reading takes about {_seconds(known.seconds_per_document)} a document "
+                f"— measured on {known.machine}; this computer may differ."
+            )
+        else:
+            pace = f"Reading on this computer takes {states.speed_estimate(platform)}."
     else:
         pace = f"Usually about {_seconds(measured)} a document on this computer."
     eta = None
@@ -121,7 +141,8 @@ def payload(state) -> dict[str, Any]:
     current = choice_mod.load(vault)
     fetcher = downloader(state)
     progress = fetcher.progress()
-    bundles = manifest.required(platform, current.reads_here)
+    bundles = manifest.required(platform, current.reads_here, current.model)
+    chosen_model = manifest.vision_model(current.model)
     memory = platforms.total_memory_bytes()
     snapshot = state.snapshot()
     waiting = state.queue().depth()
@@ -176,5 +197,92 @@ def payload(state) -> dict[str, Any]:
             "message": states.DOWNLOAD_MESSAGES.get(reason) if reason else None,
         },
         "reader": reader_status,
-        "speed": speed(snapshot.events, device, platform, waiting) if current.reads_here else None,
+        "speed": (
+            speed(snapshot.events, device, platform, waiting, alias=chosen_model.alias)
+            if current.reads_here else None
+        ),
+        "models": [
+            model_entry(model, current.model, fetcher.store, memory, platform, snapshot.events, device)
+            for model in manifest.VISION_MODELS
+        ],
+    }
+
+
+def _gb(value: int) -> str:
+    gigabytes = value / 1024**3
+    return f"{gigabytes:.0f} GB" if gigabytes == int(gigabytes) else f"{gigabytes:.1f} GB"
+
+
+def model_entry(
+    model: manifest.VisionModel,
+    chosen: str,
+    store: Store,
+    memory: int | None,
+    platform: str | None,
+    events: Sequence[Event],
+    device: str | None,
+) -> dict[str, Any]:
+    """One entry in the model list, with every number shown at the point of choosing.
+
+    Nothing here is behind a link. The reason offering a model that failed the
+    eval bar is acceptable is that the person chooses it knowing what it did, so
+    what it did is in the entry itself: its size, the memory it needs, its speed
+    here or "not measured", correct / left unread / wrong on the sample
+    documents, and any failure a person found that nothing in the app can catch.
+    """
+    found = measurements.for_model(model.alias)
+    own = _own_readings(events, device, model.alias)
+    speed_here = found.speed.get(platform or "")
+
+    if own:
+        recent = [seconds for _, seconds in sorted(own)[-SPEED_SAMPLE:]]
+        speed_sentence = f"About {_seconds(round(statistics.median(recent)))} a document on this computer."
+    elif speed_here is not None:
+        speed_sentence = (
+            f"About {_seconds(speed_here.seconds_per_document)} a document, measured on "
+            f"{speed_here.machine}."
+        )
+    else:
+        label = platforms.LABELS.get(platform or "", "this kind of computer")
+        speed_sentence = f"Speed not measured on {label}."
+
+    accuracy = found.accuracy
+    if accuracy is not None:
+        accuracy_sentence = (
+            f"On the {accuracy.fixtures} sample documents it was tested on, for medicines, "
+            f"doses and allergies: {accuracy.correct} read correctly, {accuracy.abstained} "
+            f"left for you to check, {accuracy.wrong} wrong."
+        )
+    else:
+        accuracy_sentence = "Accuracy not measured."
+
+    memory_warning = None
+    if memory is not None and memory < model.ram_needed_bytes:
+        memory_warning = (
+            f"This computer has {_gb(memory)} of memory and this model needs about "
+            f"{_gb(model.ram_needed_bytes)}. It will still run, but slowly, and other "
+            f"programs will be squeezed while it reads. The system may stop it part-way "
+            f"through a document — you would see that it stopped, and could try again."
+        )
+
+    downloaded = store.is_ready((model.bundle,))
+    return {
+        "id": model.id,
+        "title": model.title,
+        "recommended": model.recommended,
+        "current": model.id == chosen,
+        "size_bytes": model.bundle.size,
+        "ram_needed_bytes": model.ram_needed_bytes,
+        "downloaded": downloaded,
+        "licence": model.licence,
+        "speed": {
+            "sentence": speed_sentence,
+            "measured": bool(own) or speed_here is not None,
+        },
+        "accuracy": {
+            "sentence": accuracy_sentence,
+            **(accuracy.to_dict() if accuracy is not None else {}),
+        },
+        "known_failures": list(found.known_failures),
+        "memory_warning": memory_warning,
     }

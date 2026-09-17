@@ -66,7 +66,8 @@ class Measured:
     known_failures: tuple[str, ...] = ()
 
 
-def _read(path: Path = PATH) -> dict[str, Any]:
+def _read(path: Path | None = None) -> dict[str, Any]:
+    path = path or PATH
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -75,7 +76,7 @@ def _read(path: Path = PATH) -> dict[str, Any]:
     return models if isinstance(models, dict) else {}
 
 
-def for_model(alias: str, path: Path = PATH) -> Measured:
+def for_model(alias: str, path: Path | None = None) -> Measured:
     raw = _read(path).get(alias)
     if not isinstance(raw, dict):
         return Measured()
@@ -97,9 +98,10 @@ def record(
     accuracy: Accuracy,
     platform: str | None,
     speed: Speed | None,
-    path: Path = PATH,
+    path: Path | None = None,
 ) -> None:
     """Write one run's numbers for *alias*, keeping any known failures already written."""
+    path = path or PATH
     models = _read(path)
     entry = dict(models.get(alias) or {})
     entry["accuracy"] = accuracy.to_dict()

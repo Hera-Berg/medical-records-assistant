@@ -10,7 +10,7 @@
         "wrong": 5
       },
       "known_failures": [
-        "In testing it read metformin as mefenamic acid on a blurry handwritten script — the wrong medicine, with a dose — and did not say it was unsure, so nothing on your review list would have caught it. Photograph scripts square-on and in good light, and check what it reads against the paper."
+        "It read metformin as mefenamic acid on a blurry handwritten script — the wrong medicine, with a dose — and did not say it was unsure, so nothing on your review list would have caught it. Photograph scripts square-on and in good light, and check what it reads against the paper."
       ],
       "speed": {
         "linux-x64": {

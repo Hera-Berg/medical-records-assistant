@@ -133,14 +133,23 @@ def read_by(item: Claim) -> dict[str, Any] | None:
     if not isinstance(model, str) or not model:
         return None
     kind = provenance.get("runtime_kind")
-    name = f"{manifest.VISION_MODEL} {manifest.VISION_QUANT}" if model == manifest.ALIAS else model
+    known = manifest.by_alias(model)
+    name = known.title if known is not None else model
     if kind == "bundled":
         sentence = f"Read by {name} running on {item.device}."
     elif kind == "endpoint":
         sentence = f"Read by {name} on a computer connected from {item.device}."
     else:
         sentence = f"Read by {name}."
-    return {"model": model, "runtime": kind, "device": item.device, "sentence": sentence}
+    return {
+        "model": model,
+        # The model's own name where this version knows it — "Qwen3.5-4B" rather
+        # than its pinned identity string.
+        "name": known.name if known is not None else model,
+        "runtime": kind,
+        "device": item.device,
+        "sentence": sentence,
+    }
 
 
 def claim(item: Claim, citer: Citer, description: str | None = None) -> dict[str, Any]:

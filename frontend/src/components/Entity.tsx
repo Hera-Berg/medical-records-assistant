@@ -23,7 +23,7 @@ import { api } from "../api";
 import { Link } from "../router";
 import type { PageHeader } from "../App";
 import type { Claim, EntityDetail, ReviewItem } from "../types";
-import { Cite, DateCell, Empty, Heading, longDate, StatusMark, TierMark } from "./marks";
+import { Cite, DateCell, Empty, Heading, ReadByMark, StatusMark, TierMark, longDate } from "./marks";
 
 /**
  * A predicate, in the reader's words.
@@ -202,12 +202,8 @@ export function Entity({
                             <TierMark tier={reading.evidence_tier} />{" "}
                             {reading.value.literal} —{" "}
                             <Cite citation={reading.citation} navigate={navigate} />
-                            {reading.read_by ? (
-                              <span className="text-[color:var(--color-muted)]">
-                                {" "}
-                                {reading.read_by.sentence}
-                              </span>
-                            ) : null}
+                            {" "}
+                            <ReadByMark readBy={reading.read_by} thisDevice={data.this_device} />
                           </li>
                         ))}
                       </ul>
@@ -259,8 +255,8 @@ export function Entity({
                     <>
                       <Cite citation={slot.winner.citation} navigate={navigate} />
                       {slot.winner.read_by ? (
-                        <span className="block text-[color:var(--color-muted)]">
-                          {slot.winner.read_by.sentence}
+                        <span className="block">
+                          <ReadByMark readBy={slot.winner.read_by} thisDevice={data.this_device} />
                         </span>
                       ) : null}
                     </>

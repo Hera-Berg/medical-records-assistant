@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, artifactUrl } from "../api";
 import type { InboxItem, ReviewQueue } from "../types";
-import { Cite, Empty, longDate, TierMark } from "./marks";
+import { Cite, Empty, longDate, ReadByMark, TierMark } from "./marks";
 
 const TIERS = ["high", "medium", "low"] as const;
 
@@ -225,6 +225,7 @@ export function Review({
                     onSelect={() => setCursor(items.findIndex((row) => row.id === item.id))}
                     decide={decide}
                     navigate={navigate}
+                    thisDevice={queue.this_device ?? null}
                   />
                 ))}
               </div>
@@ -254,8 +255,10 @@ function Item({
   onSelect,
   decide,
   navigate,
+  thisDevice,
 }: {
   item: InboxItem;
+  thisDevice: string | null;
   selected: boolean;
   busy: boolean;
   correcting: boolean;
@@ -281,6 +284,9 @@ function Item({
         <span className="font-semibold">{item.name}</span>
         <span className="text-[color:var(--color-muted)]">{item.predicate_label}</span>
         {item.proposed ? <TierMark tier={item.proposed.evidence_tier} /> : null}
+        {item.proposed ? (
+          <ReadByMark readBy={item.proposed.read_by} thisDevice={thisDevice} />
+        ) : null}
         {item.sources_folded > 1 ? (
           <span className="text-[color:var(--color-muted)]">
             {item.sources_folded} documents say this — one decision covers them all
@@ -477,15 +483,6 @@ function Diff({ item }: { item: InboxItem }) {
         <>
           <dt className="text-[color:var(--color-muted)]">Dated</dt>
           <dd>{proposed.occurred_at.exact ? longDate(proposed.occurred_at.iso) : proposed.occurred_at.render}</dd>
-        </>
-      ) : null}
-      {proposed.read_by ? (
-        /* Which model read the page, stated as a fact beside the value you are
-           deciding on. Not a warning and not a grade: the evidence tier says
-           what the document is; this says what read it. */
-        <>
-          <dt className="text-[color:var(--color-muted)]">Read by</dt>
-          <dd className="text-[color:var(--color-muted)]">{proposed.read_by.sentence}</dd>
         </>
       ) : null}
     </dl>
