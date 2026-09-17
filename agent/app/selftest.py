@@ -91,7 +91,37 @@ def run(controller: launcher_mod.Controller, mode: str) -> int:
     return 0 if report["ok"] and stopped else 1
 
 
+#: Everything the app ships so that no message ever tells its owner to install
+#: something. A failed import here is the packaging fault those messages
+#: describe, found by the release job instead of by a person.
+BUNDLED = ("faster_whisper", "ctranslate2", "onnxruntime", "av", "pdfplumber", "pypdfium2", "keyring", "pystray")
+
+
+def _bundled(report, step) -> None:
+    import importlib  # noqa: PLC0415
+
+    started = time.monotonic()
+    missing = []
+    for name in BUNDLED:
+        try:
+            importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 - pystray raises more than ImportError without a desktop
+            if name == "pystray" and sys.platform.startswith("linux"):
+                continue  # needs a desktop session on Linux, which a runner does not have
+            missing.append(f"{name}: {type(exc).__name__}: {exc}")
+    try:
+        import keyring  # noqa: PLC0415
+
+        report["keychain"] = type(keyring.get_keyring()).__module__
+    except Exception as exc:  # noqa: BLE001
+        missing.append(f"keychain backend: {exc}")
+    if missing:
+        raise Failed("bundled libraries did not load: " + "; ".join(missing))
+    step("bundled libraries load", started, ", ".join(BUNDLED))
+
+
 def _drive(controller, mode, report, step) -> None:
+    _bundled(report, step)
     started = time.monotonic()
     _until(lambda: controller.mode != launcher_mod.STARTING, 60, "the app to start")
     if controller.mode != launcher_mod.SETUP:

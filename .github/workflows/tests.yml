@@ -1,0 +1,39 @@
+# The test suite on every platform the app is built for, plus Linux.
+#
+# Until this workflow existed the suite had only ever run on Linux, and code for
+# macOS and Windows was pinned, hash-checked and never executed. The
+# dependencies are installed from the same hash-pinned lock the release build
+# freezes, so what is tested is what ships.
+#
+# Actions are pinned by commit. A release pipeline for an unsigned binary is
+# only as trustworthy as the code it runs, and a tag can be moved.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Install the locked dependencies
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements-app.txt
+          python -m pip install --require-hashes -r packaging/requirements-test.txt
+          python -m pip install --no-deps -e .
+      - name: Run the tests
+        run: python -m pytest -q

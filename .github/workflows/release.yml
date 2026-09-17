@@ -1,0 +1,207 @@
+# Build the desktop app on every platform, check it end to end, and draft a release.
+#
+# On a tag vX.Y.Z matching pyproject.toml's version. The release is a DRAFT: a
+# person reads the per-platform results in its notes before publishing it. A
+# platform whose reader check failed must not reach anyone by default.
+#
+# Unsigned, deliberately and said so in the notes. What this adds instead is
+# checkable: SHA256SUMS.txt beside the files, and a build provenance
+# attestation for each, which records the workflow run and commit that produced
+# it. An attestation is not a signature and does not affect Gatekeeper or
+# SmartScreen; nothing user-facing may call it one.
+#
+# Not bundled: llama-server and model weights. Each check below downloads them
+# through the app's own routes, the size confirmation included — which is the
+# only way the pinned macOS and Windows builds of llama-server have ever run.
+#
+# Intel Macs are not built: onnxruntime (needed by faster-whisper) publishes no
+# macOS x86-64 wheel at the locked version, and shipping older libraries for
+# one platform would ship code the tests never ran. The notes say so.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      reader:
+        description: "Also download and run the reader on each platform (about 4 GB each)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: macos-arm64
+            runner: macos-15
+          - key: windows-x64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUN_READER: ${{ github.event_name == 'push' || inputs.reader }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Work out the version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+              echo "The tag ${GITHUB_REF_NAME} does not match version ${version} in pyproject.toml." >&2
+              exit 1
+            fi
+          else
+            version="${version}-dev.${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Install the locked dependencies
+        run: |
+          python -m pip install --require-hashes -r packaging/requirements-app.txt
+          python -m pip install --require-hashes -r packaging/requirements-build.txt
+          python -m pip install --require-hashes -r packaging/requirements-test.txt
+          python -m pip install --no-deps .
+
+      - name: Run the tests on this platform first
+        run: python -m pytest -q
+
+      - name: Freeze the app
+        env:
+          HEALTH_RECORD_VERSION: ${{ env.VERSION }}
+        run: |
+          python packaging/make_icon.py build/icon.png
+          pyinstaller --noconfirm --distpath dist --workpath build/work packaging/health-record.spec
+
+      - name: Make the disk image (macOS)
+        if: runner.os == 'macOS'
+        run: packaging/make_dmg.sh "dist/Health Record.app" "out/Health-Record-${VERSION}-${{ matrix.key }}.dmg"
+
+      - name: Make the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" "/DSourceDir=$PWD\dist\Health Record" "/DOutputDir=$PWD\out" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The checks run the app out of the file people download: mounted from the
+      # disk image on macOS, installed by the installer on Windows.
+      - name: Put the download where a person would (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach -nobrowse -mountpoint /Volumes/HealthRecord out/*.dmg
+          cp -R "/Volumes/HealthRecord/Health Record.app" "$RUNNER_TEMP/"
+          hdiutil detach /Volumes/HealthRecord
+          echo "APP=$RUNNER_TEMP/Health Record.app/Contents/MacOS/Health Record" >> "$GITHUB_ENV"
+
+      - name: Put the download where a person would (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem out\*.exe | Select-Object -First 1
+          Start-Process -Wait -FilePath $installer.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/NORESTART"
+          "APP=$env:LOCALAPPDATA\Programs\Health Record\Health Record.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Check the app end to end
+        id: lifecycle
+        continue-on-error: true
+        run: |
+          reader=""
+          if [ "${RUN_READER}" = "true" ]; then reader="--reader"; fi
+          python packaging/lifecycle.py --app "$APP" --work "$RUNNER_TEMP/lifecycle" $reader --out "results/${{ matrix.key }}/results.json"
+
+      - name: Record the build's provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/*
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-${{ matrix.key }}
+          path: |
+            out/*
+            results/
+          if-no-files-found: error
+
+      # For reading a failure. The reader's log is never verbose, so it holds no
+      # prompts; the app's log is scrubbed of keys; and these vaults are empty.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: logs-${{ matrix.key }}
+          path: |
+            ${{ runner.temp }}/lifecycle/**/*.log
+            ${{ runner.temp }}/lifecycle/**/report.json
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    if: always() && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: build-*
+          path: artifacts
+
+      - name: Gather the files and their checksums
+        run: |
+          mkdir -p assets results
+          for dir in artifacts/build-*; do
+            key="${dir#artifacts/build-}"
+            cp "$dir"/out/* assets/ 2>/dev/null || true
+            mkdir -p "results/$key"
+            cp "$dir/results/$key/results.json" "results/$key/" 2>/dev/null || true
+          done
+          (cd assets && sha256sum * > SHA256SUMS.txt)
+          cat assets/SHA256SUMS.txt
+
+      - name: Record the checksums' provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: assets/SHA256SUMS.txt
+
+      - name: Write the notes from what was checked
+        run: |
+          onnx=$(sed -n 's/^onnxruntime==\([^ ]*\).*/\1/p' packaging/requirements-app.txt)
+          python packaging/release_notes.py \
+            --version "${GITHUB_REF_NAME#v}" \
+            --results results --assets assets \
+            --repository "${GITHUB_REPOSITORY}" \
+            --onnxruntime "$onnx" \
+            --out notes.md
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" assets/* \
+            --draft \
+            --title "Health Record ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md

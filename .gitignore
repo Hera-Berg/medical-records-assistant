@@ -9,3 +9,7 @@ health_agent.egg-info/
 # committed on purpose — see frontend/README.md — but nothing here is.
 frontend/node_modules/
 frontend/.vite/
+
+# PyInstaller output and its work folder. Built by the release workflow.
+build/
+dist/
