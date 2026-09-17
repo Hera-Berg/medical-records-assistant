@@ -30,7 +30,9 @@ There is no combined score.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import statistics
+import time
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -128,6 +130,10 @@ class FixtureResult:
     readable: bool = True
     expected_readable: bool = True
     error: str | None = None
+    #: Wall time reading this fixture took, and whether it was a document (an
+    #: image or a PDF) rather than a recording — speed is quoted per document.
+    elapsed_s: float | None = None
+    is_document: bool = False
 
     def _count(self, outcome: str, critical: bool = True) -> int:
         return sum(
@@ -181,6 +187,19 @@ class Report:
     model: str = ""
     tier: str = "endpoint"
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: Generation speeds the reader's own server reported, one per answer.
+    generation_rates: tuple[float, ...] = ()
+
+    def seconds_per_document(self) -> int | None:
+        """The median wall time of the documents that were read, to the second."""
+        times = sorted(
+            r.elapsed_s for r in self.results
+            if r.is_document and r.elapsed_s is not None and r.error is None
+        )
+        return round(statistics.median(times)) if times else None
+
+    def generation_tokens_per_second(self) -> float | None:
+        return round(statistics.median(self.generation_rates), 1) if self.generation_rates else None
 
     @property
     def correct(self) -> int:
@@ -213,6 +232,10 @@ class Report:
             "model": self.model,
             "tier": self.tier,
             "ok": self.ok,
+            "timing": {
+                "seconds_per_document": self.seconds_per_document(),
+                "generation_tokens_per_second": self.generation_tokens_per_second(),
+            },
             "critical": {
                 "correct": self.correct,
                 "abstained": self.abstained,
@@ -237,6 +260,7 @@ class Report:
                         for s in r.unexpected
                     ],
                     "error": r.error,
+                    "elapsed_s": r.elapsed_s,
                 }
                 for r in self.results
             ],
@@ -409,8 +433,11 @@ def run_corpus(
     from ..errors import HealthAgentError
 
     results: list[FixtureResult] = []
+    rates: list[float] = []
     model = client.settings.model
     for fixture in fixtures:
+        started = time.monotonic()
+        before = len(results)
         try:
             data = fixture.bytes()
             if fixture.mime.startswith("audio/"):
@@ -434,15 +461,33 @@ def run_corpus(
             answers = []
             for page in document.pages:
                 prompt = prompts_mod.build(page, total_pages=len(document.pages))
-                answers.append(
-                    reader_mod.read(client, prompt, mime=fixture.mime, locale=locale).extraction
-                )
+                read = reader_mod.read(client, prompt, mime=fixture.mime, locale=locale)
+                rates.extend(_rates(read.turns))
+                answers.append(read.extraction)
             extraction = merge(answers)
             results.append(_score_extraction(fixture, extraction))
         except HealthAgentError as exc:
             results.append(score(fixture, [], error=str(exc)))
+        if len(results) > before:
+            results[-1] = replace(
+                results[-1],
+                elapsed_s=round(time.monotonic() - started, 1),
+                is_document=not fixture.mime.startswith("audio/"),
+            )
     runtime = (getattr(client, "runtime", None) or {}).get("kind", "endpoint")
-    return report(results, model=model, tier=runtime)
+    return Report(
+        results=tuple(results), model=model, tier=runtime, generation_rates=tuple(rates)
+    )
+
+
+def _rates(turns) -> list[float]:
+    found = []
+    for turn in turns:
+        timings = turn.completion.raw.get("timings") if isinstance(turn.completion.raw, dict) else None
+        rate = timings.get("predicted_per_second") if isinstance(timings, dict) else None
+        if isinstance(rate, (int, float)) and not isinstance(rate, bool) and rate > 0:
+            found.append(float(rate))
+    return found
 
 
 def _score_extraction(fixture, extraction) -> FixtureResult:

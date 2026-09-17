@@ -907,6 +907,9 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
             hotwords=transcriber.hotwords(),
         )
 
+    if args.record:
+        _record_measurement(report, out)
+
     if args.json:
         json.dump(report.to_dict(), out, indent=2, sort_keys=True)
         print("", file=out)
@@ -951,15 +954,17 @@ def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
             return EXIT_PROBLEMS
         current = choice_mod.load(vault)
         minutes = current.sleep_after_minutes if args.sleep_after is None else args.sleep_after
-        chosen = choice_mod.save(args.where, minutes)
+        chosen = choice_mod.save(args.where, minutes, args.model or current.model)
         print(f"reads on  {choice_mod.LABELS[chosen.reads_on]} (this machine only; config.toml is unchanged)", file=out)
+        if chosen.reads_here:
+            print(f"model     {manifest.vision_model(chosen.model).title}", file=out)
         if chosen.reads_here:
             print(f"sleeps    after {chosen.sleep_after_minutes} idle minutes" if chosen.sleep_after_minutes else "sleeps    never", file=out)
         return EXIT_OK
 
     platform = platforms.current()
     current = choice_mod.load(vault)
-    bundles = manifest.required(platform, current.reads_here)
+    bundles = manifest.required(platform, current.reads_here, current.model)
     store = Store(vault_root=vault.root)
 
     if action == "download":
@@ -997,6 +1002,8 @@ def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
 
     print(f"reads on  {choice_mod.LABELS[current.reads_on]}"
           + ("" if current.source == "file" else " (the default; not yet written)"), file=out)
+    if current.reads_here:
+        print(f"model     {manifest.vision_model(current.model).title}", file=out)
     label = platforms.LABELS.get(platform or "", "a computer with no pinned build")
     verified = platform in platforms.VERIFIED
     print(f"machine   {label}" + ("" if verified else " — pinned but UNVERIFIED: never run in development"), file=out)
@@ -1013,6 +1020,64 @@ def cmd_reader(args: argparse.Namespace, out: TextIO) -> int:
         if status.log_path:
             print(f"log       {status.log_path}", file=out)
     return EXIT_OK
+
+
+def _machine_description() -> str:
+    """"an Intel Core Ultra 7 155U machine" — the processor, said plainly."""
+    import platform as platform_mod  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
+    name = ""
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("model name"):
+                    name = line.split(":", 1)[1].strip()
+                    break
+    except OSError:
+        name = platform_mod.processor()
+    name = re.sub(r"\((R|TM)\)", "", name or "an unnamed processor")
+    name = re.sub(r"\s+", " ", name).strip()
+    article = "an" if name[:1].lower() in "aeiou" else "a"
+    return f"{article} {name} machine"
+
+
+def _record_measurement(report, out: TextIO) -> None:
+    """Write this run into measurements.json, which the model list shows.
+
+    A developer step: the file is part of the package and is committed. Only a
+    reader on this computer is recorded — a remote box's speed says nothing
+    about anyone else's machine.
+    """
+    from datetime import date  # noqa: PLC0415
+
+    from .extract import prompts as prompts_mod  # noqa: PLC0415
+    from .runtime import measurements, platforms  # noqa: PLC0415
+
+    if report.tier != "bundled":
+        print("record    skipped — only the reader on this computer is recorded", file=out)
+        return
+    today = date.today().isoformat()
+    seconds = report.seconds_per_document()
+    measurements.record(
+        report.model,
+        measurements.Accuracy(
+            correct=report.correct,
+            abstained=report.abstained,
+            wrong=report.wrong,
+            fixtures=len(report.results),
+            prompt_version=prompts_mod.PROMPT_VERSION,
+            measured=today,
+        ),
+        platforms.current(),
+        measurements.Speed(
+            seconds_per_document=seconds,
+            generation_tokens_per_second=report.generation_tokens_per_second(),
+            machine=_machine_description(),
+            measured=today,
+        ) if seconds is not None else None,
+    )
+    print(f"recorded  {report.model} in {measurements.PATH}", file=out)
 
 
 def server_host_default() -> str:
@@ -1044,6 +1109,8 @@ def _add_vault(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from .runtime import manifest as runtime_manifest  # noqa: PLC0415 - light, and only here
+
     parser = argparse.ArgumentParser(
         prog="health-agent",
         description="Patient-held health record agent.",
@@ -1369,6 +1436,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="with `download`: start it. Without this, it only says what it would fetch",
     )
     reader.add_argument(
+        "--model", default=None,
+        choices=[model.id for model in runtime_manifest.VISION_MODELS],
+        help="with `use`: which model reads on this computer",
+    )
+    reader.add_argument(
         "--sleep-after", type=int, default=None, dest="sleep_after",
         help="with `use`: idle minutes before the reader unloads (0 = never)",
     )
@@ -1399,6 +1471,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="with --speech, skip the unbiased comparison run (roughly twice as fast)",
     )
     evaluate.add_argument("--json", action="store_true", help="machine-readable output")
+    evaluate.add_argument(
+        "--record",
+        action="store_true",
+        help=(
+            "write the result into agent/runtime/measurements.json, which the "
+            "model list in Settings shows. A developer step; commit the file"
+        ),
+    )
     _add_vault(evaluate)
     evaluate.set_defaults(func=cmd_eval)
     return parser
