@@ -908,7 +908,8 @@ def cmd_eval(args: argparse.Namespace, out: TextIO) -> int:
         )
 
     if args.record:
-        _record_measurement(report, out)
+        # Beside the report, never inside it: under --json the stream must parse.
+        _record_measurement(report, sys.stderr if args.json else out)
 
     if args.json:
         json.dump(report.to_dict(), out, indent=2, sort_keys=True)
