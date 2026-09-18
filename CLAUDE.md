@@ -434,6 +434,27 @@ newline leak "closed by construction" and it was not, on the first machine that 
 `agent/files.py` is the one place that spells it out and `tests/test_writes_are_binary.py` walks the
 package for the next one.
 
+**A raw artefact was modified on Windows, and invariant 1 could not see it.** The staging file every
+ingested document is written through was one of the six, so a photograph or a PDF had every `0x0A`
+byte in it rewritten on the way into `raw/` — a corrupted document, with a hash that no longer matched
+the bytes that were read. "The original, never modified" is the first thing this file says, and it was
+false on one platform for every artefact ingested there.
+
+**The reason it survived being specified against is worth more than the fix.** A spec that says
+"binary writes with explicit `\n`" cannot be checked by reading the call sites:
+`os.open(path, os.O_WRONLY | os.O_CREAT)` is correct-looking code that is wrong on exactly one
+platform, because the default mode is a property of the platform rather than of the call. Where that
+is true, the guarantee has to be enforced by a mechanism — one module that owns writing — and checked
+by a test that walks the package, not by review.
+
+**Three guarantees have now been stated at their widest and tested at their narrowest**: the
+credential scan that walked only the copied subtree, the redaction filter attached to the `agent`
+logger while every record came from its children, and binary writes. Each passed a green suite while
+the promise in this file was false. When a guarantee quantifies over something — every logger, every
+file, every platform — the test exercises the widest case or it proves nothing, and a skipped test is
+not a passing one. **Walkers that enforce these read the AST, never the text**: the first version of
+the `strftime` walker reported the comments explaining why `%B` is forbidden.
+
 **Log records are scrubbed where they are created.** A filter on the `agent` logger never saw records
 from `agent.runtime` or `agent.llm.client`, which propagate past it; the log record factory scrubs every
 record regardless of logger or handler.
