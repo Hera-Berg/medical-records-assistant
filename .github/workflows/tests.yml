@@ -54,6 +54,14 @@ jobs:
       - name: Run the tests
         run: python -m pytest -v --timeout=120 -rf --junit-xml=ci-report.xml -o junit_logging=all --basetemp=pytest-tmp
 
+      # Positively, by name: passed, failed, skipped or never collected. A
+      # guarantee that quietly skipped itself on one platform reads exactly like
+      # one that passed, and "not in the failure list" is not evidence.
+      - name: Say what the invariant tests did
+        if: always()
+        continue-on-error: true
+        run: python packaging/ci_invariants.py ci-report.xml
+
       # Annotations are readable without a token; run logs are not. Whoever
       # triages a failure on a platform they do not have should not have to be
       # handed the log first.
