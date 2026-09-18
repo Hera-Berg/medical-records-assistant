@@ -18,6 +18,7 @@ Three kinds of fact, and each says where it came from:
 """
 
 from __future__ import annotations
+from .. import files
 
 import json
 from dataclasses import dataclass, field
@@ -112,4 +113,4 @@ def record(
     entry.setdefault("known_failures", [])
     models[alias] = entry
     body = json.dumps({"models": models}, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    path.write_text(body, encoding="utf-8")
+    files.write_text(path, body, 0o644)

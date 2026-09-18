@@ -31,6 +31,11 @@ INVARIANTS = (
     "test_rebuild_deterministic.py::test_rebuild_is_identical_under_another_timezone_and_locale",
     "test_rebuild_deterministic.py::test_generated_files_use_lf_endings_and_end_with_one_newline",
     "test_rebuild_deterministic.py::test_rebuild_needs_nothing_but_raw_and_events",
+    # These two need no second locale, so they hold the same guarantee on a
+    # machine where the one above cannot demonstrate it.
+    "test_rebuild_deterministic.py::test_month_names_come_from_our_own_table_whatever_the_locale",
+    "test_rebuild_deterministic.py::test_nothing_formats_a_date_through_a_locale",
+    "test_writes_are_binary.py::test_nothing_in_the_package_writes_through_text_mode",
     "test_correction_survives_reextraction.py::test_correction_survives_reextraction",
     "test_consequence_gate.py::test_high_consequence_never_autoapplies",
     "test_medication_lifecycle.py::test_no_silent_drop",

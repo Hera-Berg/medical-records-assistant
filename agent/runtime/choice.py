@@ -19,6 +19,7 @@ set up for a different computer.
 """
 
 from __future__ import annotations
+from ..files import O_BINARY
 
 import json
 import os
@@ -156,7 +157,7 @@ def save(
         sort_keys=True,
     ) + "\n"
     temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | O_BINARY, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(body)
     os.replace(temporary, target)

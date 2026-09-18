@@ -21,6 +21,7 @@ between machines for reasons invisible in the log.
 """
 
 from __future__ import annotations
+from ..files import O_BINARY
 
 import os
 from dataclasses import dataclass, field
@@ -137,7 +138,7 @@ def _write_atomic(path: Path, data: bytes) -> None:
     """Replace *path* with *data*, in binary, or leave it untouched."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.tmp")
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | O_BINARY, 0o600)
     try:
         written = 0
         while written < len(data):

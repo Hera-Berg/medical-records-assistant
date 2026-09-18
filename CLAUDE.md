@@ -423,6 +423,17 @@ left for a person who does not work with files for a living, and a Dropbox user 
 It is not phase 12 work and it is not solved: the app can see the fork, so it could offer to show both,
 say which is which, and keep the one chosen. Written down here rather than left as folklore.
 
+**Bytes are bytes: every descriptor this program writes through is opened `O_BINARY`.** Windows opens
+files in text mode by default — `os.open` included, where the translation happens inside `os.write` —
+so code passing only `bytes` still had every `\n` written as `\r\n` there. The event log, the wiki,
+the sidecars and the staging file for every raw artefact all went through it: a shard written on
+Windows differed byte for byte from the same shard anywhere else, two machines sharing a folder
+rebuilt the wiki into different bytes so the writer's manifest saw every file as changed, and a
+photograph staged through a text-mode descriptor had every `0x0A` in it rewritten. Phase 3 called the
+newline leak "closed by construction" and it was not, on the first machine that produces CRLF.
+`agent/files.py` is the one place that spells it out and `tests/test_writes_are_binary.py` walks the
+package for the next one.
+
 **Log records are scrubbed where they are created.** A filter on the `agent` logger never saw records
 from `agent.runtime` or `agent.llm.client`, which propagate past it; the log record factory scrubs every
 record regardless of logger or handler.
@@ -928,6 +939,12 @@ record whether it holds one and already says so when it does not.
 ## Testing
 
 - `test_rebuild_deterministic` — delete `wiki/` and `.agent/`, replay, assert byte-identical.
+  Its legs cover the three environmental leaks separately — the clock, the newlines, the locale —
+  and a machine that cannot set a second locale checks the last one without one, rather than
+  skipping. CI reports every invariant by name on every run: passed, failed, skipped or never
+  collected. A skipped guarantee reads exactly like one that held, which is how the locale leg went
+  untested on two platforms for eleven phases.
+- `test_writes_are_binary` — no writer in the package goes through text mode. See "bytes are bytes".
 - `test_correction_survives_reextraction` — the correction wins regardless of event ordering.
 - `test_high_consequence_never_autoapplies` — property test over generated claim streams; no
   confidence value and no elapsed time causes a high-tier claim to reach the wiki unconfirmed.

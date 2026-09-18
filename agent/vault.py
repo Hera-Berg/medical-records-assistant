@@ -11,6 +11,7 @@ outside the vault, so both survive the folder being moved into a sync client.
 """
 
 from __future__ import annotations
+from . import files as files_mod
 
 import os
 from dataclasses import dataclass
@@ -121,7 +122,7 @@ def write_pointer(root: Path) -> Path:
         os.chmod(pointer.parent, 0o700)
     except OSError:
         pass
-    pointer.write_text(str(root) + "\n", encoding="utf-8")
+    files_mod.write_text(pointer, str(root) + "\n", 0o600)
     return pointer
 
 
@@ -153,7 +154,7 @@ def is_writable(path: Path, probe: bool = False) -> bool:
     marker = path / ".agent" / ".write-probe"
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("", encoding="utf-8")
+        marker.write_bytes(b"")
         marker.unlink()
         return True
     except OSError:

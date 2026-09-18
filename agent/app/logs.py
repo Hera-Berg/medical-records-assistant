@@ -39,7 +39,9 @@ def to_file(replace_streams: bool) -> Path:
     if root.level == logging.NOTSET or root.level > logging.INFO:
         root.setLevel(logging.INFO)
     if replace_streams or sys.stdout is None or sys.stderr is None:
-        stream = open(target, "a", encoding="utf-8", buffering=1)  # noqa: SIM115 - lives as long as the process
+        stream = open(  # noqa: SIM115 - lives as long as the process
+            target, "a", encoding="utf-8", buffering=1, newline="\n"
+        )
         sys.stdout = stream
         sys.stderr = stream
     return target

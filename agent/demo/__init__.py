@@ -32,6 +32,7 @@ distinction the four-timestamp table exists to hold.
 """
 
 from __future__ import annotations
+from .. import files
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -270,8 +271,8 @@ def seed(
     _require_empty(root)
 
     vault_mod.scaffold(root)
-    (root / CONFIG_FILENAME).write_text(demo_config(endpoint), encoding="utf-8")
-    (root / MARKER_FILENAME).write_text(marker_text(endpoint), encoding="utf-8")
+    files.write_text(root / CONFIG_FILENAME, demo_config(endpoint), 0o644)
+    files.write_text(root / MARKER_FILENAME, marker_text(endpoint), 0o644)
 
     vault = Vault.open(root, identity=_identity())
 

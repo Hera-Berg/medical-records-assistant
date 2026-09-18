@@ -20,6 +20,7 @@ against the vault root on construction, after symlink resolution.
 """
 
 from __future__ import annotations
+from .. import files
 
 import hashlib
 import json
@@ -101,7 +102,7 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         target = self.root / VERIFIED_FILENAME
         temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
-        temporary.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", "utf-8")
+        files.write_text(temporary, json.dumps(records, indent=2, sort_keys=True) + "\n")
         os.replace(temporary, target)
 
     def _key(self, bundle: Bundle, item: RemoteFile) -> str:

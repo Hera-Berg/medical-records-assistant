@@ -13,6 +13,7 @@ into a program that is not the record.
 """
 
 from __future__ import annotations
+from .. import files
 
 import contextlib
 import json
@@ -67,7 +68,7 @@ class Instance:
             return
         body = json.dumps({"pid": os.getpid(), "url": url}) + "\n"
         temporary = self.address_path.with_name(f"{ADDRESS_FILENAME}.{os.getpid()}.tmp")
-        temporary.write_text(body, encoding="utf-8")
+        files.write_text(temporary, body)
         os.replace(temporary, self.address_path)
 
     def running_address(self) -> str | None:

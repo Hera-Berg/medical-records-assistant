@@ -22,6 +22,7 @@ reader" is a result from a run on each platform rather than a sentence.
 """
 
 from __future__ import annotations
+from .. import files
 
 import json
 import os
@@ -224,5 +225,5 @@ def _until(condition, seconds: float, what: str) -> None:
 def _write(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    files.write_text(temporary, json.dumps(report, indent=2) + "\n")
     os.replace(temporary, path)

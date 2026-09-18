@@ -10,6 +10,7 @@ bytes to the end of a shard.
 """
 
 from __future__ import annotations
+from ..files import O_BINARY
 
 import json
 import os
@@ -183,7 +184,7 @@ def append(events_dir: Path, event: Event, profile: SyncProfile) -> Path:
     torn = _ends_without_newline(path)
     data = (b"\n" + line) if torn else line
 
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | O_BINARY, 0o600)
     try:
         # Where this append starts, so the readback knows what to look at.
         offset = os.lseek(fd, 0, os.SEEK_END)

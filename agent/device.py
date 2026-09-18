@@ -12,6 +12,7 @@ of this folder, not an edge case.
 """
 
 from __future__ import annotations
+from .files import O_BINARY
 
 import json
 import os
@@ -167,7 +168,7 @@ def issue(label: str | None = None, path: Path | None = None) -> DeviceIdentity:
 
     body = json.dumps(identity, indent=2, sort_keys=True) + "\n"
     try:
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_BINARY, 0o600)
     except FileExistsError:
         raise DeviceIdentityError(
             f"a device identity already exists at {target}; delete it deliberately "

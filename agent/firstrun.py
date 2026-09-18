@@ -13,6 +13,7 @@ inside the folder would have been removed by the first.
 """
 
 from __future__ import annotations
+from . import files
 
 import contextlib
 from pathlib import Path
@@ -33,10 +34,10 @@ def pending() -> bool:
 def mark() -> None:
     target = path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
+    files.write_text(
+        target,
         "The health record app asks which computer reads documents the next time "
         "it opens, then removes this file.\n",
-        encoding="utf-8",
     )
 
 

@@ -52,6 +52,7 @@ module enforces rather than one a server's idle timer happens to agree with.
 """
 
 from __future__ import annotations
+from .. import files as files_mod
 
 import atexit
 import contextlib
@@ -743,7 +744,7 @@ class Reader:
 
     def _write_pidfile(self, pid: int, binary: Path) -> None:
         body = json.dumps({"pid": pid, "binary": str(binary)}) + "\n"
-        (self.store.root / PID_FILENAME).write_text(body, encoding="utf-8")
+        files_mod.write_text(self.store.root / PID_FILENAME, body)
 
     def _remove_pidfile(self) -> None:
         with contextlib.suppress(OSError):

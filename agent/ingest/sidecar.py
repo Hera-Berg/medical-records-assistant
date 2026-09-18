@@ -12,6 +12,7 @@ never an edit here.
 """
 
 from __future__ import annotations
+from ..files import O_BINARY
 
 import json
 import os
@@ -110,7 +111,7 @@ def artifact_name_of(sidecar_name: str) -> str | None:
 def write(path: Path, data: dict[str, Any]) -> None:
     """Write a sidecar at *path*, replacing nothing that already exists."""
     body = render(data)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SIDECAR_MODE)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | O_BINARY, SIDECAR_MODE)
     with os.fdopen(fd, "wb") as handle:
         handle.write(body)
         handle.flush()
