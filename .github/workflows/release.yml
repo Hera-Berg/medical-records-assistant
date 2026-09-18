@@ -81,7 +81,7 @@ jobs:
           python -m pip install --no-deps .
 
       - name: Run the tests on this platform first
-        run: python -m pytest -q
+        run: python -m pytest -v --timeout=120 -rf
 
       - name: Freeze the app
         env:

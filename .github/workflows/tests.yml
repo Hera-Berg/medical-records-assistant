@@ -5,6 +5,9 @@
 # dependencies are installed from the same hash-pinned lock the release build
 # freezes, so what is tested is what ships.
 #
+# A test that hangs on one platform must fail there with a traceback, not sit
+# until the job's time limit: see the pytest flags below.
+#
 # Actions are pinned by commit. A release pipeline for an unsigned binary is
 # only as trustworthy as the code it runs, and a tag can be moved.
 
@@ -16,6 +19,14 @@ on:
 
 permissions:
   contents: read
+
+# A newer push supersedes an older run on the same branch. Without this a hung
+# job keeps a runner for its whole time limit while the run that matters queues
+# behind it. Deliberately not on the release workflow: a build that is producing
+# something people will download is never cancelled from under itself.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -35,5 +46,10 @@ jobs:
           python -m pip install --require-hashes -r packaging/requirements-app.txt
           python -m pip install --require-hashes -r packaging/requirements-test.txt
           python -m pip install --no-deps -e .
+      # -v names each test as it starts, so a hang is attributable from the log;
+      # --timeout turns one into a failure with a traceback instead of a job
+      # that burns its 45 minutes and says nothing; -rf lists what failed at the
+      # end, where it can be read without scrolling. The slowest test here takes
+      # under four seconds on a developer machine.
       - name: Run the tests
-        run: python -m pytest -q
+        run: python -m pytest -v --timeout=120 -rf
