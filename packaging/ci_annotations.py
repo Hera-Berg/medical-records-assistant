@@ -24,6 +24,8 @@ from pathlib import Path
 #: see is the state this whole file exists to end. The rest carry detail.
 LIMIT = 9
 EXCERPT = 600
+#: How much of what the failing test logged is carried with it.
+CAPTURED = 900
 
 
 def _utf8_stdout() -> None:
@@ -71,7 +73,17 @@ def main(path: Path) -> int:
                 continue
             where = f"{case.get('classname', '')}::{case.get('name', '')}".strip(":")
             message = (found.get("message") or "") + "\n" + (found.text or "")
-            problems.append((kind, where, message.strip()[:EXCERPT]))
+            # What the code under test logged while failing, which is where a
+            # process that would not start says what stopped it. Kept short and
+            # last: the assertion is what a reader wants first.
+            captured = "\n".join(
+                (section.text or "").strip()
+                for name in ("system-out", "system-err")
+                for section in case.findall(name)
+            ).strip()
+            if captured:
+                message = f"{message.strip()[:EXCERPT]}\n--- logged while failing ---\n{captured[-CAPTURED:]}"
+            problems.append((kind, where, message.strip()[:EXCERPT + CAPTURED]))
 
     if not problems:
         print("::error title=No failing tests in the report::the step failed but every test passed; the failure is in the job, not the suite")

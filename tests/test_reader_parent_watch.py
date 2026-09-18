@@ -32,12 +32,31 @@ def _wait_gone(proc: subprocess.Popen, seconds: float) -> bool:
     return False
 
 
+#: Long enough that ``ps`` truncates the command line at any ordinary terminal
+#: width, because the real path is: on macOS the reader lives under
+#: ``~/Library/Application Support/health-agent/files/<bundle>/``. A stand-in at
+#: a short path let the watcher pass while the truncated comparison it depends
+#: on was broken.
+DEEP = "a-path-as-long-as-application-support/health-agent/files/llama-bin-x64"
+
+
 @pytest.fixture
-def reader_binary(tmp_path):
-    """A copy of `sleep` at an absolute path of its own, standing in for llama-server."""
-    source = shutil.which("sleep")
-    target = tmp_path / "llama-server"
-    shutil.copy2(source, target)
+def reader_binary(tmp_path, monkeypatch):
+    """A copy of `sleep`, standing in for llama-server, at a deliberately long path.
+
+    ``shutil.copy`` rather than ``copy2``: macOS marks system binaries
+    restricted, and copying their flags is refused outright.
+
+    ``COLUMNS`` is set narrow on purpose. pytest exports it, ``ps`` obeys it,
+    and a watcher that compares a truncated command line against a full path
+    silently stops stopping anything.
+    """
+    monkeypatch.setenv("COLUMNS", "40")
+    folder = tmp_path / DEEP
+    folder.mkdir(parents=True)
+    target = folder / "llama-server"
+    shutil.copy(shutil.which("sleep"), target)
+    assert len(str(target)) > 80, "the point of this path is that ps would truncate it"
     return target
 
 

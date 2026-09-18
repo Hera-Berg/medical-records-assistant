@@ -108,3 +108,45 @@ def test_known_types_get_a_fixed_extension():
     # and would make stored filenames depend on the machine that ingested.
     assert mime.extension_for("image/jpeg") == "jpg"
     assert mime.extension_for("audio/mp4") == "m4a"
+
+
+# --- the same bytes land at the same filename on every machine ---------------
+
+
+#: (head, filename, extension). Fixed answers, whatever the host's mime
+#: database knows: `mimetypes` has DICOM on Linux and not on macOS, and the
+#: first version of this code stored `study.dcm` as `study.bin` there.
+STABLE_EXTENSIONS = [
+    (b"%PDF-1.7\n", "letter.pdf", "pdf"),
+    (b"\xff\xd8\xff\xe0", "photo.jpeg", "jpg"),
+    (b"\x89PNG\r\n\x1a\n", "scan.PNG", "png"),
+    (b"\x00\x01\x02\x03", "study.dcm", "dcm"),
+    (b"\x00\x01\x02\x03", "export.vendor", "vendor"),
+    # Past what this project treats as a plain extension (eight characters), so
+    # it becomes bin — on every platform, which is the property under test.
+    (b"\x00\x01\x02\x03", "export.vendorformat", "bin"),
+    (b"\x00\x01\x02\x03", "no-extension", "bin"),
+    (b"\x00\x01\x02\x03", "weird.name with spaces", "bin"),
+    (b"hello there\n", "note.md", "md"),
+]
+
+
+@pytest.mark.parametrize("head, filename, expected", STABLE_EXTENSIONS)
+@pytest.mark.parametrize(
+    "guess",
+    [
+        pytest.param(lambda name: (None, None), id="database-knows-nothing"),
+        pytest.param(lambda name: ("application/dicom", None), id="database-knows-dicom"),
+        pytest.param(lambda name: ("application/x-invented", None), id="database-invents-a-type"),
+    ],
+)
+def test_the_extension_does_not_depend_on_the_host_mime_database(
+    head, filename, expected, guess, monkeypatch
+):
+    """A vault synced between a Mac and a Linux box must not hold one document
+    under two names."""
+    monkeypatch.setattr(mime.mimetypes, "guess_type", guess)
+
+    detected = mime.detect(head, filename=filename)
+
+    assert detected.extension(filename) == expected

@@ -81,7 +81,7 @@ jobs:
           python -m pip install --no-deps .
 
       - name: Run the tests on this platform first
-        run: python -m pytest -v --timeout=120 -rf --junit-xml=ci-report.xml --basetemp=pytest-tmp
+        run: python -m pytest -v --timeout=120 -rf --junit-xml=ci-report.xml -o junit_logging=all --basetemp=pytest-tmp
 
       - name: Say what failed, where it can be read without a token
         if: failure()

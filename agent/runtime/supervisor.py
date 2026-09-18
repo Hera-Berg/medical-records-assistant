@@ -548,14 +548,25 @@ class Reader:
         ).start()
 
         deadline = self._clock() + self._start_timeout_s
+        health: str | None = "not attempted: the listening line was not printed"
         while self._clock() < deadline:
             if proc.poll() is not None:
                 return self._launch_failed(proc)
-            if self._listening.is_set() and _health_ok(port):
-                break
+            if self._listening.is_set():
+                health = _health_problem(port)
+                if health is None:
+                    break
             time.sleep(0.25)
         else:
             self._terminate()
+            # What this app concluded, as opposed to what the child printed:
+            # the reader's own log can end with "server is listening" while
+            # nothing here could reach it, and then "could not start" sends
+            # someone to read a log that looks fine.
+            log.warning(
+                "the reader did not become usable within %.0fs on port %s: %s",
+                self._start_timeout_s, port, health,
+            )
             self._set(states.STOPPED, "failed-to-start")
             return "failed"
 
@@ -570,6 +581,7 @@ class Reader:
 
         reason = self._check_identity(port, key)
         if reason is not None:
+            log.warning("the reader on port %s is not the pinned one: %s", port, reason)
             self._terminate()
             self._set(states.STOPPED, reason)
             return "failed"
@@ -785,11 +797,23 @@ def _port_free(port: int) -> bool:
 
 
 def _health_ok(port: int) -> bool:
+    return _health_problem(port) is None
+
+
+def _health_problem(port: int) -> str | None:
+    """``None`` when the reader answers ``/health``, else why it did not.
+
+    The sentence is for this app's own log. It is never shown to anyone: a
+    person is told the reader could not start, and the states module writes
+    that.
+    """
     try:
         response = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
-    except httpx.HTTPError:
-        return False
-    return response.status_code == 200
+    except httpx.HTTPError as exc:
+        return f"{type(exc).__name__}: {exc}"
+    if response.status_code != 200:
+        return f"answered HTTP {response.status_code}"
+    return None
 
 
 def _exit_reason(returncode: int | None, starting: bool) -> str:
@@ -818,14 +842,24 @@ def _tail(path: Path, limit: int = 8192) -> str:
 #: The command line rather than the process name is compared, because macOS and
 #: Linux truncate and spell ``comm`` differently while both print the full
 #: ``command`` as it was launched — with an absolute path, here.
+#:
+#: **``ps`` truncates to the terminal width**, and takes that width from
+#: ``COLUMNS`` when it is set. The reader's path on macOS —
+#: ``~/Library/Application Support/health-agent/files/…`` — is comfortably past
+#: eighty characters, so a truncated line never matched the binary and the
+#: watcher left the reader running: silent in testing, silent in use, and
+#: exactly the guarantee this script exists to make. ``COLUMNS`` is cleared and
+#: ``-ww`` asks for unlimited width, which both ``procps`` and BSD ``ps``
+#: understand.
 PARENT_WATCH = r"""
+unset COLUMNS
 parent=$1 child=$2 binary=$3
 while kill -0 "$parent" 2>/dev/null; do
   kill -0 "$child" 2>/dev/null || exit 0
   sleep 2
 done
 ours() {
-  case "$(ps -p "$child" -o command= 2>/dev/null)" in
+  case "$(ps -ww -p "$child" -o command= 2>/dev/null)" in
     "$binary"*) return 0 ;;
   esac
   return 1

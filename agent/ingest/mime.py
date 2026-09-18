@@ -154,8 +154,18 @@ def extension_for(mime: str, filename: str | None = None) -> str:
     plain one. A DICOM study or a vendor export stored as ``.bin`` would need
     this app to work out what it is, and the folder has to stay legible without
     it; ``.bin`` is the last resort, not the default for anything unfamiliar.
+
+    **The answer never depends on the host's mime database.** Whether
+    :func:`detect` recognised a ``.dcm`` file as ``application/dicom`` (Linux
+    has it, macOS does not) or fell back to ``application/octet-stream``, the
+    file is stored as ``study.dcm`` either way. It has to be: the same document
+    added on a laptop and on a desktop that share one folder would otherwise sit
+    in ``raw/`` under two names, and the filename grammar would stop being a
+    grammar. So the unknown type is not treated as a type with an extension —
+    it falls through to the name the file arrived with, exactly as any other
+    unrecognised type does.
     """
-    known = _EXTENSIONS.get(mime)
+    known = None if mime == OCTET_STREAM else _EXTENSIONS.get(mime)
     if known:
         return known
     original = _extension_of(filename)
