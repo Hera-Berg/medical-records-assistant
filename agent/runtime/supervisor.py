@@ -236,6 +236,10 @@ class Reader:
         self._key: str | None = None
         self._stopping = False
         self._listening = threading.Event()
+        #: The last line the child printed, for the log when a start fails.
+        #: "Nothing was printed" and "something was printed that this did not
+        #: recognise" send a person to different places.
+        self._last_output: str | None = None
         self._lock_handle = None
         self._launches = 0
         self._crashes: list[float] = []
@@ -564,9 +568,16 @@ class Reader:
             # the reader's own log can end with "server is listening" while
             # nothing here could reach it, and then "could not start" sends
             # someone to read a log that looks fine.
+            with self._cond:
+                printed = self._last_output
             log.warning(
-                "the reader did not become usable within %.0fs on port %s: %s",
+                "the reader did not become usable within %.0fs on port %s: %s (last "
+                "line it printed: %s; it was started as %s; still running: %s)",
                 self._start_timeout_s, port, health,
+                f"{printed!r}" if printed else "it printed nothing at all",
+                # The key is in the environment, never in argv — see the module
+                # docstring — so this is safe to write down.
+                " ".join(launch.argv), proc.poll() is None,
             )
             self._set(states.STOPPED, "failed-to-start")
             return "failed"
@@ -635,9 +646,21 @@ class Reader:
             for raw in iter(stream.readline, b""):
                 log_file.write(raw)
                 log_file.flush()
-                match = _LISTENING.search(raw.decode("utf-8", "replace"))
+                line = raw.decode("utf-8", "replace").strip()
+                if line:
+                    with self._cond:
+                        self._last_output = line[:300]
+                match = _LISTENING.search(line)
                 if match and int(match.group(1)) == port:
                     self._listening.set()
+                elif match:
+                    # It said it was listening somewhere else. Worth its own
+                    # sentence: the alternative is twenty seconds of silence
+                    # followed by "could not start".
+                    log.warning(
+                        "the reader said it was listening on port %s, not the port it "
+                        "was given (%s)", match.group(1), port,
+                    )
 
     def _tick(self) -> None:
         with self._cond:

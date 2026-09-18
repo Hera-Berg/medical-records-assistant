@@ -27,18 +27,22 @@ LIMIT = 8
 
 def main(root: Path) -> int:
     _utf8_stdout()
-    found = sorted(
-        path
-        for name in NAMES
-        for path in root.rglob(name)
-        if path.is_file() and path.stat().st_size
-    )
+    found = sorted(path for name in NAMES for path in root.rglob(name) if path.is_file())
     if not found:
         print(f"::error title=No reader log::nothing under {root} wrote one, so a failure to start said nothing")
         return 0
     for path in found[:LIMIT]:
         text = path.read_text(encoding="utf-8", errors="replace")[-TAIL:]
-        print(f"::error title={title(str(path.name) + ' in ' + path.parent.parent.name)}::{escape(text)}")
+        # Which test's log this is: the directory pytest made for it. Without
+        # that, a log cannot be matched to the failure it belongs to.
+        try:
+            where = path.relative_to(root).parts[0]
+        except ValueError:  # pragma: no cover - rglob always returns descendants
+            where = path.parent.name
+        # An empty log is evidence: the child printed nothing at all, which is
+        # different from printing something unrecognised.
+        body = escape(text) if text.strip() else "(empty — the child printed nothing)"
+        print(f"::error title={title(where + ' / ' + path.name)}::{body}")
     print(f"{len(found)} log(s) found")
     return 0
 
