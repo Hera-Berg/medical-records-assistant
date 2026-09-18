@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,9 +111,37 @@ def _from_keychain() -> Credential | None:
     return Credential(raw.strip(), SOURCE_KEYCHAIN)
 
 
+#: Whether a key may be read out of a file on this machine at all.
+#:
+#: **Not on Windows.** The file exists for machines with no keychain — a
+#: headless server, a container — and it is only safe because the mode says it
+#: is private to its owner. Windows has no such mode: ``chmod`` there sets one
+#: read-only bit and nothing else, every file reads back as ``0666``, and the
+#: check could never pass. The two honest answers were to inspect the file's
+#: ACL, or to refuse the file here; this refuses it.
+#:
+#: Checking an ACL properly means owner, inheritance and every entry in the
+#: list, through an API this project would take a dependency on for one check,
+#: on the platform it can least exercise — and a check that is wrong in the
+#: permissive direction quietly blesses a key everyone on the machine can read.
+#: Meanwhile Windows always has Credential Manager, ``keyring`` speaks to it,
+#: the frozen app ships it, and Settings writes to it. There is no Windows
+#: machine without a better place for the key, so there is nothing to lose.
+FILE_FALLBACK = sys.platform != "win32"
+
+WINDOWS_USES_THE_KEYCHAIN = (
+    "On Windows a key is kept in Credential Manager rather than in a file: this "
+    "app cannot tell whether a file is private to you here, and refuses to read "
+    "a key it cannot say that about. Put it in Settings, under Read on another "
+    "computer, which stores it there."
+)
+
+
 def _from_file(path: Path, vault_root: Path | None) -> Credential | None:
     if not path.exists():
         return None
+    if not FILE_FALLBACK:
+        raise CredentialError(f"{path} was ignored. {WINDOWS_USES_THE_KEYCHAIN}")
     resolved = path.resolve()
     if vault_root is not None and _is_inside(resolved, vault_root.resolve()):
         raise CredentialError(

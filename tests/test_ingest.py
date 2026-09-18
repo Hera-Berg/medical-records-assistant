@@ -6,6 +6,7 @@ import json
 import os
 
 import pytest
+import sys
 
 from agent.errors import IngestError
 from agent.events import envelope
@@ -85,13 +86,26 @@ def test_stored_artefacts_are_read_only(vault, script):
     relied on as one.
     """
     result = ingest_path(vault, script)
-    assert (vault.root / result.rel).stat().st_mode & 0o777 == ARTIFACT_MODE
+    stored = vault.root / result.rel
+    if sys.platform == "win32":
+        # Windows keeps one read-only bit rather than a mode. chmod(0o400) sets
+        # it, the file reads back 0444, and what the guardrail promises — that a
+        # careless write does not land — still holds. CLAUDE.md: a guardrail
+        # against accident, not a security control.
+        assert not os.access(stored, os.W_OK)
+        return
+    assert stored.stat().st_mode & 0o777 == ARTIFACT_MODE
 
 
 def test_sidecar_sits_beside_the_artefact_and_stays_writable(vault, script):
     result = ingest_path(vault, script)
     sidecar_path = vault.root / (result.rel + ".json")
     assert sidecar_path.is_file()
+    if sys.platform == "win32":
+        # The point of this test is that the sidecar, unlike the artefact, stays
+        # writable — which is a thing Windows can say.
+        assert os.access(sidecar_path, os.W_OK)
+        return
     assert sidecar_path.stat().st_mode & 0o777 == 0o600
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 
 import pytest
 
@@ -31,9 +32,22 @@ def test_identity_file_records_the_documented_fields():
     assert data["id"].startswith("elwood-laptop-")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows has no POSIX mode: chmod sets one read-only bit and every file "
+    "reads back 0666. The identity is still written; what cannot be asserted here "
+    "is the mode.",
+)
 def test_identity_file_is_owner_only():
     identity = device_mod.issue()
     assert identity.path.stat().st_mode & 0o777 == 0o600
+
+
+def test_the_identity_is_written_whatever_the_platform_can_promise():
+    """The guardrail may be weaker on Windows; the file still has to be there."""
+    identity = device_mod.issue()
+    assert identity.path.is_file()
+    assert device_mod.load().id == identity.id
 
 
 @pytest.mark.parametrize(

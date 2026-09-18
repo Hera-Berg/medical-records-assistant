@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import tarfile
 
 import httpx
@@ -155,7 +156,14 @@ def test_an_archive_unpacks_with_its_binary_executable(tmp_path):
     assert not store.is_ready((bundle,))
     store.prepare((bundle,))
     binary = store.binary(bundle)
-    assert binary is not None and binary.stat().st_mode & 0o100
+    assert binary is not None
+    if sys.platform == "win32":
+        # Windows has no executable bit — a file is executable by its extension,
+        # and llama-server.exe is. What has to hold there is that unpacking
+        # produced the binary and the store is satisfied by it.
+        assert binary.is_file()
+    else:
+        assert binary.stat().st_mode & 0o100
     assert store.is_ready((bundle,))
 
 
@@ -341,7 +349,11 @@ def test_a_demo_vault_never_settles_a_choice():
 
 def test_the_choice_file_is_private_and_readable_without_the_app():
     choice.save(choice.ANOTHER_COMPUTER, 30)
-    assert choice.path().stat().st_mode & 0o077 == 0
+    if sys.platform != "win32":
+        # Windows has no POSIX mode to assert; the file is written the same way
+        # and the half of this test that matters everywhere — that a person can
+        # read it without this app — is below.
+        assert choice.path().stat().st_mode & 0o077 == 0
     assert json.loads(choice.path().read_text()) == {
         "reads_on": "another-computer", "sleep_after_minutes": 30,
         "model": manifest.DEFAULT_VISION_MODEL,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from agent.config import SyncProfile
@@ -83,6 +85,11 @@ def test_appended_line_is_canonical_json(events_dir):
     assert path.read_bytes() == canonical.dump_line(event.to_dict())
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows has no POSIX mode: the shard is written and appended to, but its "
+    "mode reads back 0666 whatever it was created with.",
+)
 def test_shard_is_owner_only(events_dir):
     path = log.append(events_dir, note(DEVICE), LOCAL)
     assert path.stat().st_mode & 0o777 == 0o600

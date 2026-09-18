@@ -299,6 +299,15 @@ project exists to avoid. `config.toml` holds only a reference to where the key l
    under service `health-agent`, account `vlm-endpoint`
 3. A file at `~/.config/health-agent/credentials`, mode `0600`, **outside the vault**. Refuse to read
    it if the mode is wider, and refuse if the resolved path is inside the vault root.
+   **POSIX only.** The file is safe because its mode says it is private to its owner, and Windows has
+   no such mode: `chmod` there sets one read-only bit, every file reads back `0666`, and the check
+   could never pass — it refused every file and told the person to run a command that does not exist
+   on their computer. Inspecting the ACL instead would mean owner, inheritance and every entry in the
+   list, through an API added for one check, on the platform this project can least exercise, where
+   being wrong in the permissive direction blesses a key the whole machine can read. So on Windows the
+   file is ignored and the refusal names Credential Manager, which is always there, which `keyring`
+   speaks to, which the frozen app ships, and which Settings writes to. The environment variable in
+   (1) still works, so a headless Windows machine is not left without a way to pass a key.
 
 Keychain is the default and what first-run setup writes to.
 

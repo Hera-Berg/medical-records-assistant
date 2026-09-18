@@ -51,6 +51,16 @@ def credentials_file(tmp_path):
     return path
 
 
+#: The file is read on POSIX only. Windows has no mode that can promise a file
+#: is private to its owner, so a key there goes in Credential Manager instead —
+#: see ``credentials.FILE_FALLBACK``, and the test of that refusal below, which
+#: runs on every platform.
+reads_the_file = pytest.mark.skipif(
+    not credentials.FILE_FALLBACK,
+    reason="the credentials file is not read on Windows; the key belongs in Credential Manager",
+)
+
+
 # --- resolution order ------------------------------------------------------
 
 
@@ -62,6 +72,7 @@ def test_the_environment_wins_over_everything(monkeypatch, credentials_file):
     assert ENV_NAME in found.source
 
 
+@reads_the_file
 def test_the_file_is_read_when_nothing_earlier_answers(credentials_file):
     found = credentials.resolve(ENV_NAME, path=credentials_file)
 
@@ -80,6 +91,7 @@ def test_the_keychain_sits_between_them(monkeypatch, credentials_file):
     assert found.value == "sk-from-the-keychain"
 
 
+@reads_the_file
 def test_a_key_line_may_carry_a_name_equals_prefix(tmp_path):
     path = tmp_path / "credentials"
     path.write_text(f"# the box\nHEALTH_VLM_TOKEN = \"{KEY}\"\n", encoding="utf-8")
@@ -150,6 +162,7 @@ def test_the_keychain_is_asked_under_the_documented_service_and_account(monkeypa
     assert fake.asked == [(credentials.KEYRING_SERVICE, credentials.KEYRING_ACCOUNT)]
 
 
+@reads_the_file
 def test_a_missing_keyring_package_is_skipped_not_fatal(monkeypatch, credentials_file):
     """Without it the env var and the file still work."""
     monkeypatch.setitem(__import__("sys").modules, "keyring", None)
@@ -160,6 +173,7 @@ def test_a_missing_keyring_package_is_skipped_not_fatal(monkeypatch, credentials
     assert credentials.resolve(ENV_NAME, path=credentials_file).value == KEY
 
 
+@reads_the_file
 def test_an_empty_credentials_file_fails(tmp_path):
     path = tmp_path / "credentials"
     path.write_text("# only a comment\n\n", encoding="utf-8")
@@ -182,6 +196,7 @@ def test_no_credential_anywhere_says_where_it_looked(tmp_path):
 # --- the file's own guards -------------------------------------------------
 
 
+@reads_the_file
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o604, 0o666, 0o700])
 def test_a_credentials_file_wider_than_0600_is_refused(tmp_path, mode):
     path = tmp_path / "credentials"
@@ -196,6 +211,7 @@ def test_a_credentials_file_wider_than_0600_is_refused(tmp_path, mode):
     assert KEY not in message, "and a refusal never echoes the key"
 
 
+@reads_the_file
 def test_a_credentials_file_inside_the_vault_is_refused(tmp_path):
     """The vault syncs. A key inside it has already been uploaded."""
     vault = tmp_path / "health"
@@ -211,10 +227,43 @@ def test_a_credentials_file_inside_the_vault_is_refused(tmp_path):
     assert "rotate the key" in str(raised.value)
 
 
+@reads_the_file
 def test_a_credentials_file_outside_the_vault_is_fine(tmp_path, credentials_file):
     vault = tmp_path / "health"
     vault.mkdir()
     assert credentials.resolve(ENV_NAME, vault_root=vault, path=credentials_file).value == KEY
+
+
+def test_where_a_file_cannot_be_trusted_it_is_ignored_and_the_keychain_is_named(
+    tmp_path, monkeypatch
+):
+    """Windows, tested everywhere.
+
+    ``chmod`` there sets one read-only bit, every file reads back 0666, and the
+    0600 check could never pass — so the file is not read at all and the message
+    names the place that always exists on that platform. It names no command:
+    the app has no terminal to offer one to.
+    """
+    monkeypatch.setattr(credentials, "FILE_FALLBACK", False)
+    path = tmp_path / "credentials"
+    path.write_text(KEY + "\n", encoding="utf-8")
+
+    with pytest.raises(CredentialError) as raised:
+        credentials.resolve(ENV_NAME, path=path)
+
+    message = str(raised.value)
+    assert "Credential Manager" in message
+    assert "Settings" in message
+    assert "chmod" not in message
+    assert KEY not in message
+
+
+def test_the_environment_still_works_where_the_file_does_not(tmp_path, monkeypatch):
+    """A headless Windows machine is not left without any way to pass a key."""
+    monkeypatch.setattr(credentials, "FILE_FALLBACK", False)
+    monkeypatch.setenv(ENV_NAME, KEY)
+
+    assert credentials.resolve(ENV_NAME, path=tmp_path / "credentials").value == KEY
 
 
 # --- what may be reported --------------------------------------------------

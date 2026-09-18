@@ -89,7 +89,12 @@ def main(path: Path) -> int:
         print("::error title=No failing tests in the report::the step failed but every test passed; the failure is in the job, not the suite")
         return 0
 
-    listed = ", ".join(where for _, where, _ in problems)
+    # Each with its first line: the nine detailed annotations below are capped
+    # by GitHub, and a failure nobody can see the reason for is a round trip.
+    listed = "\n".join(
+        f"{where}: {message.splitlines()[0][:160] if message.splitlines() else ''}"
+        for _, where, message in problems
+    )
     print(f"::error title={len(problems)} failing tests::{escape(listed)}")
     for kind, where, message in problems[:LIMIT]:
         print(f"::error title={title(where)}::{kind}: {escape(message)}")

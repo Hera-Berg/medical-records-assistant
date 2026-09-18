@@ -72,7 +72,10 @@ def test_a_leftover_staging_file_is_a_note_not_a_problem(stocked):
     leftover.write_bytes(b"half a file")
 
     report = check(vault)
-    assert report.partials == (str(leftover.relative_to(vault.root)),)
+    # The store records POSIX paths whatever the platform writes, so that a
+    # vault written on Windows resolves on a Mac. Compare them as it records
+    # them: str() would be backslashes there.
+    assert report.partials == (leftover.relative_to(vault.root).as_posix(),)
     assert not report.orphans
     assert not report.foreign
 
@@ -96,7 +99,7 @@ def test_bytes_on_disk_that_no_event_records_are_reported(stocked):
     stray.write_bytes(b"unrecorded bytes")
 
     report = check(vault)
-    assert str(stray.relative_to(vault.root)) in report.orphans
+    assert stray.relative_to(vault.root).as_posix() in report.orphans
 
 
 def test_a_missing_sidecar_is_reported(stocked):
