@@ -416,6 +416,13 @@ workflow installs on Linux, macOS and Windows, so what is tested is what is froz
 so.** Intel Macs: onnxruntime, which faster-whisper needs, publishes no macOS x86-64 wheel at the locked
 version. Pinning older libraries for one platform would ship code none of the tests ran.
 
+**Known and unsolved: a sync conflict still needs a text editor.** When Dropbox, Drive or Nextcloud
+forks a file, the app reports it and refuses to write beside it — correctly — but resolving it means
+opening both copies in a text editor, keeping one and deleting the other. That is the last dead end
+left for a person who does not work with files for a living, and a Dropbox user will actually hit it.
+It is not phase 12 work and it is not solved: the app can see the fork, so it could offer to show both,
+say which is which, and keep the one chosen. Written down here rather than left as folklore.
+
 **Log records are scrubbed where they are created.** A filter on the `agent` logger never saw records
 from `agent.runtime` or `agent.llm.client`, which propagate past it; the log record factory scrubs every
 record regardless of logger or handler.
