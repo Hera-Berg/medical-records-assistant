@@ -52,7 +52,7 @@ jobs:
       # end, where it can be read without scrolling. The slowest test here takes
       # under four seconds on a developer machine.
       - name: Run the tests
-        run: python -m pytest -v --timeout=120 -rf --junit-xml=ci-report.xml
+        run: python -m pytest -v --timeout=120 -rf --junit-xml=ci-report.xml --basetemp=pytest-tmp
 
       # Annotations are readable without a token; run logs are not. Whoever
       # triages a failure on a platform they do not have should not have to be
@@ -60,3 +60,10 @@ jobs:
       - name: Say what failed, where it can be read without a token
         if: failure()
         run: python packaging/ci_annotations.py ci-report.xml
+
+      # The reader writes why a launch failed to its own log, inside pytest's
+      # temporary directory. Without this it is readable only by downloading the
+      # job's log, which needs a credential the person triaging may not have.
+      - name: Say what the reader's log says
+        if: failure()
+        run: python packaging/ci_reader_logs.py pytest-tmp

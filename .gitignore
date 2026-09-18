@@ -13,3 +13,4 @@ frontend/.vite/
 # PyInstaller output and its work folder. Built by the release workflow.
 build/
 dist/
+pytest-tmp/

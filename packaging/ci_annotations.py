@@ -14,14 +14,32 @@ log, where it belongs; this is the index to it.
 
 from __future__ import annotations
 
+import io
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-#: GitHub shows the first ten annotations of a kind per step. Past that, one
-#: line saying how many more there are beats nine that push it off the list.
-LIMIT = 10
+#: GitHub shows ten annotations of a kind per step. The first is spent listing
+#: *every* failing test, so that a cap can never hide one — a failure nobody can
+#: see is the state this whole file exists to end. The rest carry detail.
+LIMIT = 9
 EXCERPT = 600
+
+
+def _utf8_stdout() -> None:
+    """Write UTF-8 whatever the console claims.
+
+    Windows gives Python the console's legacy encoding, and both the messages
+    this project writes (— and ••••) and the ids below (→) are outside it. The
+    first annotation printed then raised UnicodeEncodeError and the step that
+    reports failures failed instead, which is how a whole platform's failures
+    went unreported once already.
+    """
+    stream = getattr(sys.stdout, "reconfigure", None)
+    if stream is not None:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    elif isinstance(sys.stdout, io.TextIOWrapper):  # pragma: no cover - older streams
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def escape(text: str) -> str:
@@ -38,6 +56,7 @@ def title(text: str) -> str:
 
 
 def main(path: Path) -> int:
+    _utf8_stdout()
     try:
         tree = ET.parse(path)
     except (OSError, ET.ParseError) as exc:
@@ -54,10 +73,14 @@ def main(path: Path) -> int:
             message = (found.get("message") or "") + "\n" + (found.text or "")
             problems.append((kind, where, message.strip()[:EXCERPT]))
 
+    if not problems:
+        print("::error title=No failing tests in the report::the step failed but every test passed; the failure is in the job, not the suite")
+        return 0
+
+    listed = ", ".join(where for _, where, _ in problems)
+    print(f"::error title={len(problems)} failing tests::{escape(listed)}")
     for kind, where, message in problems[:LIMIT]:
         print(f"::error title={title(where)}::{kind}: {escape(message)}")
-    if len(problems) > LIMIT:
-        print(f"::error title=More failures::{len(problems) - LIMIT} further failures are in the log")
     print(f"{len(problems)} failing tests")
     return 0
 
