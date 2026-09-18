@@ -250,14 +250,17 @@ def test_rebuild_is_identical_under_another_timezone_and_locale(populated, ident
     previous = locale.setlocale(locale.LC_ALL)
     try:
         if _german(locale) is None:
-            # Not a skip. The locale is a way of *demonstrating* the leak, and
-            # where none can be set the guarantee is still checked — by the
-            # rebuild below, and by the two tests after this one, which hold on
-            # every machine because they need no locale at all.
-            pytest.fail(
-                "no German locale could be set on this machine, so this test cannot "
-                "show a locale reaching the bytes; see the two tests below, which "
-                "check the same guarantee without one"
+            # A locale is how this test *demonstrates* the leak, so without one
+            # it can demonstrate nothing. CI installs one on every platform, so
+            # this is reached only on a machine that has none — and there the
+            # two tests below still hold the same guarantee without a locale at
+            # all. The skip is reported by name on every CI run
+            # (packaging/ci_invariants.py), because a guarantee that quietly
+            # skipped reads exactly like one that held.
+            pytest.skip(
+                "no locale but the machine's own could be set, so a locale cannot be "
+                "shown reaching the bytes here; the two tests below check the same "
+                "guarantee without one"
             )
         projection.rebuild(Vault.open(populated, identity=identity), as_of=AS_OF)
     finally:

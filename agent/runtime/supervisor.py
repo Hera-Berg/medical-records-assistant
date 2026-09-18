@@ -563,13 +563,14 @@ class Reader:
                     break
             time.sleep(0.25)
         else:
-            self._terminate()
-            # What this app concluded, as opposed to what the child printed:
-            # the reader's own log can end with "server is listening" while
-            # nothing here could reach it, and then "could not start" sends
-            # someone to read a log that looks fine.
+            # Read before stopping it: whether the child was still running when
+            # the deadline passed is the first thing to know, and terminating it
+            # first makes the answer always "no". What this app concluded also
+            # goes in, as opposed to what the child printed — a reader's log can
+            # end with "server is listening" while nothing here could reach it.
             with self._cond:
                 printed = self._last_output
+            alive = proc.poll() is None
             log.warning(
                 "the reader did not become usable within %.0fs on port %s: %s (last "
                 "line it printed: %s; it was started as %s; still running: %s)",
@@ -577,8 +578,9 @@ class Reader:
                 f"{printed!r}" if printed else "it printed nothing at all",
                 # The key is in the environment, never in argv — see the module
                 # docstring — so this is safe to write down.
-                " ".join(launch.argv), proc.poll() is None,
+                " ".join(launch.argv), alive,
             )
+            self._terminate()
             self._set(states.STOPPED, "failed-to-start")
             return "failed"
 

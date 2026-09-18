@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -103,7 +104,26 @@ class Handler(BaseHTTPRequestHandler):
         })
 
 
-server = ThreadingHTTPServer((args.host, args.port), Handler)
+class Server(ThreadingHTTPServer):
+    """Bound without asking the network what this machine is called.
+
+    ``HTTPServer.server_bind`` calls ``socket.getfqdn()``, a reverse lookup that
+    on a macOS runner takes longer than the supervisor's whole start timeout —
+    so this stand-in printed nothing at all for twenty seconds and every reader
+    test on that platform failed with "the reader could not start". The real
+    llama-server is a C++ program that does no such lookup; this was the test
+    double being slow, and it hid whether the supervisor works there.
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = args.host
+        self.server_port = self.server_address[1]
+
+
+# Printed before the socket exists, so a start that hangs says where it hung.
+print("main: loading model", flush=True)
+server = Server((args.host, args.port), Handler)
 print(f"main: server is listening on http://{args.host}:{args.port} - starting the main loop", flush=True)
 if EXIT_AFTER:
     import threading
