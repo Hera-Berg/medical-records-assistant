@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "health-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "Patient-held health record agent — vault, event log, ingest, projection, extraction"
 requires-python = ">=3.11"
 # httpx, for the one thing stdlib cannot do here: a short connect timeout with a
