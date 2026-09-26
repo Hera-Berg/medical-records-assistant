@@ -325,7 +325,8 @@ is used.
 on this computer. That tracked nothing: the files are the machine's, a demo could already reach a
 remote box, and a demo plus a local model is the only way to watch extraction work without personal
 documents. The harm was an unexpected download, and asking guards it on every vault. A demo vault keeps
-its demonstration banner, because what it extracts is still invented.
+a "Demo" label beside the page title, because what it extracts is still invented — a label, not a
+banner: whoever opened a demo knows it is one, and a paragraph above every page saying so was noise.
 
 **A disabled control says why at the control** — in its label or directly beside it, never only as a
 general line elsewhere on the page. A greyed control with the reason a paragraph away reads as a bug.

@@ -48,6 +48,24 @@ export function Settings({
   // The connection form belongs under "Read on another computer" and nowhere
   // else: shown under "this computer" it reads as something still to fill in.
   const [readsOn, setReadsOn] = useState<ReadsOn | null>(null);
+  const [rebuilding, setRebuilding] = useState<"working" | "done" | string | null>(null);
+
+  // Lived in the heading of every page, where it was the most technical thing
+  // on screen and the easiest to press by mistake. It is maintenance, so it is
+  // here, with a sentence saying what it does.
+  const rebuild = () => {
+    setRebuilding("working");
+    api
+      .rebuild()
+      .then(() => {
+        setRebuilding("done");
+        onChanged();
+      })
+      .catch((exc: Error) => {
+        setRebuilding(exc.message);
+        onChanged();
+      });
+  };
 
   const load = useCallback(() => {
     api
@@ -258,6 +276,31 @@ export function Settings({
         exactly as they are. It syncs along with everything else in your folder, which is
         why no password or key ever belongs in it.
         {settings.config.writable ? null : " This app cannot write to it at the moment."}
+      </p>
+
+      <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
+        Rebuild your pages
+      </h2>
+      <p className="mt-1 max-w-2xl text-[color:var(--color-muted)]">
+        Reads your folder again and writes the pages about your medications, allergies and
+        timeline afresh from it. Your documents and everything you have confirmed are not
+        touched, and it only removes pages it wrote itself. Useful if something looks out
+        of date.
+      </p>
+      <p className="mt-3 flex flex-wrap items-baseline gap-3">
+        <button
+          type="button"
+          className="btn"
+          onClick={rebuild}
+          disabled={rebuilding === "working"}
+        >
+          {rebuilding === "working" ? "Rebuilding…" : "Rebuild pages"}
+        </button>
+        {rebuilding === "done" ? (
+          <span className="text-[color:var(--color-muted)]">Done — your pages are up to date.</span>
+        ) : rebuilding && rebuilding !== "working" ? (
+          <span className="text-[color:var(--color-alarm)]">{rebuilding}</span>
+        ) : null}
       </p>
     </section>
   );

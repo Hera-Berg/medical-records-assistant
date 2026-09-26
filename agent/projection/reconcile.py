@@ -391,17 +391,36 @@ def _latest_decision(events: Iterable[Event]) -> tuple[dict[str, Event], list[An
             # predicate itself; the other two decide *about* a claim and have
             # nothing left to mean without one.
             if event.type != "claim.corrected":
-                anomalies.append(
-                    Anomaly(
-                        f"{event.id}: {event.type} names no target claim, so your "
-                        f"decision could not be applied to anything"
-                    )
-                )
+                anomalies.append(Anomaly(_untargeted_decision(event)))
             continue
         current = latest.get(target)
         if current is None or event.sort_key > current.sort_key:
             latest[target] = event
     return latest, anomalies
+
+
+def _untargeted_decision(event: Event) -> str:
+    """A decision that names nothing, said so its owner can act on it.
+
+    Read by the person who tapped, on the screen where they tapped, so it says
+    what they did and when in their words — not the event type or its id first.
+    The id stays at the end, because it is the only way to find the line in the
+    log. The date comes from the fixed month table, never ``%B``.
+    """
+    act, again = (
+        ("confirmed", "confirm") if event.type == "claim.confirmed" else ("rejected", "reject")
+    )
+    when = parse_ts_or_none(event.ts)
+    day = (
+        f"On {when.day} {dates.MONTH_NAMES[when.month - 1]} {when.year} you"
+        if when is not None
+        else "You"
+    )
+    return (
+        f"{day} {act} something, but the record could not tell which reading it was "
+        f"about, so it changed nothing. If it mattered, {again} it again from "
+        f"Waiting for you. (Log entry {event.id}.)"
+    )
 
 
 def _alias_map(

@@ -1,5 +1,11 @@
 /**
- * The shell: the rail, the page heading, what needs a person, and the screen.
+ * The shell: the menu, the page heading, what needs a person, and the screen.
+ *
+ * Shaped like the assistants people already know how to use: a button at the
+ * top left opens a menu down the left, and the page is one readable column.
+ * The app opens on "Ask your record", because a box that says "ask" is the
+ * least daunting first thing a record can show — and everything else it did
+ * before is one tap away in the menu. The timeline moved to `/timeline`.
  *
  * Timeline, record, one entity, one artefact, the folder and settings — plus
  * capture, which is not a screen so much as something the whole window does.
@@ -32,7 +38,7 @@
  * shell cannot know it without fetching what the screen is already fetching.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Link, useRoute } from "./router";
 import type { Health } from "./types";
@@ -47,13 +53,18 @@ import { Files } from "./components/Files";
 import { Record } from "./components/Record";
 import { Review } from "./components/Review";
 import { Settings } from "./components/Settings";
-import { Sidebar } from "./components/Sidebar";
+import { MenuIcon, Sidebar } from "./components/Sidebar";
 import { SummaryScreen } from "./components/Summary";
 import { Timeline } from "./components/Timeline";
 import { Welcome } from "./components/Welcome";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
+
+/** Wide enough for the menu to sit beside the page rather than over it. */
+const WIDE = "(min-width: 1024px)";
+/** Whether the menu was left open on a wide screen. A convenience, per browser. */
+const MENU_KEY = "health-agent.menu-open";
 
 export interface PageHeader {
   title: string;
@@ -73,8 +84,21 @@ export function App() {
   const [header, setHeader] = useState<PageHeader>(() => defaultHeader(route.segments));
 
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
+  // Whether the first health answer has been seen, so the welcome question is
+  // offered once when the record opens and never again until the next opening.
+  const welcomed = useRef(false);
   const capture = useCapture(refresh);
   const dragging = useWindowCapture(capture.enqueue);
+  const [wide, menuOpen, setMenuOpen] = useMenu();
+
+  // On a phone the menu lies over the page, so choosing somewhere closes it.
+  const go = useCallback(
+    (to: string) => {
+      if (!wide) setMenuOpen(false);
+      navigate(to);
+    },
+    [wide, navigate, setMenuOpen],
+  );
 
   // The route's own heading, restored on every navigation. A screen that knows
   // better replaces it after its own fetch resolves — which is why this cannot
@@ -92,8 +116,13 @@ export function App() {
           if (!live) return;
           rememberInstallation(result.packaged);
           setHealth(result);
-          // The first run's last question comes before anything else, once.
-          if (result.welcome && window.location.pathname === "/") navigate("/welcome");
+          // The first run's last question comes before anything else, once per
+          // opening. Not on every poll: the timeline is also at "/", so leaving
+          // the question by the sidebar sent the next poll straight back to it.
+          if (result.welcome && !welcomed.current && window.location.pathname === "/") {
+            navigate("/welcome");
+          }
+          welcomed.current = true;
           setHealthError(null);
         })
         .catch((exc: Error) => live && setHealthError(exc.message));
@@ -105,16 +134,18 @@ export function App() {
     };
   }, [version]);
 
-  const rebuild = useCallback(() => {
-    api.rebuild().then(refresh).catch(refresh);
-  }, [refresh]);
-
   const [first, second, ...rest] = route.segments;
   const tail = [second, ...rest].filter(Boolean).join("/");
 
   let screen: React.ReactNode;
   if (!first) {
-    screen = <Timeline navigate={navigate} version={version} />;
+    screen = (
+      <Ask
+        navigate={navigate}
+        onBoxState={refresh}
+        documents={health?.record.artifacts ?? null}
+      />
+    );
   } else if (first === "timeline") {
     screen = <Timeline navigate={navigate} subject={tail || undefined} version={version} />;
   } else if (first === "record" && tail) {
@@ -154,99 +185,231 @@ export function App() {
         setHeader={setHeader}
       />
     );
-  } else if (first === "ask") {
-    screen = <Ask navigate={navigate} onBoxState={refresh} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
   } else if (first === "welcome") {
     screen = <Welcome navigate={navigate} onChanged={refresh} />;
   } else if (first === "settings") {
     screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
+  } else if (first === "ask") {
+    // Where asking used to live. Kept so an old bookmark still lands somewhere.
+    screen = (
+      <p>
+        Asking your record is now the first page.{" "}
+        <Link to="/" navigate={navigate}>
+          Ask a question
+        </Link>
+        .
+      </p>
+    );
   } else {
     screen = (
       <p>
         There is no page at <code className="font-mono">{route.path}</code>.{" "}
         <Link to="/" navigate={navigate}>
-          Back to the timeline
+          Back to the start
         </Link>
         .
       </p>
     );
   }
 
-  return (
-    <div className="flex min-h-screen flex-col items-stretch md:flex-row">
-      {dragging ? <DropOverlay /> : null}
-      <Sidebar
-        health={health}
-        path={route.path}
-        navigate={navigate}
-        uploading={capture.uploading}
-      />
+  const asking = !first;
 
-      <div className="min-w-0 flex-1">
-        <div className="mx-auto max-w-[78rem] px-4 py-5 sm:px-6 md:px-8 md:py-6">
-          <header className="mb-5 flex flex-wrap items-start gap-x-8 gap-y-3">
-            <div className="min-w-0">
-              <span className="flex flex-wrap items-center gap-3">
-                <h1 className="text-xl font-semibold">{header.title}</h1>
-                {header.badge}
-              </span>
-              <p className="mt-1 max-w-2xl text-[color:var(--color-muted)]">
-                {header.subtitle}
-              </p>
+  return (
+    <div className="flex min-h-screen items-stretch">
+      {dragging ? <DropOverlay /> : null}
+
+      {menuOpen ? (
+        wide ? (
+          <div className="no-print sticky top-0 h-screen shrink-0 border-r border-[color:var(--color-rule)]">
+            <Sidebar
+              health={health}
+              path={route.path}
+              navigate={go}
+              uploading={capture.uploading}
+              onClose={() => setMenuOpen(false)}
+            />
+          </div>
+        ) : (
+          <div className="no-print fixed inset-0 z-40 flex">
+            <div className="h-full">
+              <Sidebar
+                health={health}
+                path={route.path}
+                navigate={go}
+                uploading={capture.uploading}
+                onClose={() => setMenuOpen(false)}
+              />
             </div>
-            <div className="ml-auto flex items-center gap-4 no-print">
-              {health ? (
-                <span className="text-right">
-                  <span className="block font-semibold">
-                    {health.record.artifacts}{" "}
-                    {health.record.artifacts === 1 ? "document" : "documents"}
-                  </span>
-                  <span className="block text-[color:var(--color-muted)]">
-                    {health.record.events} entries in the log
-                  </span>
+            {/* The page behind, dimmed; tapping it closes the menu. */}
+            <button
+              type="button"
+              aria-label="Close the menu"
+              className="h-full flex-1 cursor-default bg-[color:var(--color-ink)]/40"
+              onClick={() => setMenuOpen(false)}
+            />
+          </div>
+        )
+      ) : null}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="no-print sticky top-0 z-30 flex items-center gap-4 bg-[color:var(--color-paper)] px-2 py-2 sm:px-3">
+          {menuOpen && wide ? null : (
+            <button
+              type="button"
+              className="icon-btn relative"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open the menu"
+              aria-controls="menu"
+              aria-expanded={menuOpen}
+            >
+              <MenuIcon />
+              {/* With the menu closed, the one count that matters stays in
+                  view. A number, said again in words for a screen reader. */}
+              {health && health.review.total > 0 ? (
+                <span className="absolute -top-1.5 -right-2.5 min-w-[1.25rem] rounded-full border-2 border-[color:var(--color-paper)] bg-[color:var(--color-accent)] px-1 text-center leading-5 text-[color:var(--color-paper)]">
+                  {health.review.total}
+                  <span className="sr-only"> waiting for you</span>
                 </span>
               ) : null}
-              <button
-                type="button"
-                onClick={rebuild}
-                title="Read your folder again and rebuild these pages from it. It only removes pages it wrote itself."
-                className="btn"
+            </button>
+          )}
+          <span className="flex min-w-0 flex-1 items-center gap-3">
+            <h1 className="truncate font-semibold">
+              {asking ? "Your health record" : header.title}
+            </h1>
+            {asking ? null : header.badge}
+            {/* A label, not a banner: whoever opened a demonstration knows it
+                is one, but a printed page or a screenshot must still say so. */}
+            {health?.vault.demo ? (
+              <span
+                className="chip border-[color:var(--color-warn)] text-[color:var(--color-warn)]"
+                title="Everything in this record was invented so the screens have something to show."
               >
-                Rebuild pages
-              </button>
-            </div>
-          </header>
+                Demo
+              </span>
+            ) : null}
+          </span>
+          <Link
+            to="/add"
+            navigate={go}
+            className="btn flex shrink-0 items-center gap-1.5 no-underline"
+          >
+            <span aria-hidden="true">+</span>
+            <span>
+              Add<span className="hidden sm:inline"> something</span>
+            </span>
+            {capture.uploading > 0 ? (
+              <span className="text-[color:var(--color-muted)]">
+                {" "}
+                · {capture.uploading} sending
+              </span>
+            ) : null}
+          </Link>
+        </header>
 
+        <div
+          className={`mx-auto flex w-full flex-1 flex-col px-4 pb-8 sm:px-6 ${
+            asking ? "max-w-3xl" : "max-w-[72rem]"
+          }`}
+        >
           <Attention
             health={health}
             error={healthError}
+            navigate={go}
             /* The settings screen holds the control for the box and reports
                what stopped in its own words. One telling, not two. */
             quietEndpoint={first === "settings" || first === "welcome"}
+            /* The waiting screen is the list those two notices point at. */
+            quietReview={first === "review"}
           />
+
+          {asking ? null : (
+            <p className="mt-2 mb-5 max-w-2xl text-[color:var(--color-muted)]">
+              {header.subtitle}
+            </p>
+          )}
 
           {/*
             Per screen, and reset by the route: a screen that cannot draw itself
-            must not blank the rail, the heading and every other screen with it.
+            must not blank the menu, the heading and every other screen with it.
             The built bundle is served from disk while the server holds its own
             version in memory, so "the page is newer than the program answering
             it" is an ordinary state here, not a rare one.
           */}
-          <main className="panel">
+          <main className="flex flex-1 flex-col">
             <Boundary resetKey={route.path}>{screen}</Boundary>
           </main>
 
-          <footer className="mt-5 text-[color:var(--color-muted)] no-print">
-            Everything here is a file in{" "}
-            <code className="font-mono">{health?.vault.root ?? "your folder"}</code>. This
-            page reports and cites; it does not interpret.
-          </footer>
+          {asking ? null : (
+            <footer className="mt-8 border-t border-[color:var(--color-rule)] pt-3 text-[color:var(--color-muted)] no-print">
+              Everything here is a file in{" "}
+              <code className="font-mono">{health?.vault.root ?? "your folder"}</code>. This
+              page reports and cites; it does not interpret.
+            </footer>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * Whether the menu is open, and whether the screen is wide enough for it to sit
+ * beside the page.
+ *
+ * Wide screens open with it showing, the way the assistants people know do, and
+ * remember if it was folded away. Narrow screens always start with it closed,
+ * because there it covers the page. The remembered choice is a convenience in
+ * this browser only and the page works the same without it.
+ */
+function useMenu(): [boolean, boolean, (open: boolean) => void] {
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
+  const [open, setOpenState] = useState(() => wide && readMenuPreference());
+
+  useEffect(() => {
+    const query = window.matchMedia(WIDE);
+    const onChange = () => {
+      setWide(query.matches);
+      setOpenState(query.matches && readMenuPreference());
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  // Escape closes the menu when it is lying over the page.
+  useEffect(() => {
+    if (!open || wide) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenState(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, wide]);
+
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOpenState(next);
+      if (!wide) return;
+      try {
+        window.localStorage.setItem(MENU_KEY, next ? "open" : "closed");
+      } catch {
+        // Storage refused (a private window): the menu still works, unremembered.
+      }
+    },
+    [wide],
+  );
+
+  return [wide, open, setOpen];
+}
+
+function readMenuPreference(): boolean {
+  try {
+    return window.localStorage.getItem(MENU_KEY) !== "closed";
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -259,12 +422,15 @@ export function App() {
  */
 function defaultHeader(segments: string[]): PageHeader {
   const [first, second] = segments;
-  if (!first || first === "timeline") {
+  if (!first) {
+    return { title: "Your health record", subtitle: "" };
+  }
+  if (first === "timeline") {
     return {
       title: "Timeline",
       subtitle: second
         ? "Everything the record holds about one entry, newest first."
-        : "Everything in your record, newest first. Each line says where it came from, and opens the document behind it.",
+        : "Everything in your record, newest first. Tap a line to see the document it came from.",
     };
   }
   if (first === "record" && second) {
@@ -272,9 +438,9 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "record") {
     return {
-      title: "Your record",
+      title: "Medications and more",
       subtitle:
-        "Medications, allergies, problems and people — put together from your own documents, and never from anything you have not confirmed.",
+        "Your medications, allergies, health problems and the people who look after you — put together from your own documents, and only from what you have confirmed.",
     };
   }
   if (first === "artifact") {
@@ -290,17 +456,13 @@ function defaultHeader(segments: string[]): PageHeader {
     };
   }
   if (first === "ask") {
-    return {
-      title: "Ask your record",
-      subtitle:
-        "Questions about what is in your record — what you take, when something started, what a letter said. Every line of the answer says which of your documents it came from.",
-    };
+    return { title: "Ask your record", subtitle: "" };
   }
   if (first === "review") {
     return {
       title: "Waiting for you",
       subtitle:
-        "What has been read out of your documents and is waiting for you to say yes, no, or that it should say something else. Nothing important joins your record until you do.",
+        "Things read from your documents that need a quick yes or no from you. Nothing important joins your record until you say so.",
     };
   }
   if (first === "summary") {
@@ -323,7 +485,7 @@ function defaultHeader(segments: string[]): PageHeader {
     return {
       title: "Add something",
       subtitle:
-        "A photo of a script, a letter, a result, a note in your own words, or something said out loud. Nothing asks what kind of thing it is — that is worked out afterwards.",
+        "A photo of a prescription, a letter, a test result, a note, or a voice recording. You don't need to say what it is — that is worked out afterwards.",
     };
   }
   return { title: "Not found", subtitle: "" };

@@ -18,9 +18,17 @@
  * Tone is a left rule and a tinted ground. It never carries the meaning — every
  * banner says what it means in its first sentence, so the page survives being
  * printed, and survives a reader who cannot tell the tints apart.
+ *
+ * **Only an alarm is a wall of words.** Routine news — things waiting for you,
+ * files waiting to be read — is one line that says so, with the rest of the
+ * explanation folded under "More" and a link to where it is dealt with. Four
+ * stacked paragraphs above every page was the most daunting thing on screen,
+ * and none of it was urgent. Folded is not hidden: the first line still says
+ * what is waiting and how many.
  */
 
 import type { Health } from "../types";
+import { Link } from "../router";
 import { StartItAgain } from "../installation";
 import { CheckSteps } from "./CheckSteps";
 
@@ -48,9 +56,14 @@ export function Attention({
   health,
   error,
   quietEndpoint = false,
+  quietReview = false,
+  navigate,
 }: {
   health: Health | null;
   error: string | null;
+  navigate: (to: string) => void;
+  /** Leave out the "waiting for you" notices: set on the screen they point at. */
+  quietReview?: boolean;
   /**
    * Suppress the banner about the inference box.
    *
@@ -140,22 +153,24 @@ export function Attention({
     );
   }
 
-  if (health.vault.demo) {
-    banners.push(
-      <Banner key="demo" tone="warn" title="This is a demonstration, not a real record.">
-        Everything here was invented so the screens have something to show. Nothing in it
-        came from a person.
-      </Banner>,
-    );
-  }
+  // No banner for a demonstration record: whoever opened one knows it is a
+  // demo, and a paragraph saying so above every page was noise. The top bar
+  // still labels it, because what a demo extracts is still invented.
 
   const unread = health.review.could_not_read ?? 0;
-  if (unread > 0) {
+  const review = quietReview ? null : (
+    <Link to="/review" navigate={navigate}>
+      Go to Waiting for you
+    </Link>
+  );
+  if (unread > 0 && !quietReview) {
     banners.push(
       <Banner
         key="unread"
         tone="warn"
         title={`${countWord(unread, "document", "documents")} could not be fully read.`}
+        action={review}
+        folded
       >
         Nothing was guessed from the parts that could not be read. Check{" "}
         {unread === 1 ? "it" : "them"} on the <strong>Waiting for you</strong> screen —
@@ -165,12 +180,14 @@ export function Attention({
   }
 
   const toConfirm = health.review.total - unread;
-  if (toConfirm > 0) {
+  if (toConfirm > 0 && !quietReview) {
     banners.push(
       <Banner
         key="review"
         tone="info"
         title={`${countWord(toConfirm, "thing is", "things are")} waiting for you to confirm.`}
+        action={review}
+        folded
       >
         {health.review.by_tier.high > 0 ? (
           <>
@@ -191,6 +208,7 @@ export function Attention({
         key="queue"
         tone="info"
         title={`${countWord(health.queue.depth, "file is", "files are")} waiting to be read.`}
+        folded
       >
         They are already stored in your folder. Nothing is lost while they wait.
         {health.reading ? (
@@ -225,51 +243,69 @@ export function Attention({
             ? "One note about the record itself."
             : `${health.anomalies.count} notes about the record itself.`
         }
+        action={review}
+        folded
       >
-        These are about the record's own filing, not about your health.
-        <details className="mt-1">
-          <summary className="cursor-pointer">
-            {health.anomalies.count === 1 ? "See the note" : "See the notes"}
-          </summary>
-          <ul className="mt-1 list-disc pl-5">
-            {health.anomalies.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </details>
+        About how your record is filed, not about your health.
+        <ul className="mt-1 list-disc pl-5">
+          {health.anomalies.items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </Banner>,
     );
   }
 
   if (banners.length === 0) return null;
-  return <div className="mb-4 space-y-2 no-print">{banners}</div>;
+  return <div className="mt-2 mb-2 space-y-2 no-print">{banners}</div>;
 }
 
 function Banner({
   tone,
   title,
   children,
+  action,
+  folded = false,
 }: {
   tone: Tone;
   title: string;
   children: React.ReactNode;
+  /** Where this is dealt with, beside the title so it needs no reading first. */
+  action?: React.ReactNode;
+  /** One line, with the explanation under "More". Never for an alarm. */
+  folded?: boolean;
 }) {
   const spec = TONES[tone];
+  const frame = {
+    borderColor: "var(--color-rule)",
+    borderLeftColor: spec.rule,
+    background: spec.ground,
+  };
+  const heading = (
+    <span className="font-semibold" style={{ color: spec.ink }}>
+      {title}
+    </span>
+  );
+
+  if (folded && tone !== "alarm") {
+    return (
+      <details className="rounded-xl border border-l-4 px-4 py-2" style={frame}>
+        <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3">
+          {heading}
+          {action}
+          <span className="ml-auto text-[color:var(--color-muted)] underline">More</span>
+        </summary>
+        <div className="mt-1">{children}</div>
+      </details>
+    );
+  }
+
   return (
-    <div
-      className="rounded-lg border border-l-4 px-4 py-2"
-      style={{
-        borderColor: "var(--color-rule)",
-        borderLeftColor: spec.rule,
-        background: spec.ground,
-      }}
-    >
+    <div className="rounded-xl border border-l-4 px-4 py-2" style={frame}>
       <p>
-        <span className="font-semibold" style={{ color: spec.ink }}>
-          {title}
-        </span>{" "}
-        {children}
+        {heading} {children}
       </p>
+      {action ? <p className="mt-1">{action}</p> : null}
     </div>
   );
 }

@@ -753,8 +753,7 @@ function Anomalies({ anomalies }: { anomalies: { count: number; items: string[] 
           : `${anomalies.count} notes about the record itself`}
       </h2>
       <p className="text-[color:var(--color-muted)]">
-        These are about how the record is filed, not about your health. Nothing here needs
-        a decision from you.
+        These are about how the record is filed, not about your health.
       </p>
       <ul className="mt-1 list-disc pl-5">
         {anomalies.items.map((item) => (

@@ -217,7 +217,7 @@ def test_a_decision_naming_no_target_is_reported_not_dropped():
     events.append(blank)
 
     result = _project(events)
-    assert any(blank.id in note and "names no target" in note for note in result.anomalies)
+    assert any(blank.id in note and "could not tell which reading" in note for note in result.anomalies)
 
 
 def test_a_decision_on_a_claim_that_is_not_here_is_reported():

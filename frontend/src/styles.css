@@ -3,9 +3,11 @@
 /*
  * A medical record, not a dashboard — read by someone who is not technical.
  *
- * The look is calm and roomy: an off-white ground, white panels with a hairline
- * rule, one deep green accent, plain English on every label. What it is not is
- * decorated. The constraints below all have a reason and none of them is taste.
+ * The look is calm and roomy, laid out like the assistants people already know:
+ * a white page with one readable column down the middle, and a quiet grey menu
+ * down the left that folds away behind a button. One deep green accent, plain
+ * English on every label. What it is not is decorated. The constraints below
+ * all have a reason and none of them is taste.
  *
  * TWO WEIGHTS, THREE SIZES. Regular and semibold; body, section heading, page
  * title. Density comes from tight leading and small margins, never from small
@@ -48,7 +50,7 @@
   --color-ink: #14181a;
   --color-muted: #5c6360;
   --color-paper: #ffffff;
-  --color-ground: #f4f5f2;
+  --color-ground: #ffffff;
   --color-shade: #f0f1ed;
   --color-rule: #e0e2dc;
   --color-rule-strong: #b6bab2;
@@ -57,6 +59,13 @@
   /* One accent, used for the app's own furniture — never to mark a fact. */
   --color-accent: #14523c;
   --color-accent-soft: #e7efea;
+  /* The menu down the left: a pale ground and the page's own ink, so opening
+     it adds a place to go rather than a second, darker application. */
+  --color-nav: #f4f5f2;
+  --color-nav-hover: #e9ebe6;
+  --color-nav-active: #dfe4dd;
+
+  /* Still used by the document viewer, which sits on a dark ground. */
   --color-sidebar: #0f231b;
   --color-sidebar-ink: #e7ece8;
   --color-sidebar-muted: #9bb0a4;
@@ -152,10 +161,10 @@ textarea:focus-visible,
 
 .btn {
   border: 1px solid var(--color-rule-strong);
-  border-radius: 0.5rem;
+  border-radius: 0.625rem;
   background: var(--color-paper);
   color: var(--color-ink);
-  padding: 0.3rem 0.75rem;
+  padding: 0.35rem 0.85rem;
   cursor: pointer;
 }
 
@@ -193,6 +202,54 @@ textarea:focus-visible,
   color: var(--color-ink);
   padding: 0.25rem 0.5rem;
   font: inherit;
+}
+
+/* The box a question is typed into. A rounded field with its button inside it,
+   because that is the shape people already recognise as "type here". */
+.composer {
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 1.25rem;
+  background: var(--color-paper);
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+}
+
+.composer:focus-within {
+  border-color: var(--color-accent);
+}
+
+/* A round icon button: the menu, the send arrow. Always with an aria-label. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--color-nav-hover);
+}
+
+/* The send arrow: the one filled button in the box, so it is found at once. */
+.icon-btn-primary {
+  background: var(--color-accent);
+  color: var(--color-paper);
+}
+
+.icon-btn-primary:hover {
+  background: var(--color-ink);
+}
+
+.icon-btn-primary[disabled] {
+  background: var(--color-rule);
+  color: var(--color-muted);
+  cursor: default;
 }
 
 }

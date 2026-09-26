@@ -126,7 +126,7 @@ export function Timeline({
         ) : null}
 
         {subject ? (
-          <Link to="/" navigate={navigate} className="ml-auto">
+          <Link to="/timeline" navigate={navigate} className="ml-auto">
             showing one entry only — show the whole record
           </Link>
         ) : null}

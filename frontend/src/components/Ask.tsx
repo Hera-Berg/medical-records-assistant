@@ -12,6 +12,13 @@
  * I help". There is a question, an answer, and under every sentence of that
  * answer the document it came from.
  *
+ * **But it is laid out like the assistants people already know**, because that
+ * shape is the least daunting thing a first screen can be: a greeting and a box
+ * in the middle of an empty page, a few example questions under it, your own
+ * question in a bubble on the right and the answer beneath it, and the box
+ * staying at the bottom of the window. The shape is borrowed; the promise is
+ * not — the words around it still say what it will not do.
+ *
  * **Every sentence carries its source, visibly.** Not a footnote marker to
  * chase — the source sits under the sentence, named by what it is
  * ("Photograph", "Lab result"), and opens the document itself. A sentence the
@@ -37,15 +44,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import type { AskResponse, FoundEntry } from "../types";
+import { Link } from "../router";
 import { Cite, TierMark } from "./marks";
 
 /** Questions that show what this is for, in the shapes it actually handles. */
 const EXAMPLES = [
-  "What am I taking for my blood pressure?",
-  "When did I start perindopril?",
+  "What medications am I taking?",
   "What allergies do I have?",
-  "What did Dr Nguyen's letter say?",
   "What changed in the last three months?",
+  "What did my last letter from a specialist say?",
 ];
 
 interface Exchange {
@@ -59,8 +66,11 @@ interface Exchange {
 export function Ask({
   navigate,
   onBoxState,
+  documents,
 }: {
   navigate: (to: string) => void;
+  /** How many documents the record holds, or null before the first health answer. */
+  documents: number | null;
   /** Called when an answer reports something about the inference box.
    *
    *  The rail polls every few seconds, so without this it can sit saying
@@ -73,15 +83,28 @@ export function Ask({
   const [thread, setThread] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement | null>(null);
+  const latest = useRef<HTMLElement | null>(null);
+  const [asked, setAsked] = useState(0);
 
   useEffect(() => {
     box.current?.focus();
   }, []);
 
-  // Deliberately no scrolling-into-view. A conversation capped at three
-  // questions, with the box that asks them directly underneath, never grows
-  // past the window — and moving the page under someone who is reading is the
-  // same class of thing as the animation this interface does without.
+  // The box grows with what is typed, up to a few lines, then scrolls.
+  useEffect(() => {
+    const field = box.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, 180)}px`;
+  }, [question]);
+
+  // Brought into view once, when the person asks — their own action, so the
+  // page moves because they moved it. Never while an answer is being read:
+  // moving the page under someone who is reading is the same class of thing
+  // as the animation this interface does without.
+  useEffect(() => {
+    if (asked > 0) latest.current?.scrollIntoView({ block: "start" });
+  }, [asked]);
 
   // From the last exchange that *counted*. A refused question is not part of
   // the conversation — it is not sent back as history — so counting it here
@@ -96,6 +119,7 @@ export function Ask({
       setBusy(true);
       setQuestion("");
       setThread((current) => [...current, { question: asked, answer: null, pending: true }]);
+      setAsked((n) => n + 1);
 
       // Only exchanges that produced something are carried forward: a refused
       // question is not part of the conversation's subject, and sending it back
@@ -130,28 +154,45 @@ export function Ask({
     [busy, thread, onBoxState],
   );
 
-  return (
-    <div>
-      {/* What the heading above does not already say. It said what this is for;
-          this says what it will not do, which is the part someone needs to read
-          before they type rather than after they are refused. */}
-      <p>
-        It cannot tell you what anything means, whether something is serious, or what to
-        do. That is a question for a person — this answers only from your own documents,
-        and only about what is in them.
-      </p>
+  const empty = thread.length === 0;
+  const clear = () => {
+    setThread([]);
+    setQuestion("");
+    box.current?.focus();
+  };
 
-      {thread.length === 0 ? (
-        <div className="mt-4">
-          <p className="text-[color:var(--color-muted)]">
-            {busy ? "For example — once this answer has come back:" : "For example:"}
+  return (
+    <div className="flex flex-1 flex-col">
+      {empty ? (
+        <div className="flex flex-1 flex-col justify-center py-8">
+          <h2 className="text-center text-xl font-semibold">
+            What would you like to find in your record?
+          </h2>
+          {/* What it will not do, said before anyone types rather than after
+              they are refused — in one sentence, not a paragraph. */}
+          <p className="mx-auto mt-2 max-w-xl text-center text-[color:var(--color-muted)]">
+            Answers come only from your own documents, and each line shows which one. It
+            won't tell you what something means or what to do — that's one for your doctor.
           </p>
-          <ul className="mt-2 flex flex-col items-start gap-1">
+
+          {documents === 0 ? (
+            <p className="mx-auto mt-4 max-w-xl rounded-xl bg-[color:var(--color-accent-soft)] px-4 py-3 text-center">
+              Your record is empty so far, so there is nothing to ask about yet.{" "}
+              <Link to="/add" navigate={navigate}>
+                Add your first document
+              </Link>{" "}
+              — a photo of a prescription or a letter is a good start.
+            </p>
+          ) : null}
+
+          <div className="mt-6">{composer()}</div>
+
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
             {EXAMPLES.map((example) => (
               <li key={example}>
                 <button
                   type="button"
-                  className="btn text-left"
+                  className="btn h-full w-full rounded-xl px-4 py-2.5 text-left"
                   onClick={() => send(example)}
                   disabled={busy}
                 >
@@ -161,69 +202,105 @@ export function Ask({
             ))}
           </ul>
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className="flex flex-1 flex-col gap-8 pt-4 pb-6">
+            {thread.map((item, index) => (
+              <Exchanged
+                key={`${index}-${item.question}`}
+                exchange={item}
+                navigate={navigate}
+                anchor={index === thread.length - 1 ? latest : undefined}
+              />
+            ))}
+          </div>
+          {/* Stays at the bottom of the window, the way the box does in every
+              assistant people already use. */}
+          <div className="sticky bottom-0 bg-[color:var(--color-paper)] pt-2 pb-4">
+            {composer()}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
-      <div className="mt-4 flex flex-col gap-5">
-        {thread.map((item, index) => (
-          <Exchanged key={`${index}-${item.question}`} exchange={item} navigate={navigate} />
-        ))}
-      </div>
-
+  function composer() {
+    return (
       <form
-        className="mt-5 border-t border-[color:var(--color-rule)] pt-4"
         onSubmit={(event) => {
           event.preventDefault();
           send(question);
         }}
       >
-        <label className="block" htmlFor="ask-question">
-          <span className="font-semibold">Ask your record</span>
+        <label className="sr-only" htmlFor="ask-question">
+          Ask your record
         </label>
-        <textarea
-          id="ask-question"
-          ref={box}
-          rows={2}
-          value={question}
-          disabled={exhausted}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter asks; shift-Enter is a new line. A question is one
-            // sentence, so the common case should not need a second key.
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send(question);
+        <div className="composer flex items-end gap-2">
+          <textarea
+            id="ask-question"
+            ref={box}
+            rows={1}
+            value={question}
+            disabled={exhausted}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter asks; shift-Enter is a new line. A question is one
+              // sentence, so the common case should not need a second key.
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send(question);
+              }
+            }}
+            className="min-h-[2.25rem] flex-1 resize-none self-center border-0 bg-transparent py-1.5 outline-none focus-visible:outline-none"
+            placeholder={
+              exhausted ? "Start again to ask something new" : "Ask about your medications, letters, results…"
             }
-          }}
-          className="field mt-2 w-full"
-          placeholder="What am I taking for my blood pressure?"
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <button type="submit" className="btn btn-primary" disabled={busy || exhausted}>
-            {busy ? "Reading your record…" : "Ask"}
+          />
+          <button
+            type="submit"
+            className="icon-btn icon-btn-primary"
+            disabled={busy || exhausted || !question.trim()}
+            aria-label={busy ? "Reading your record" : "Ask"}
+            title={
+              busy
+                ? "Still reading your record for the last question"
+                : exhausted
+                  ? "Start again to ask something new"
+                  : !question.trim()
+                    ? "Type a question first"
+                    : "Ask"
+            }
+          >
+            <Arrow />
           </button>
+        </div>
+        <p className="mt-2 flex flex-wrap items-baseline justify-center gap-x-3 text-center text-[color:var(--color-muted)]">
+          <span>
+            {busy
+              ? "Reading your record…"
+              : exhausted
+                ? "That is three questions in this conversation. Start again to ask about something else."
+                : turnsLeft !== null
+                  ? `${turnsLeft} more ${turnsLeft === 1 ? "question" : "questions"} before this conversation starts again.`
+                  : "Nothing you ask is saved, here or in your folder."}
+          </span>
           {thread.length > 0 ? (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setThread([]);
-                setQuestion("");
-                box.current?.focus();
-              }}
-            >
+            <button type="button" className="underline" onClick={clear}>
               Start again
             </button>
           ) : null}
-          <span className="text-[color:var(--color-muted)]">
-            {exhausted
-              ? "That is three questions in this conversation. Start again to ask about something else."
-              : turnsLeft !== null
-                ? `${turnsLeft} more ${turnsLeft === 1 ? "question" : "questions"} before this conversation starts again.`
-                : "Nothing you ask is saved, here or in your folder."}
-          </span>
-        </div>
+        </p>
       </form>
-    </div>
+    );
+  }
+}
+
+/** An arrow pointing up: "send", as every assistant draws it. */
+function Arrow() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -232,14 +309,19 @@ export function Ask({
 function Exchanged({
   exchange,
   navigate,
+  anchor,
 }: {
   exchange: Exchange;
   navigate: (to: string) => void;
+  anchor?: React.RefObject<HTMLElement | null>;
 }) {
   const { question, answer, pending, error } = exchange;
   return (
-    <article>
-      <p className="font-semibold">{question}</p>
+    <article ref={anchor} className="scroll-mt-16">
+      <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-[color:var(--color-shade)] px-4 py-2 whitespace-pre-wrap">
+        <span className="sr-only">You asked: </span>
+        {question}
+      </p>
 
       {pending ? (
         <p className="mt-1 text-[color:var(--color-muted)]">

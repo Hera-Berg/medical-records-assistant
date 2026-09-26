@@ -95,7 +95,7 @@ def test_it_leaves_something_in_the_review_queue_and_the_report(seeded):
     assert "high" in tiers and "medium" in tiers
 
     # Subject-less, so it belongs in the report rather than the wiki.
-    assert any("names no target claim" in note for note in projection.anomalies)
+    assert any("could not tell which reading" in note for note in projection.anomalies)
     assert all(note.subject_id is None or note.subject_id for note in projection.anomalies)
 
 
