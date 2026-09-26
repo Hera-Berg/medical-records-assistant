@@ -395,6 +395,65 @@ def test_the_two_drains_hand_a_recording_between_them(vault, recorded):
     assert [e.payload["subject"] for e in proposed] == ["med:atorvastatin"]
 
 
+def test_a_second_speech_pass_leaves_the_handover_for_the_reader(vault, recorded):
+    """The worker transcribes on every pass, and the reader is often not there yet.
+
+    Starting, asleep, downloading, a box off the tailnet: each makes the
+    speech drain run again before the reader has taken the handed-over job. That
+    second pass found the transcript already in the log, called the job done,
+    and — since the log then counted the artefact as extracted — nothing ever
+    queued it again. The voice note was typed up and never read.
+    """
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    extract_runner.enqueue_unread(vault, queue)
+    transcriber = speech_mod.Transcriber(vault, speech=FakeSpeech())
+
+    speech_mod.drain(vault, transcriber, queue)
+    again = speech_mod.drain(vault, transcriber, queue)
+
+    assert again.outcomes == ()
+    assert queue.for_artifact(recorded.short).state == jobs_mod.QUEUED
+
+    box = Box()
+    with _client(vault, box) as client:
+        report = extract_runner.drain(vault, Extractor(vault, client), queue)
+    assert report.stats()["claims"] == 1
+
+
+def test_a_recording_whose_handover_was_lost_is_queued_again(vault, recorded):
+    """A vault stranded by the bug above recovers without anyone doing anything.
+
+    The transcript is in the log and the only job is finished. The log is the
+    source of truth, and it holds no reading of the words — so they are queued.
+    A transcript alone does not count as the artefact having been read.
+    """
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    extract_runner.enqueue_unread(vault, queue)
+    job = queue.for_artifact(recorded.short)
+    _transcribe(vault)
+    queue.finished(job)
+
+    extract_runner.enqueue_unread(vault, queue)
+    assert queue.for_artifact(recorded.short).state == jobs_mod.QUEUED
+
+    box = Box()
+    with _client(vault, box) as client:
+        report = extract_runner.drain(vault, Extractor(vault, client), queue)
+    assert report.stats()["claims"] == 1
+
+    # Read once, and settled: nothing queues it a third time.
+    assert extract_runner.enqueue_unread(vault, queue) == ()
+
+
+def test_a_silent_recording_is_not_queued_for_the_reader(vault, recorded):
+    queue = jobs_mod.Queue.open(vault.root / ".agent")
+    extract_runner.enqueue_unread(vault, queue)
+    speech_mod.drain(vault, speech_mod.Transcriber(vault, speech=FakeSpeech("")), queue)
+
+    assert extract_runner.enqueue_unread(vault, queue) == ()
+    assert queue.for_artifact(recorded.short).state == jobs_mod.DONE
+
+
 def test_an_untranscribed_recording_is_left_for_the_other_drain(vault, recorded):
     """Passed over silently, and the job is not marked: it is not this reader's."""
     queue = jobs_mod.Queue.open(vault.root / ".agent")

@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, ContextManager, Sequence
+from typing import Any, Callable, ContextManager, Mapping, Sequence
 
 from ..distribution import for_terminal
 from ..errors import (
@@ -843,25 +843,52 @@ def enqueue_artifacts(vault, queue: jobs_mod.Queue, shorts: Sequence[str]):
     return tuple(queued)
 
 
+def _is_transcription(event) -> bool:
+    """The speech model's typing-up of a recording, as opposed to a reading of it."""
+    return (
+        event.type == propose.EXTRACTION_COMPLETED
+        and isinstance(event.payload, Mapping)
+        and event.payload.get("reader") == "speech"
+    )
+
+
 def enqueue_unread(vault, queue: jobs_mod.Queue) -> tuple[jobs_mod.Job, ...]:
     """Queue every ingested artefact the log has no extraction for.
 
     Reads the log rather than the queue, so an artefact ingested on another
     device — or on this one before the queue file existed — is picked up.
+
+    **A transcript is not a reading.** A recording passes through two readers,
+    and the speech model's ``extraction.completed`` says only that the words
+    were typed up; the words still have to be read for claims. Counting it as
+    done left a typed-up recording unread for good whenever the handover job
+    was lost. A transcript with no speech in it is the exception: there is
+    nothing for the second reader to read, so it is done.
     """
     events = list(vault.read().events)
     artifacts = citations_mod.index_artifacts(events)
-    done = {key[0] for key in propose.completed_keys(events)}
+    readings = [event for event in events if not _is_transcription(event)]
+    done = {key[0] for key in propose.completed_keys(readings)}
+    typed_up: set[str] = set()
+    for short, event in transcripts_mod.latest(events).items():
+        if transcripts_mod.spoken_text(transcripts_mod.transcript_payload(event) or {}):
+            typed_up.add(short)
+        else:
+            done.add(short)
     added = []
     for short in sorted(artifacts):
         if short in done:
             continue
         job = queue.for_artifact(short)
-        if job is not None:
+        if job is not None and not (job.state == jobs_mod.DONE and short in typed_up):
             # Terminal: given up on or found unreadable, and only `--artifact`
             # re-opens it. Live: already waiting, and `queue.add` would hand
             # back the same job — counting it as newly queued makes "queued 2
             # artefact(s) not yet read" print on a run that queued nothing.
+            #
+            # A finished job on a recording whose words nobody has read is
+            # the speech model's job, not this reader's: the handover was lost,
+            # and the log — not the job file — says what has been read.
             continue
         added.append(queue.add(short))
     return tuple(added)

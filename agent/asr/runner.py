@@ -271,19 +271,32 @@ class DrainReport:
         return [outcome.describe() for outcome in self.outcomes]
 
 
-def speech_jobs(vault, queue: jobs_mod.Queue, moment=None) -> tuple[jobs_mod.Job, ...]:
-    """The ready jobs whose artefacts are recordings.
+def speech_jobs(
+    vault, queue: jobs_mod.Queue, moment=None, transcriber: "Transcriber | None" = None
+) -> tuple[jobs_mod.Job, ...]:
+    """The ready jobs whose artefacts are recordings not yet typed up.
 
     Partitioned by the artefact's mime rather than by a field on the job, so the
     job file's format is unchanged and a queue written by an older version is
     still drained correctly by this one.
+
+    **A recording already typed up under *transcriber*'s settings is not this
+    drain's.** Its job is the handover to the reader that proposes claims, and
+    the worker runs this drain on every pass — including every pass while that
+    reader is starting, asleep or on a box that is off the tailnet. Taking the
+    job here would find the transcript in the log, call it done, and leave the
+    words read by nobody: the log already counts the artefact as extracted, so
+    nothing would ever queue it again.
     """
-    artifacts = citations_mod.index_artifacts(list(vault.read().events))
+    events = list(vault.read().events)
+    artifacts = citations_mod.index_artifacts(events)
+    typed_up = completed_keys(events) if transcriber is not None else set()
     return tuple(
         job
         for job in queue.ready(moment)
         if (artifact := artifacts.get(job.artifact)) is not None
         and is_speech(artifact.mime)
+        and (transcriber is None or transcriber.key_for(job.artifact).tuple not in typed_up)
     )
 
 
@@ -295,7 +308,7 @@ def drain(vault, transcriber: Transcriber, queue: jobs_mod.Queue, moment=None) -
     them. Nothing here can park the queue: there is no authentication to fail
     and no box to be asleep.
     """
-    ready = speech_jobs(vault, queue, moment)
+    ready = speech_jobs(vault, queue, moment, transcriber=transcriber)
     if not ready:
         return DrainReport(idle_reason="no recordings are waiting to be typed up")
 

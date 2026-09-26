@@ -620,7 +620,7 @@ def cmd_transcribe(args: argparse.Namespace, out: TextIO) -> int:
         idle_reason = None
     elif args.dry_run:
         runner_mod.enqueue_unread(vault, queue)
-        waiting = speech_mod.speech_jobs(vault, queue, _now())
+        waiting = speech_mod.speech_jobs(vault, queue, _now(), transcriber=transcriber)
         print(f"dry run   {len(waiting)} recording(s) would be typed up", file=out)
         for job in waiting:
             print(f"          {job.describe()}", file=out)
