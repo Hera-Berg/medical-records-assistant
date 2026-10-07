@@ -12,6 +12,7 @@
  */
 
 import type {
+  DoctorNotes,
   ArtifactMeta,
   AskResponse,
   CaptureResponse,
@@ -123,6 +124,11 @@ export const api = {
     const suffix = query.toString();
     return request<Timeline>(`/api/timeline${suffix ? `?${suffix}` : ""}`);
   },
+  doctorNotes: () => request<DoctorNotes>("/api/doctor-notes"),
+  createNotesCompartment: (body: unknown) =>
+    post<DoctorNotes>("/api/doctor-notes/compartment", body),
+  addDoctorNote: (body: { compartment: string; iv: string; ciphertext: string }) =>
+    post<DoctorNotes>("/api/doctor-notes", body),
   timelineMonths: () =>
     request<{ months: { month: string; rows: number }[]; as_of: string }>("/api/timeline/months"),
 

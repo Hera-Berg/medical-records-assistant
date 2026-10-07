@@ -55,6 +55,7 @@ import { Review } from "./components/Review";
 import { Settings } from "./components/Settings";
 import { MenuIcon, Sidebar } from "./components/Sidebar";
 import { SummaryScreen } from "./components/Summary";
+import { DoctorNotes } from "./components/DoctorNotes";
 import { Timeline } from "./components/Timeline";
 import { Welcome } from "./components/Welcome";
 
@@ -185,6 +186,8 @@ export function App() {
         setHeader={setHeader}
       />
     );
+  } else if (first === "doctor-notes") {
+    screen = <DoctorNotes version={version} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
   } else if (first === "welcome") {
@@ -457,6 +460,13 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "ask") {
     return { title: "Ask your record", subtitle: "" };
+  }
+  if (first === "doctor-notes") {
+    return {
+      title: "Doctor's notes",
+      subtitle:
+        "Notes a doctor types here are locked with a passphrase. They are kept apart from the rest of the record and never appear in it, on the timeline, on an appointment sheet or in an answer.",
+    };
   }
   if (first === "review") {
     return {

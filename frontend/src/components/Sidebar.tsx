@@ -136,6 +136,7 @@ export function Sidebar({
           <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
           <Item to="/record" label="Medications and more" icon={<Book />} {...item} />
           <Item to="/summary" label="For an appointment" icon={<Sheet />} {...item} />
+          <Item to="/doctor-notes" label="Doctor's notes" icon={<Lock />} {...item} />
           <Item to="/files" label="Files" icon={<Folder />} {...item} />
         </div>
 
@@ -282,6 +283,15 @@ function Item({
 /* Icons, drawn here rather than fetched. An icon font or an SVG sprite from a
    CDN is a network call, and this page makes none. Each one sits beside its own
    word — none of them is asked to carry a meaning by itself. */
+
+function Lock() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function Clock() {
   return (

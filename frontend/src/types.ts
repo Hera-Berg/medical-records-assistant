@@ -895,3 +895,27 @@ export interface LocalModel {
   known_failures: string[];
   memory_warning: string | null;
 }
+
+/** A doctor's-notes compartment: how its key is derived, and a value that proves a passphrase. */
+export interface NotesCompartment {
+  id: string;
+  ts: string;
+  device: string;
+  kdf: { name: "PBKDF2"; hash: "SHA-256"; iterations: number; salt: string };
+  check: { iv: string; ciphertext: string };
+}
+
+/** One sealed note, as the server holds it: ciphertext and when it was saved. */
+export interface DoctorNoteSealed {
+  event_id: string;
+  ts: string;
+  device: string;
+  compartment: string;
+  iv: string;
+  ciphertext: string;
+}
+
+export interface DoctorNotes {
+  compartments: NotesCompartment[];
+  notes: DoctorNoteSealed[];
+}

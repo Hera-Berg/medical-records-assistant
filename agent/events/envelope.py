@@ -53,6 +53,12 @@ EVENT_TYPES: dict[str, str] = {
     # the document, photographed it again, typed it in. Names the extraction
     # event it answers, so a later reading raises its own question afresh.
     "reading.acknowledged": ACTOR_USER,
+    # Doctor's notes: a passphrase-locked compartment, sealed in the browser.
+    # The payloads are ciphertext and the projection has no branch for either,
+    # so neither reaches the wiki, the timeline, a summary or an answer. See
+    # `agent.sealed`.
+    "compartment.created": ACTOR_USER,
+    "compartment.note.sealed": ACTOR_USER,
 }
 
 ENVELOPE_KEYS = ("id", "type", "ts", "device", "actor", "provenance", "payload")
