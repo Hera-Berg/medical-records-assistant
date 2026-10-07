@@ -406,6 +406,10 @@ def elapsed_since(iso: str | None, as_of: date | None) -> str | None:
     return entities_mod.elapsed_phrase(parsed, as_of)
 
 
+def _mention_iso(mention: entities_mod.Mention | None) -> str | None:
+    return mention.when.isoformat() if mention is not None and mention.when else None
+
+
 def entity_summary(entity: Entity, as_of: date | None = None) -> dict[str, Any]:
     """The index row for one entity. No claim values beyond the winning ones."""
     dose = entity.slots.get("dose")
@@ -435,6 +439,11 @@ def entity_summary(entity: Entity, as_of: date | None = None) -> dict[str, Any]:
         "started": entity.started.iso if entity.started else None,
         "stop_reported": entity.stop_report.iso if entity.stop_report else None,
         "stop_reported_tier": entity.stop_report.tier if entity.stop_report else None,
+        # A symptom's dates are when it was mentioned, never whether it is still
+        # happening. Null for every other kind.
+        "first_reported": _mention_iso(entity.first_reported),
+        "last_reported": _mention_iso(entity.last_reported),
+        "last_reported_ago": elapsed_since(_mention_iso(entity.last_reported), as_of),
         "review_count": len(entity.review),
         "anomaly_count": len(entity.anomalies),
         "sources": list(entity.sources),
@@ -482,6 +491,26 @@ def entity_detail(
                 for name in entity.salt_names
             ],
             "merged_from": list(entity.merged_from),
+            # Newest first. `quote` is withheld where the user rejected anything
+            # read off the same artefact — see `entities._rejected_artefacts`.
+            "mentions": [
+                {
+                    "event_id": m.claim.event_id,
+                    "resolved": m.resolved,
+                    "when": m.when.isoformat() if m.when else None,
+                    "when_label": entities_mod.MENTION_DATE_WORDS.get(m.when_source or ""),
+                    "quote": m.quote,
+                    "evidence_tier": m.claim.evidence_tier,
+                    "occurred_at": fuzzy_date(m.claim.occurred_at),
+                    "occurred_span": m.claim.occurred_span,
+                    "citation": citation(
+                        citer,
+                        m.claim.cite,
+                        "Your correction" if m.claim.is_correction else "Recorded claim",
+                    ),
+                }
+                for m in reversed(entity.mentions)
+            ],
             "dispense": _dispense(entity),
             "stop_report": (
                 {

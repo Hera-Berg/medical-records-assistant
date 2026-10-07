@@ -27,7 +27,7 @@ from ..llm.client import image_part, text_part
 from .images import PreparedImage
 from .schema import FAMILIES, FAMILY_SCHEMAS
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 
 SYSTEM = """\
 You read a single page of a personal health record and report exactly what it says.
@@ -37,7 +37,8 @@ suggest causes, do not say whether anything is concerning, and do not comment on
 whether a dose looks right. Report what is on the page and stop.
 
 You will be asked about the page in parts: first medications, then allergies,
-then problems and the practitioners named. Answer only the part you are asked.
+then problems, symptoms and the practitioners named. Answer only the part you
+are asked.
 
 Rules, in order of importance:
 
@@ -80,9 +81,11 @@ Now the allergies on the same page. Report every allergy or reaction you can rea
 with certainty, and put anything you cannot read with certainty in unclear. If
 there are none, return empty lists.""",
     "problems": """\
-Now the conditions the page itself names as the person's, and the practitioners
-it names. Report only what is written — never a condition worked out from a
-result or a medicine. Anything you cannot read with certainty goes in unclear.
+Now the conditions the page itself names as the person's, the symptoms it says
+they have or had, and the practitioners it names. A symptom is what the person
+feels or notices — a cough, a headache — and is never turned into a condition.
+Report only what is written — never a condition worked out from a result, a
+medicine or a symptom. Anything you cannot read with certainty goes in unclear.
 If there are none, return empty lists.""",
 }
 

@@ -289,7 +289,7 @@ def test_timeline_filters_by_entity_and_by_tier(record, client):
 
 def test_wiki_index_groups_by_kind_and_generates_the_medication_view(record, client):
     body = client.get("/api/wiki").json()
-    assert set(body["kinds"]) == {"med", "allergy", "problem", "person"}
+    assert set(body["kinds"]) == {"med", "allergy", "problem", "person", "symptom"}
     names = {row["name"] for row in body["current_medications"]}
     assert "Perindopril" in names
     assert "Metformin" in names

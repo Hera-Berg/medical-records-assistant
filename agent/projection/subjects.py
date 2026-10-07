@@ -8,10 +8,14 @@ suspicion the raw store applies to recorded paths: a subject that would climb ou
 of ``wiki/`` is refused rather than sanitised, because a sanitised subject is a
 claim silently filed under the wrong name.
 
-The four kinds are the four entity directories the storage layout names. A claim
+The five kinds are the five entity directories the storage layout names. A claim
 about anything else is not filed as an entity; low-consequence material like a
 meal photo or a weight reading belongs to the timeline, which is where the spec
 puts it ("auto-applies, reversible from the timeline").
+
+``symptom`` is its own kind rather than a ``problem``, because a cough is not a
+diagnosis: filed as a problem it would gate as adding one, and print under
+"active problems" on a sheet handed to a clinician.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ KIND_DIRS: dict[str, str] = {
     "allergy": "allergies",
     "problem": "problems",
     "person": "people",
+    "symptom": "symptoms",
 }
 
 #: Deliberately narrow: lowercase, digits and internal hyphens. It excludes

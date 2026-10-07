@@ -60,6 +60,13 @@ CONFLICTED = "conflicted"
 #: Most urgent first. The single ``status`` field takes the first that applies.
 STATUS_PRECEDENCE = (STOPPED, CONFLICTED, STALE, ACTIVE)
 
+#: A symptom's two states. Deliberately not ``active``: the record holds that a
+#: symptom was mentioned and when, never that it is happening now. Only an
+#: explicit statement that it has gone moves it to ``resolved`` — silence never
+#: does, for the same reason silence never stops a medication.
+REPORTED = "reported"
+RESOLVED = "resolved"
+
 #: Review queue kind for a stop the tier rule declined to act on. Its own kind
 #: rather than a ``conflict``: nothing here contradicts anything, the patient and
 #: the prescriber are simply answering different questions.
@@ -102,6 +109,30 @@ class SaltName:
 
 
 @dataclass(frozen=True)
+class Mention:
+    """One time a source mentioned a symptom: that it is there, or that it went.
+
+    ``when`` is the date of the *mention*, not of the symptom: the date on the
+    document, else when it was recorded, else when it was added to the record —
+    and ``when_source`` says which, so a page never passes one off as another.
+    When the symptom itself started is the claim's ``occurred_at``, kept apart.
+    """
+
+    claim: Claim
+    resolved: bool
+    when: date | None
+    when_source: str | None
+    #: The source's own words, or ``None`` where they are withheld because the
+    #: user rejected something read off the same artefact. See
+    #: :func:`_rejected_artefacts`.
+    quote: str | None
+
+    @property
+    def order(self) -> tuple:
+        return (self.when or date.min, self.claim.sort_key)
+
+
+@dataclass(frozen=True)
 class Entity:
     """One wiki page's worth of state."""
 
@@ -135,6 +166,18 @@ class Entity:
     #: The merge event that created this stub, so its page can cite the decision
     #: rather than pointing at an artefact that was never involved.
     merge_event: str | None = None
+    #: Every mention of a symptom, oldest first. Empty for every other kind.
+    mentions: tuple[Mention, ...] = ()
+
+    @property
+    def first_reported(self) -> Mention | None:
+        reports = [m for m in self.mentions if not m.resolved]
+        return reports[0] if reports else None
+
+    @property
+    def last_reported(self) -> Mention | None:
+        reports = [m for m in self.mentions if not m.resolved]
+        return reports[-1] if reports else None
 
     @property
     def id(self) -> str:
@@ -319,6 +362,86 @@ def _salt_names(subject: Subject, claims: Iterable[Claim]) -> tuple[SaltName, ..
     return tuple(found[key] for key in sorted(found))
 
 
+#: Which timestamp a mention is dated by, in the words a page uses for it.
+MENTION_DATE_WORDS = {
+    "artifact_ts": "document dated",
+    "captured_ts": "recorded",
+    "ingested_ts": "added to the record",
+    "correction": "your correction",
+}
+
+
+def _mention_date(claim: Claim) -> tuple[date | None, str | None]:
+    """When this mention was made, and which timestamp says so."""
+    if claim.is_correction:
+        # A correction is the user saying it, on the day they said it.
+        return dates.parse_iso_date(claim.ts[:10]), "correction"
+    for name in ("artifact_ts", "captured_ts", "ingested_ts"):
+        value = getattr(claim, name)
+        if isinstance(value, str) and value:
+            parsed = dates.parse_iso_date(value[:10])
+            if parsed is not None:
+                return parsed, name
+    return None, None
+
+
+def _mentions(
+    slots: Mapping[str, Slot], withheld: frozenset[str]
+) -> tuple[Mention, ...]:
+    """Every admitted mention of a symptom, oldest first.
+
+    Not just the slot's winner. All mentions of one symptom carry the same
+    value, so ranking leaves one standing and files the rest as superseded;
+    for a symptom those are not earlier readings a later one replaced but the
+    history itself, and "when did I first mention the cough" is answered by
+    the oldest of them.
+
+    A reading the user corrected is left out — the correction stands in for
+    it — and so is a reading that disagrees with a correction, which the
+    review queue raises as a contradiction.
+    """
+    found: dict[str, Mention] = {}
+    for predicate in ("reported", "resolved"):
+        slot = slots.get(predicate)
+        if slot is None:
+            continue
+        corrected = {c.target for c in slot.all_claims if c.is_correction and c.target}
+        candidates = (
+            ((slot.winner,) if slot.winner is not None else ())
+            + slot.readings
+            + slot.superseded
+        )
+        for claim in candidates:
+            if claim.event_id in corrected or claim.event_id in found:
+                continue
+            when, source = _mention_date(claim)
+            found[claim.event_id] = Mention(
+                claim=claim,
+                resolved=predicate == "resolved",
+                when=when,
+                when_source=source,
+                quote=None if claim.cite in withheld else claim.source_span,
+            )
+    return tuple(sorted(found.values(), key=lambda m: m.order))
+
+
+def _rejected_artefacts(reconciliation: Reconciliation) -> frozenset[str]:
+    """Artefacts the user rejected any reading of.
+
+    A symptom page quotes the source's words, and a sentence of a voice note can
+    carry more than the symptom — including a reading the user rejected. That
+    content must not reach a page that gets printed for a clinician, under any
+    heading. Matching the rejected wording inside the quote would be fuzzy; not
+    quoting from that artefact at all is not, and the mention keeps its date and
+    its citation.
+    """
+    return frozenset(
+        admission.claim.cite
+        for admission in reconciliation.admissions
+        if admission.state == reconcile.REJECTED
+    )
+
+
 def build(
     subject: Subject,
     slots: Mapping[str, Slot],
@@ -326,6 +449,7 @@ def build(
     review: tuple[ReviewItem, ...] = (),
     merged_from: tuple[str, ...] = (),
     notes: tuple[anomalies_mod.Anomaly, ...] = (),
+    withheld: frozenset[str] = frozenset(),
 ) -> Entity:
     """Assemble one entity from its reconciled slots."""
     supporting: dict[str, Claim] = {}
@@ -390,10 +514,23 @@ def build(
     stop_report = None if stopped else _stop_report(status_slot)
     conflicted = any(slot.is_conflicted for slot in slots.values())
 
+    mentions: tuple[Mention, ...] = ()
+    if subject.kind == "symptom":
+        mentions = _mentions(slots, withheld)
+        # The latest mention decides: "the cough has cleared up" after the last
+        # report of it is resolved, and a cough mentioned again after that is
+        # reported again. Nothing else — least of all time passing — does.
+        latest_resolved = bool(mentions) and mentions[-1].resolved
+        # `last_confirmed` is a medication's idea. A symptom's dates are its
+        # mentions, which the page writes as first and last reported.
+        last_confirmed = None
+
     if stopped:
         status = STOPPED
     elif conflicted:
         status = CONFLICTED
+    elif subject.kind == "symptom":
+        status = RESOLVED if latest_resolved else REPORTED
     elif stale:
         status = STALE
     else:
@@ -445,6 +582,7 @@ def build(
         salt_names=salt_names,
         anomalies=notes,
         merged_from=merged_from,
+        mentions=mentions,
     )
 
 
@@ -470,6 +608,7 @@ def build_all(reconciliation: Reconciliation, as_of: datetime) -> dict[str, Enti
     for source, into in reconciliation.aliases.items():
         merged_from.setdefault(into, []).append(source)
 
+    withheld = _rejected_artefacts(reconciliation)
     review_by_subject: dict[str, list[ReviewItem]] = {}
     for item in reconciliation.review:
         review_by_subject.setdefault(item.subject_id, []).append(item)
@@ -485,6 +624,7 @@ def build_all(reconciliation: Reconciliation, as_of: datetime) -> dict[str, Enti
             review=tuple(review_by_subject.get(subject_id, ())),
             merged_from=tuple(sorted(merged_from.get(subject_id, ()))),
             notes=anomalies_mod.for_subject(reconciliation.anomalies, subject_id),
+            withheld=withheld,
         )
 
     # A merged-away name keeps a stub, so following an old citation or an old

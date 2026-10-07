@@ -217,6 +217,19 @@ def _problems(payload: Mapping[str, Any], mime: str, locale: str) -> Extraction:
             abstentions.append(_bad_name(PROBLEMS, "name", name, raw))
             continue
         claims.append(_claim(subject_id, name, "name", name, raw, mime, locale))
+    for raw in payload["symptoms"]:
+        name = raw["name"].strip()
+        # A digit is a duration or a count — "3 days of cough" — leaking into
+        # the name, and it would mint a second page beside `symptom:cough`.
+        subject_id = _subject("symptom", name) if name and not re.search(r"\d", name) else None
+        if subject_id is None:
+            abstentions.append(_bad_name(PROBLEMS, "symptom", name, raw))
+            continue
+        # The value is the name either way, so every mention of one symptom
+        # agrees and none of them conflict. What was actually said is the
+        # claim's source span, which the page quotes.
+        predicate = "resolved" if _text(raw.get("gone")) else "reported"
+        claims.append(_claim(subject_id, name, predicate, name, raw, mime, locale))
     for raw in payload["people"]:
         name = raw["name"].strip()
         subject_id = _subject("person", name) if name else None

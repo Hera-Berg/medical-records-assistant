@@ -57,7 +57,8 @@ whether a dose sounds right. Report what was said and stop.
 
 This is speech, so it rambles, repeats itself, corrects itself and trails off.
 That is normal and is not a reason to tidy it. You will be asked about it in
-parts: first medications, then allergies, then problems and practitioners.
+parts: first medications, then allergies, then problems, symptoms and
+practitioners.
 
 Rules, in order of importance:
 

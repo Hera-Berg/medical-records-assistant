@@ -41,11 +41,28 @@ _FRONTMATTER_SKIP = frozenset(
         "stop_reported",
         "stop_reported_tier",
         "also_labelled",
+        # A symptom's mentions are written as dates and a list, not as the
+        # winner of a slot: every mention carries the same value, the name.
+        "reported",
+        "resolved",
+        "first_reported",
+        "last_reported",
+        "resolved_on",
     }
 )
 
 
+#: Predicates whose key does not read as a noun. "The reported is dated only
+#: as …" is the schema talking; "the mention is" is the page.
+_PREDICATE_NOUNS = {
+    "reported": "Mention",
+    "resolved": "Mention that it has gone",
+}
+
+
 def _label(predicate: str) -> str:
+    if predicate in _PREDICATE_NOUNS:
+        return _PREDICATE_NOUNS[predicate]
     words = predicate.replace("_", " ").replace(".", " ").split()
     return " ".join(w[0].upper() + w[1:] if w else w for w in words[:1] + words[1:])
 
@@ -574,6 +591,71 @@ def _history_section(document: Document, entity: Entity, citer: Citer) -> None:
         document.bullet(Sentence(text, citations))
 
 
+def _mention_when(mention) -> str:
+    """"3 October 2026 (recorded)" — the date and which timestamp it is."""
+    if mention.when is None:
+        return "Undated"
+    words = entities_mod.MENTION_DATE_WORDS.get(mention.when_source or "", "")
+    rendered = dates.render_date(mention.when)
+    return f"{rendered} ({words})" if words else rendered
+
+
+def _mention_citation(mention, citer: Citer) -> Citation:
+    return citer.cite(mention.claim.cite, _correction_description(mention.claim))
+
+
+def _symptom_sections(document: Document, entity: Entity, citer: Citer) -> None:
+    """What was said about a symptom, and when — never whether it is happening.
+
+    The record cannot know that a cough is still going on, only when it was
+    last mentioned, so the page says exactly that. It says a symptom has gone
+    only when a source said so, and quotes the source.
+    """
+    last = entity.last_reported
+    first = entity.first_reported
+    latest = entity.mentions[-1] if entity.mentions else None
+    if entity.status == entities_mod.RESOLVED and latest is not None:
+        document.paragraph(
+            Sentence(
+                f"Said to have gone — {_mention_when(latest)}",
+                [_mention_citation(latest, citer)],
+            )
+        )
+    elif last is not None:
+        document.paragraph(
+            Sentence(
+                f"Last mentioned {_mention_when(last)}; nothing in the record says it "
+                f"has gone",
+                [_mention_citation(last, citer)],
+            )
+        )
+    if first is not None and last is not None and first is not last:
+        document.paragraph(
+            Sentence(
+                f"First mentioned {_mention_when(first)}",
+                [_mention_citation(first, citer)],
+            )
+        )
+
+    if not entity.mentions:
+        return
+    document.heading("Mentions")
+    for mention in reversed(entity.mentions):
+        claim = mention.claim
+        what = "said to have gone" if mention.resolved else "mentioned"
+        if mention.quote:
+            what = f"{what}: \u201c{mention.quote}\u201d"
+        qualifiers = [claim.evidence_tier] + [
+            phrase for phrase in _when_phrases(claim) if not phrase.startswith("document dated")
+        ]
+        document.bullet(
+            Sentence(
+                f"**{_mention_when(mention)}** — {what} ({', '.join(qualifiers)})",
+                [_mention_citation(mention, citer)],
+            )
+        )
+
+
 def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     """Render one entity file."""
     document = Document()
@@ -630,6 +712,18 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         "expected_exhaustion",
         entity.expected_exhaustion.iso if entity.expected_exhaustion else None,
     )
+    if entity.subject.kind == "symptom":
+        first, last = entity.first_reported, entity.last_reported
+        document.optional_field(
+            "first_reported", first.when.isoformat() if first and first.when else None
+        )
+        document.optional_field(
+            "last_reported", last.when.isoformat() if last and last.when else None
+        )
+        gone = entity.mentions[-1] if entity.status == entities_mod.RESOLVED else None
+        document.optional_field(
+            "resolved_on", gone.when.isoformat() if gone and gone.when else None
+        )
     if entity.evidence_tier:
         document.field_("evidence_tier", entity.evidence_tier)
 
@@ -653,9 +747,11 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         document.field_("merged_from", list(entity.merged_from))
     document.field_("sources", list(entity.sources))
 
+    symptom = entity.subject.kind == "symptom"
     shown = [
         predicate
         for predicate in sorted(entity.slots)
+        if not (symptom and predicate in ("reported", "resolved"))
         # `name` is the page's title and its frontmatter; repeating it as a
         # bullet says nothing. A "Status — stopped" bullet under a page whose
         # status field reads active is a flat contradiction, and the
@@ -669,7 +765,9 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
         for predicate in shown:
             _slot_bullet(document, entity.slots[predicate], citer)
 
-    if not shown:
+    if symptom:
+        _symptom_sections(document, entity, citer)
+    elif not shown:
         # An entity whose only claim is its name would otherwise render as
         # frontmatter and nothing else — no prose, and no footnote, so the file
         # does not say where it came from. That is a page that has lost its
@@ -682,7 +780,9 @@ def entity_page(entity: Entity, citer: Citer, as_of_date) -> bytes:
     _salt_names_section(document, entity, citer)
     _conflicts_section(document, entity, citer)
     _review_section(document, entity, citer)
-    _history_section(document, entity, citer)
+    if not symptom:
+        # A symptom's superseded readings are its mentions, listed above.
+        _history_section(document, entity, citer)
     _anomalies_section(document, entity, citer)
 
     return document.render()

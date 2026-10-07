@@ -15,7 +15,14 @@ export type Tier =
   | "inferred"
   | "artefact";
 
-export type Status = "active" | "stale" | "stopped" | "conflicted";
+export type Status =
+  | "active"
+  | "stale"
+  | "stopped"
+  | "conflicted"
+  // A symptom's two states: mentioned, or said by a source to have gone.
+  | "reported"
+  | "resolved";
 
 export type DateKind = "occurred" | "document" | "captured" | "recorded";
 
@@ -174,7 +181,7 @@ export interface ReviewQueue {
 
 export interface EntitySummary {
   id: string;
-  kind: "med" | "allergy" | "problem" | "person";
+  kind: "med" | "allergy" | "problem" | "person" | "symptom";
   slug: string;
   name: string;
   status: Status;
@@ -191,6 +198,10 @@ export interface EntitySummary {
   started: string | null;
   stop_reported: string | null;
   stop_reported_tier: string | null;
+  /** When a symptom was first and last mentioned. Null for every other kind. */
+  first_reported: string | null;
+  last_reported: string | null;
+  last_reported_ago: string | null;
   review_count: number;
   anomaly_count: number;
   sources: string[];
@@ -211,6 +222,20 @@ export interface EntityDetail extends EntitySummary {
     citation: Citation;
   }[];
   merged_from: string[];
+  /** Every mention of a symptom, newest first. Empty for every other kind. */
+  mentions: {
+    event_id: string;
+    resolved: boolean;
+    when: string | null;
+    /** Which timestamp `when` is: "document dated", "recorded", … */
+    when_label: string | null;
+    /** The source's own words, or null where they are withheld. */
+    quote: string | null;
+    evidence_tier: Tier;
+    occurred_at: FuzzyDate | null;
+    occurred_span: string | null;
+    citation: Citation;
+  }[];
   dispense: {
     quantity: string | null;
     frequency: string | null;

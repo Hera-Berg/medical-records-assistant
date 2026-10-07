@@ -45,6 +45,7 @@ from typing import Iterable, Mapping, Sequence
 from ..projection import Projection
 from ..projection.citations import Citation, Citer
 from ..projection.claims import Claim
+from ..projection import dates
 from ..projection import entities as entities_mod
 from ..projection.entities import Entity
 from ..projection.reconcile import REJECTED, Slot
@@ -270,6 +271,7 @@ KIND_NOUNS = {
     "allergy": "allergy",
     "problem": "problem",
     "person": "person",
+    "symptom": "symptom",
 }
 
 #: The record's status word, in the words the interface uses everywhere else.
@@ -285,6 +287,13 @@ STATUS_WORDS = {
     ),
     entities_mod.STOPPED: "stopped",
     entities_mod.CONFLICTED: "two sources disagree about it",
+    # Never "current". The record holds when a symptom was mentioned, and an
+    # answer built on "reported" must not be able to say someone has it now.
+    entities_mod.REPORTED: (
+        "mentioned in the record; the record holds when, not whether it is still "
+        "happening, and nothing in it says it has gone"
+    ),
+    entities_mod.RESOLVED: "the most recent mention says it has gone",
 }
 
 
@@ -330,6 +339,8 @@ def _entity_passages(
     entity: Entity, citer: Citer, facet: str, rank: int
 ) -> list[Passage]:
     """One entity as the model sees it: its facts, its state, its history."""
+    if entity.subject.kind == "symptom":
+        return _symptom_passages(entity, citer, facet, rank)
     found: list[Passage] = []
     for predicate in sorted(entity.slots):
         slot = entity.slots[predicate]
@@ -376,6 +387,64 @@ def _entity_passages(
     return found
 
 
+#: How many mentions of one symptom are shown, newest first. The oldest is
+#: always added beside them, so "when did it start being mentioned" survives
+#: the cap.
+MAX_MENTIONS = 4
+
+
+def _symptom_passages(
+    entity: Entity, citer: Citer, facet: str, rank: int
+) -> list[Passage]:
+    """A symptom as the model sees it: when it was mentioned, in whose words.
+
+    Each mention is its own passage dated by the mention, with the timestamp it
+    came from named, so an answer can say "you mentioned a cough on 3 October"
+    and cite the recording — and cannot say "you have a cough", because nothing
+    it was given says so.
+    """
+    mentions = list(reversed(entity.mentions))
+    chosen = mentions[:MAX_MENTIONS]
+    if mentions and mentions[-1] not in chosen:
+        chosen.append(mentions[-1])
+    found: list[Passage] = []
+    for index, mention in enumerate(chosen):
+        claim = mention.claim
+        said = "said to have gone" if mention.resolved else "mentioned"
+        if mention.quote:
+            said = f"{said}: “{mention.quote}”"
+        when = (
+            f"{entities_mod.MENTION_DATE_WORDS.get(mention.when_source or '', '')} "
+            f"{dates.render_date(mention.when)}".strip()
+            if mention.when is not None
+            else "undated"
+        )
+        onset = _when(claim)
+        found.append(
+            Passage(
+                key=claim.cite,
+                kind=FACT,
+                event_id=claim.event_id,
+                subject_id=entity.id,
+                title=f"{entity.name} (symptom) — "
+                + ("said to have gone" if mention.resolved else "a mention"),
+                text=said + (f" — about when it happened: {onset}" if onset else ""),
+                predicate=claim.predicate,
+                tier=claim.evidence_tier,
+                corrected=claim.is_correction,
+                when=when,
+                citation=citer.cite(
+                    claim.cite, "Your correction" if claim.is_correction else "Recorded claim"
+                ),
+                rank=rank,
+                order=(entity.id, claim.predicate, index),
+                facet=facet,
+            )
+        )
+    found.extend(_lifecycle_passages(entity, citer, facet, rank))
+    return found
+
+
 def _lifecycle_passages(
     entity: Entity, citer: Citer, facet: str, rank: int
 ) -> list[Passage]:
@@ -404,6 +473,14 @@ def _lifecycle_passages(
         lines.append("nothing has confirmed it since it was expected to run out")
     if entity.last_confirmed is not None:
         lines.append(f"last confirmed {entity.last_confirmed.render()}")
+    if entity.last_reported is not None and entity.last_reported.when is not None:
+        lines.append(f"last mentioned {dates.render_date(entity.last_reported.when)}")
+    if (
+        entity.first_reported is not None
+        and entity.first_reported.when is not None
+        and entity.first_reported is not entity.last_reported
+    ):
+        lines.append(f"first mentioned {dates.render_date(entity.first_reported.when)}")
     if entity.expected_exhaustion is not None:
         lines.append(f"expected to have run out around {entity.expected_exhaustion.render()}")
     if entity.started is not None:
@@ -526,11 +603,31 @@ def _entities_for(question: Question, projection: Projection) -> list[tuple[str,
         return found[:MAX_ENTITIES]
 
     for kind in question.kinds:
-        for subject_id in sorted(projection.entities):
-            entity = projection.entities[subject_id]
-            if entity.subject.kind == kind and not entity.merged_into:
-                add(subject_id, classify_mod.KIND)
+        for subject_id in _shelf(projection, kind):
+            add(subject_id, classify_mod.KIND)
     return found[:MAX_ENTITIES]
+
+
+def _shelf(projection: Projection, kind: str) -> list[str]:
+    """Every entity of one kind, in the order a whole-shelf question wants.
+
+    Symptoms most recently mentioned first, because the list is capped and
+    "what symptoms do I have" is asking about the recent ones. Everything else
+    by id, as before.
+    """
+    ids = [
+        subject_id
+        for subject_id in sorted(projection.entities)
+        if projection.entities[subject_id].subject.kind == kind
+        and not projection.entities[subject_id].merged_into
+    ]
+    if kind == "symptom":
+        def last(subject_id: str) -> str:
+            mention = projection.entities[subject_id].last_reported
+            return mention.when.isoformat() if mention and mention.when else ""
+
+        ids.sort(key=last, reverse=True)
+    return ids
 
 
 def _artefacts_of(entity: Entity) -> frozenset[str]:

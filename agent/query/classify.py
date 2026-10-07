@@ -254,6 +254,10 @@ _KIND_WORDS: tuple[tuple[str, str], ...] = (
     ("problems", "problem"), ("problem", "problem"), ("conditions", "problem"),
     ("condition", "problem"), ("diagnoses", "problem"), ("diagnosis", "problem"),
     ("diagnosed", "problem"), ("treated", "problem"),
+    # A symptom is what someone feels, and the record holds when they said so.
+    # "Feeling" is not here: "how am I feeling" asks for an assessment, and
+    # "what have I been feeling" is answered just as well by "symptoms".
+    ("symptoms", "symptom"), ("symptom", "symptom"),
     ("doctors", "person"), ("doctor", "person"), ("gp", "person"),
     ("specialist", "person"), ("specialists", "person"),
     ("practitioner", "person"), ("practitioners", "person"),

@@ -73,6 +73,10 @@ _KIND_DEFAULT: dict[str, str] = {
     "allergy": HIGH,
     "problem": HIGH,
     "person": MEDIUM,
+    # High by default like every kind that is not `person`, so a predicate
+    # nobody considered still fails closed. The two it actually carries are
+    # enumerated below.
+    "symptom": HIGH,
 }
 
 #: ``(kind, predicate)`` -> consequence, for the cases the kind default gets
@@ -87,6 +91,13 @@ _PREDICATE_OVERRIDES: dict[tuple[str, str], str] = {
     ("person", "practice"): MEDIUM,
     ("person", "contact"): LOW,
     ("person", "note"): LOW,
+    # A symptom is the patient saying how they feel, and the record holds that
+    # it was said and when — not a diagnosis, not a dose. It applies at once so
+    # "what symptoms have I had" can see a cough mentioned an hour ago, and it
+    # is reversible from the timeline like any other low-tier claim. Saying it
+    # has gone is the same kind of statement and gates the same way.
+    ("symptom", "reported"): LOW,
+    ("symptom", "resolved"): LOW,
 }
 
 #: Kinds where no override may lower the tier, whatever the predicate. This is
@@ -129,4 +140,5 @@ _KNOWN_BY_KIND: dict[str, frozenset[str]] = {
     "allergy": frozenset({"name", "substance", "reaction", "severity", "status"}),
     "problem": frozenset({"name", "status", "diagnosis"}),
     "person": frozenset({"name"}),
+    "symptom": frozenset(),
 }

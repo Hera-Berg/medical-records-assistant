@@ -492,9 +492,9 @@ Constrain decoding to a JSON schema — GBNF grammar in llama.cpp, `format` in O
 post-process free text into JSON with a regex.
 
 **A page is read in groups, as turns of one conversation.** Medications first, with the page attached;
-then allergies; then conditions and practitioners. Every group's schema has an `unclear` list, and the
-prompt's first rule is that unsure means unclear — a small model asked to fill a schema will fill it,
-so leaving something out has to be a place in the schema, not an absence. Measured on the bundled
+then allergies; then conditions, symptoms and practitioners. Every group's schema has an `unclear`
+list, and the prompt's first rule is that unsure means unclear — a small model asked to fill a schema
+will fill it, so leaving something out has to be a place in the schema, not an absence. Measured on the bundled
 reader, a follow-up turn reuses the page from llama-server's prompt cache (about 3 seconds against
 about 80 for the first), while the same question as a separate prompt re-pays the image prefill. So
 groups are turns; as separate prompts the idea would cost three times the prefill and would not be

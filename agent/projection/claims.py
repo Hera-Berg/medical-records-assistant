@@ -70,6 +70,11 @@ class Claim:
     #: verbatim: discarding it would lose information the record exists to
     #: hold, and resolving it would invent the year. See `.temporal`.
     occurred_span: str | None = None
+    #: The words on the page or in the recording this claim was read from, as
+    #: the reader copied them. A symptom page quotes them, because "cough" alone
+    #: does not say whether someone said they have one or that it has gone.
+    #: Older events without the field read as ``None``.
+    source_span: str | None = None
     artifact_ts: str | None = None
     captured_ts: str | None = None
     ingested_ts: str | None = None
@@ -255,6 +260,11 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
     raw_span = payload.get("occurred_span")
     occurred_span = raw_span.strip() if isinstance(raw_span, str) and raw_span.strip() else None
 
+    raw_source = payload.get("source_span")
+    source_span = (
+        raw_source.strip() if isinstance(raw_source, str) and raw_source.strip() else None
+    )
+
     declared = payload.get("consequence")
     consequence = tiers.consequence_for(subject.kind, predicate)
 
@@ -279,6 +289,7 @@ def parse(event: Event, target: Claim | None = None) -> Claim | ClaimProblem:
         consequence=consequence,
         occurred_at=occurred_at,
         occurred_span=occurred_span,
+        source_span=source_span,
         artifact_ts=stamps["artifact_ts"],
         captured_ts=stamps["captured_ts"],
         ingested_ts=stamps["ingested_ts"],

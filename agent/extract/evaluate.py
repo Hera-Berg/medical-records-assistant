@@ -77,7 +77,10 @@ WRONG = "wrong"
 CRITICAL_KINDS = ("med", "allergy")
 
 #: Which group of the reader a subject kind is asked about in.
-_FAMILY_OF_KIND = {"med": "medications", "allergy": "allergies", "problem": "problems", "person": "problems"}
+_FAMILY_OF_KIND = {
+    "med": "medications", "allergy": "allergies", "problem": "problems",
+    "person": "problems", "symptom": "problems",
+}
 
 #: Predicates that only say a thing is named on the page. True whenever the thing
 #: itself is one the fixture knows is there.

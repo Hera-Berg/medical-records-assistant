@@ -102,6 +102,16 @@ def translate(old: dict[str, Any], family: str) -> dict[str, Any]:
             for c in claims
             if c.get("subject_kind") == "problem"
         ],
+        "symptoms": [
+            {
+                "name": c.get("subject_name", ""),
+                "gone": c.get("source_span") if c.get("predicate") == "resolved" else None,
+                **_dated(c),
+                **_common(c),
+            }
+            for c in claims
+            if c.get("subject_kind") == "symptom"
+        ],
         "people": [
             {
                 "name": c.get("subject_name", ""),

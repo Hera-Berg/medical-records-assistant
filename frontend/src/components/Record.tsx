@@ -1,5 +1,10 @@
 /**
- * The record index: medications first, then allergies, problems and people.
+ * The record index: medications first, then allergies, problems, symptoms and
+ * people.
+ *
+ * Symptoms are listed by when they were last mentioned, and say so. The record
+ * cannot know whether a cough is still going on, so nothing here calls one
+ * current, and nothing drops off the list because it stopped being mentioned.
  *
  * "Current medications" is a **generated view, not a stored file**. It is
  * computed from the same entities listed below it, so the two cannot disagree —
@@ -20,6 +25,7 @@ import { Cite, Empty, Heading, longDate, StatusMark, TierMark } from "./marks";
 const KIND_TITLES: Record<string, string> = {
   allergy: "Allergies",
   problem: "Problems",
+  symptom: "Symptoms",
   person: "People",
 };
 
@@ -137,7 +143,7 @@ export function Record({
 
       <StopReports meds={meds} />
 
-      {(["allergy", "problem", "person"] as const).map((kind) => {
+      {(["allergy", "problem", "symptom", "person"] as const).map((kind) => {
         const rows = data.kinds[kind] ?? [];
         return (
           <div key={kind}>
@@ -155,7 +161,9 @@ export function Record({
                     <th>Status</th>
                     <th>Name</th>
                     <th>Where from</th>
-                    <th className="w-32">Last confirmed</th>
+                    <th className="w-32">
+                      {kind === "symptom" ? "Last mentioned" : "Last confirmed"}
+                    </th>
                     <th className="w-40">The documents</th>
                   </tr>
                 </thead>
@@ -182,8 +190,19 @@ export function Record({
                       </td>
                       <td>{row.evidence_tier ? <TierMark tier={row.evidence_tier} /> : null}</td>
                       <td className="whitespace-nowrap">
-                        {longDate(row.last_confirmed) ?? "—"}
-                        {row.stale && row.last_confirmed_ago ? (
+                        {kind === "symptom" ? (
+                          <>
+                            {longDate(row.last_reported) ?? "—"}
+                            {row.last_reported_ago ? (
+                              <span className="block text-[color:var(--color-muted)]">
+                                {row.last_reported_ago}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          longDate(row.last_confirmed) ?? "—"
+                        )}
+                        {kind !== "symptom" && row.stale && row.last_confirmed_ago ? (
                           <span className="block text-[color:var(--color-muted)]">
                             {row.last_confirmed_ago}
                           </span>

@@ -464,6 +464,35 @@ the `strftime` walker reported the comments explaining why `%B` is forbidden.
 from `agent.runtime` or `agent.llm.client`, which propagate past it; the log record factory scrubs every
 record regardless of logger or handler.
 
+Added for symptoms:
+
+**A symptom is its own kind, `symptom:`, filed under `wiki/symptoms/`** — never a `problem:`. A
+cough is not a diagnosis: filed as a problem it gated as adding one, and printed under "active
+problems" on the sheet handed to a clinician. The problems turn of the reader asks for symptoms
+beside conditions, and the prompt says a symptom is never turned into a condition.
+
+**The record holds when a symptom was mentioned, never whether it is happening now.** Two
+predicates: `reported` and `resolved`, each carrying the symptom's name as its value so every
+mention of one symptom agrees and none conflict; what was said is the claim's `source_span`, which
+the page quotes. Status is `reported` or `resolved`, never `active`. Only the latest mention saying
+it has gone makes it `resolved`, and mentioning it again reports it again — silence never resolves a
+symptom, for the same reason silence never stops a medication. A mention is dated by the document,
+else the recording, else the ingest, and the page names which; when the symptom itself started is
+`occurred_at`, kept apart.
+
+**Mentions are low-consequence and apply at once**, so "what symptoms have I had" sees a cough
+mentioned an hour ago. Any other predicate on a symptom fails closed to high. "What is causing my
+cough" is refused at the question like any other interpretation, and the answer prompt is told to
+say "you mentioned a cough on …", never "you have a cough".
+
+**No quote from an artefact the user rejected any reading of.** A quoted sentence can carry more
+than the symptom, including the rejected reading. Matching the wording inside the quote would be
+fuzzy; not quoting from that artefact is not, and the mention keeps its date and citation. Withheld
+silently, as answers withhold, because naming it would point at it.
+
+**Not on the consultation summary.** Its sections are fixed and its budget is one page. Whether
+recent symptoms earn a place there is a decision for the summary, not something this added.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.
@@ -481,6 +510,7 @@ health/
     medications/perindopril.md
     allergies/penicillin.md
     problems/hypertension.md
+    symptoms/cough.md
     timeline/2026-09.md
     people/dr-nguyen.md
   exports/
@@ -648,8 +678,8 @@ Gate on consequence, not model confidence. A confident wrong allergy is the fail
 | Tier | Examples | Behaviour |
 |---|---|---|
 | **high** | Add/remove allergy, add/stop medication, dose change, add/remove diagnosis | Never enters the wiki without an explicit user tap. No exceptions, no confidence threshold that bypasses this. |
-| **medium** | Symptom onset, new practitioner, out-of-range lab value, procedure | Batched into a weekly review. Auto-applies after 7 days if untouched, and is marked `unreviewed` in the wiki until confirmed. |
-| **low** | Meal photo, activity summary, weight, general note | Auto-applies. Reversible from the timeline. |
+| **medium** | Onset of a problem, new practitioner, out-of-range lab value, procedure | Batched into a weekly review. Auto-applies after 7 days if untouched, and is marked `unreviewed` in the wiki until confirmed. |
+| **low** | Meal photo, activity summary, weight, general note, a symptom mentioned or said to have gone | Auto-applies. Reversible from the timeline. |
 
 Inbox debt is what kills these systems. Two hundred unreviewed items and the record is worthless. The
 review queue must never accumulate low-tier items, and the weekly review must be completable in two

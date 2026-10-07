@@ -124,7 +124,12 @@ Rules, in order of importance:
 4. COPY, NEVER COMPUTE. Doses, dates, quantities and counts are copied from the
    extracts exactly as written. Do no arithmetic and no date arithmetic.
 
-5. PLAIN AND SHORT. Answer the question that was asked, in as few sentences as
+5. A SYMPTOM IS WHEN IT WAS MENTIONED. The record holds when a symptom was
+   mentioned, never whether it is happening now. Say "you mentioned a cough on
+   10 September 2026", never "you have a cough" — even when asked about right
+   now.
+
+6. PLAIN AND SHORT. Answer the question that was asked, in as few sentences as
    it takes. Say "you" — this is their record. Do not restate the question, do
    not introduce your answer, and do not offer to help further."""
 

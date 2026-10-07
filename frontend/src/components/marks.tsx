@@ -147,6 +147,19 @@ const STATUSES: Record<Status, Spec> = {
     colour: "var(--color-tier-inf)",
     ground: "#f7eaea",
   },
+  reported: {
+    label: "Mentioned",
+    title:
+      "Mentioned in your record. The record holds when, not whether it is still happening",
+    colour: "var(--color-tier-pt)",
+    ground: "#f6eee7",
+  },
+  resolved: {
+    label: "Said to have gone",
+    title: "The most recent mention says it has gone. Its history is kept",
+    colour: "var(--color-muted)",
+    ground: "#f0f1ed",
+  },
 };
 
 export function StatusMark({ status }: { status: Status }) {

@@ -77,18 +77,20 @@ PREDICATES = (
     "diagnosis",
     "onset",
     "symptom",
+    "reported",
+    "resolved",
     "role",
     "practice",
     "contact",
     "note",
 )
 
-#: Exactly the four entity directories the storage layout names. There is no
-#: fifth: `agent.projection.subjects` files a claim by its kind, and a kind with
+#: Exactly the five entity directories the storage layout names. There is no
+#: sixth: `agent.projection.subjects` files a claim by its kind, and a kind with
 #: no directory is a claim with nowhere to live. Low-consequence material — a
 #: weight, a meal photo — belongs to the timeline, which is where the spec puts
 #: it, and reaches the record as a note rather than an entity.
-SUBJECT_KINDS = ("med", "allergy", "problem", "person")
+SUBJECT_KINDS = ("med", "allergy", "problem", "person", "symptom")
 
 _DATE_PRECISIONS = ("day", "month", "year")
 
@@ -158,7 +160,7 @@ FAMILIES = (MEDICATIONS, ALLERGIES, PROBLEMS)
 UNCLEAR_FIELDS = {
     MEDICATIONS: ("name", "strength", "frequency", "stopped", "whole entry"),
     ALLERGIES: ("substance", "reaction", "whole entry"),
-    PROBLEMS: ("name", "role", "whole entry"),
+    PROBLEMS: ("name", "role", "symptom", "whole entry"),
 }
 
 
@@ -298,6 +300,31 @@ _PROBLEM = {
     },
 }
 
+_SYMPTOM = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "name", "gone", "evidence_tier", "occurred_at", "occurred_span",
+        "source_span", "confidence",
+    ],
+    "properties": {
+        "name": _string(
+            "What the person is experiencing, in the source's own word for it and "
+            "nothing else: 'cough', 'headache', 'dizziness'. Never a cause, never "
+            "a condition you work out from it, never how long or how bad."
+        ),
+        "gone": _nullable_string(
+            "Only if the source says this has stopped or gone away: copy those "
+            "words, such as 'the cough has cleared up'. Otherwise null."
+        ),
+        "evidence_tier": _tier(),
+        "occurred_at": _OCCURRED_AT,
+        "occurred_span": _OCCURRED_SPAN,
+        "source_span": _SOURCE_SPAN,
+        "confidence": _confidence(),
+    },
+}
+
 _PERSON = {
     "type": "object",
     "additionalProperties": False,
@@ -409,9 +436,18 @@ def _family_schema(family: str) -> dict[str, Any]:
         return {
             "type": "object",
             "additionalProperties": False,
-            "required": ["problems", "people", "unclear"],
+            "required": ["problems", "symptoms", "people", "unclear"],
             "properties": {
                 "problems": {"type": "array", "maxItems": 20, "items": _PROBLEM},
+                "symptoms": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": _SYMPTOM,
+                    "description": (
+                        "Symptoms the source says the person has or had — what they "
+                        "feel or notice, like a cough or a headache. Not a diagnosis."
+                    ),
+                },
                 "people": {"type": "array", "maxItems": 10, "items": _PERSON},
                 "unclear": _unclear(PROBLEMS),
             },

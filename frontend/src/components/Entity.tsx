@@ -43,6 +43,8 @@ const PREDICATE_WORDS: Record<string, string> = {
   reaction: "Reaction",
   role: "Role",
   contact: "Contact",
+  reported: "Mentioned",
+  resolved: "Said to have gone",
 };
 
 function predicateWord(predicate: string): string {
@@ -112,6 +114,15 @@ export function Entity({
       ) : null}
 
       <dl className="grid grid-cols-[12rem_1fr] gap-x-4 gap-y-1">
+        <Fact
+          label="Last mentioned"
+          value={
+            data.last_reported && data.last_reported_ago
+              ? `${longDate(data.last_reported)} — ${data.last_reported_ago}`
+              : longDate(data.last_reported)
+          }
+        />
+        <Fact label="First mentioned" value={longDate(data.first_reported)} />
         <Fact label="Started" value={longDate(data.started)} />
         <Fact
           label="Last confirmed"
@@ -171,8 +182,12 @@ export function Entity({
         </>
       ) : null}
 
-      <Heading>What your record says</Heading>
-      {data.slots.length === 0 ? (
+      {data.kind === "symptom" ? (
+        <Mentions data={data} navigate={navigate} />
+      ) : null}
+
+      {data.kind === "symptom" ? null : <Heading>What your record says</Heading>}
+      {data.kind === "symptom" ? null : data.slots.length === 0 ? (
         <Empty>Nothing has been confirmed about this yet.</Empty>
       ) : (
         <div className="table-wrap"><table>
@@ -270,7 +285,8 @@ export function Entity({
         </table></div>
       )}
 
-      <EarlierReadings data={data} navigate={navigate} />
+      {/* A symptom's superseded readings are its mentions, listed above. */}
+      {data.kind === "symptom" ? null : <EarlierReadings data={data} navigate={navigate} />}
 
       {data.stop_report ? (
         <>
@@ -475,6 +491,77 @@ function When({ claim }: { claim: Claim }) {
       {longDate(fallback.slice(0, 10))}{" "}
       <span className="text-[color:var(--color-muted)]">{label}</span>
     </span>
+  );
+}
+
+/**
+ * Every time a symptom was mentioned, newest first, in the source's own words.
+ *
+ * The record holds when a symptom was mentioned, never whether it is still
+ * happening, and the sentence above the table says so rather than leaving a
+ * reader to infer it from the column headings.
+ */
+function Mentions({
+  data,
+  navigate,
+}: {
+  data: EntityDetail;
+  navigate: (to: string) => void;
+}) {
+  return (
+    <>
+      <Heading>When it was mentioned</Heading>
+      <p className="text-[color:var(--color-muted)]">
+        {data.status === "resolved"
+          ? "The most recent mention says it has gone."
+          : "Your record holds when this was mentioned, not whether it is still happening. Nothing has said it has gone."}
+      </p>
+      <div className="table-wrap"><table>
+        <thead>
+          <tr>
+            <th className="w-56">When it was mentioned</th>
+            <th>What was said</th>
+            <th className="w-32">Where from</th>
+            <th className="w-40">The document</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.mentions.map((mention) => (
+            <tr key={mention.event_id}>
+              <td className="whitespace-nowrap">
+                {mention.when ? longDate(mention.when) : "Undated"}
+                {mention.when_label ? (
+                  <span className="block text-[color:var(--color-muted)]">
+                    {mention.when_label}
+                  </span>
+                ) : null}
+              </td>
+              <td>
+                <span className="font-semibold">
+                  {mention.resolved ? "Said to have gone" : "Mentioned"}
+                </span>
+                {mention.quote ? <> — “{mention.quote}”</> : null}
+                {mention.occurred_at ? (
+                  <span className="block text-[color:var(--color-muted)]">
+                    when: {mention.occurred_at.render}
+                  </span>
+                ) : mention.occurred_span ? (
+                  <span className="block text-[color:var(--color-muted)]">
+                    when: “{mention.occurred_span}”
+                  </span>
+                ) : null}
+              </td>
+              <td>
+                <TierMark tier={mention.evidence_tier} />
+              </td>
+              <td>
+                <Cite citation={mention.citation} navigate={navigate} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+    </>
   );
 }
 

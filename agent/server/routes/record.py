@@ -104,6 +104,13 @@ def wiki_index(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     for subject_id in sorted(entities):
         summary = serialise.entity_summary(entities[subject_id], snapshot.as_of.date())
         grouped.setdefault(summary["kind"], []).append(summary)
+    # Most recently mentioned first, which is the question a symptom list is
+    # opened to answer. Undated mentions go last rather than being given a date.
+    # Two sorts, because Python's sort is stable: by name, then by date.
+    symptoms = sorted(grouped.get("symptom", []), key=lambda row: row["name"])
+    symptoms.sort(key=lambda row: row["last_reported"] or "", reverse=True)
+    if symptoms:
+        grouped["symptom"] = symptoms
 
     return {
         "kinds": {
