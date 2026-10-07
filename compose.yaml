@@ -1,0 +1,51 @@
+# The health record, one command: `docker compose up --build`, then open
+# http://127.0.0.1:7777. `docker compose down` stops it. See docker/README.md.
+
+services:
+  health-record:
+    build:
+      context: .
+      args:
+        # Files in your record folder belong to you, not to root. Export
+        # HEALTH_UID / HEALTH_GID if your user id is not 1000 (`id -u`).
+        UID: ${HEALTH_UID:-1000}
+        GID: ${HEALTH_GID:-1000}
+    image: health-record:local
+    container_name: health-record
+
+    # Host networking, so the server binds 127.0.0.1 on this computer itself —
+    # the same loopback-only rule as every other way of running it, with no
+    # 0.0.0.0 anywhere. It also lets the container reach an inference box on
+    # your tailnet, MagicDNS names included, exactly as the host does.
+    # Linux only: Docker Desktop on macOS and Windows does not share the host's
+    # loopback this way.
+    network_mode: host
+
+    # A real init as PID 1, so `docker compose down` delivers SIGTERM to the
+    # server, which shuts down the reader before it exits.
+    init: true
+    stop_grace_period: 30s
+
+    volumes:
+      # Your record. A plain folder on this computer: put it inside Dropbox,
+      # Google Drive or Nextcloud if you want it synced. `:z` lets the container
+      # read it under SELinux (Fedora); it is ignored where SELinux is off.
+      - ${HEALTH_VAULT_DIR:-./vault}:/data/vault:z
+      # This container's identity as a device, which computer reads documents,
+      # and the downloaded reader (about 4 GB). Kept across `down` and `up` so
+      # restarting is not a new device and not a second download. Deleted only
+      # by `docker compose down -v`.
+      - health-machine:/home/health
+
+    environment:
+      # The key for an inference box on another computer, if you use one. There
+      # is no keychain inside a container, so it comes from your environment.
+      # Passed through only when set: an empty variable is an error by design,
+      # not a fall-through. Never written into the record folder. The name must
+      # match `api_key_env` under [models.vlm.auth] in config.toml.
+      - HEALTH_VLM_TOKEN
+
+    restart: "no"
+
+volumes:
+  health-machine:

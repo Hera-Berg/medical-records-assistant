@@ -14,3 +14,8 @@ frontend/.vite/
 build/
 dist/
 pytest-tmp/
+
+# The default record folder for `docker compose up`. A health record, never
+# committed.
+/vault/
+.env

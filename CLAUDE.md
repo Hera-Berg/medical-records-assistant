@@ -62,6 +62,10 @@ write plain files and let the sync client do its job.
   been handed to a third party by definition. Credentials live outside the vault — see `MODELS.md`.
 
 Do not add: an ORM, a task queue broker, Docker as the primary install path, or any auth framework.
+`docker compose up` exists as a secondary, Linux-only path (`docker/README.md`). It uses host
+networking so the server still binds `127.0.0.1` and nothing else — a container that binds `0.0.0.0`
+behind a port mapping is not an acceptable substitute. Device identity and the reader's files live in a
+named volume, never in the vault.
 Background work uses a simple in-process worker with a JSONL job file so it survives restart.
 
 ## Settled decisions

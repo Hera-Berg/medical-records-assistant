@@ -1,0 +1,17 @@
+# The build context is sent to the Docker daemon whole. Nothing that could be a
+# record — or anything else personal — may be in it.
+vault/
+**/health/
+*.jsonl
+.env
+
+.git/
+**/__pycache__/
+*.pyc
+.agent/
+build/
+dist/
+pytest-tmp/
+health_agent.egg-info/
+frontend/
+tests/
