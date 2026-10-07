@@ -393,3 +393,115 @@ def test_resolution_reads_the_environment_every_time(monkeypatch):
 
     os.environ[ENV_NAME] = "second"
     assert credentials.resolve(ENV_NAME).value == "second"
+
+
+# --- a machine with no keychain at all: a container, a headless server -----
+
+
+class _NoKeychain:
+    """What `keyring` is when it found nothing to talk to: every call raises."""
+
+    def __init__(self):
+        from keyring.errors import NoKeyringError
+
+        self.error = NoKeyringError
+
+    def get_password(self, service, account):
+        raise self.error("No recommended backend was available.")
+
+    def set_password(self, service, account, value):
+        raise self.error("No recommended backend was available.")
+
+
+class _LockedKeychain:
+    def get_password(self, service, account):
+        raise RuntimeError("the keychain is locked")
+
+    def set_password(self, service, account, value):
+        raise RuntimeError("the keychain is locked")
+
+
+def _with_module(monkeypatch, module):
+    monkeypatch.setitem(__import__("sys").modules, "keyring", module)
+    monkeypatch.setattr(credentials, "_from_keychain", _REAL_FROM_KEYCHAIN)
+
+
+@reads_the_file
+def test_no_keychain_falls_through_to_the_file(monkeypatch, credentials_file):
+    """The docker case: no Secret Service is absence, not a broken keychain."""
+    _with_module(monkeypatch, _NoKeychain())
+
+    found = credentials.resolve(ENV_NAME, path=credentials_file)
+
+    assert found.value == KEY
+    assert found.source == credentials.SOURCE_FILE
+
+
+def test_no_keychain_and_no_file_is_missing_not_unusable(monkeypatch, tmp_path):
+    _with_module(monkeypatch, _NoKeychain())
+
+    assert credentials.status(ENV_NAME, path=tmp_path / "absent") == ("missing", None)
+
+
+def test_a_keychain_that_refuses_is_still_an_error(monkeypatch, tmp_path):
+    """Only absence falls through. A locked keychain may hold the key."""
+    _with_module(monkeypatch, _LockedKeychain())
+
+    found, detail = credentials.status(ENV_NAME, path=tmp_path / "absent")
+
+    assert found == "error"
+    assert "could not be read" in detail
+
+
+@reads_the_file
+def test_with_no_keychain_storing_writes_an_owner_only_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HEALTH_AGENT_CONFIG_HOME", str(tmp_path / "machine"))
+    _with_module(monkeypatch, _NoKeychain())
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    where = credentials.store(KEY, vault)
+
+    path = credentials.credentials_path()
+    assert str(path) in where
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert path.read_bytes() == (KEY + "\n").encode()
+    assert not [p for p in path.parent.iterdir() if p.name.endswith(".tmp")]
+    # And it is what resolution now finds.
+    assert credentials.resolve(ENV_NAME, vault).value == KEY
+
+    credentials.store("sk-rotated", vault)
+    assert credentials.resolve(ENV_NAME, vault).value == "sk-rotated"
+
+
+@reads_the_file
+def test_with_no_keychain_the_file_is_never_written_inside_the_vault(monkeypatch, tmp_path):
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("HEALTH_AGENT_CONFIG_HOME", str(vault / "machine"))
+    _with_module(monkeypatch, _NoKeychain())
+
+    with pytest.raises(CredentialError, match="nothing was stored"):
+        credentials.store(KEY, vault)
+
+    assert not credentials.credentials_path().exists()
+
+
+def test_a_keychain_that_refuses_a_write_writes_no_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HEALTH_AGENT_CONFIG_HOME", str(tmp_path / "machine"))
+    _with_module(monkeypatch, _LockedKeychain())
+
+    with pytest.raises(CredentialError, match="would not accept"):
+        credentials.store(KEY)
+
+    assert not credentials.credentials_path().exists()
+
+
+def test_where_a_file_cannot_be_trusted_no_keychain_writes_no_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HEALTH_AGENT_CONFIG_HOME", str(tmp_path / "machine"))
+    monkeypatch.setattr(credentials, "FILE_FALLBACK", False)
+    _with_module(monkeypatch, _NoKeychain())
+
+    with pytest.raises(CredentialError):
+        credentials.store(KEY)
+
+    assert not credentials.credentials_path().exists()

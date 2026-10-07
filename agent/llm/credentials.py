@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import device as device_mod
+from .. import files as files_mod
 from ..distribution import for_terminal, missing_library, packaged
 from ..errors import CredentialError
 
@@ -94,6 +95,11 @@ def _from_keychain() -> Credential | None:
     try:
         raw = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
     except Exception as exc:  # keyring raises backend-specific errors
+        if _no_keychain_here(exc):
+            # Not a keychain that failed: there is none — a container, a
+            # headless server. That is the machine the file below is for, so
+            # it is asked next rather than the whole lookup stopping here.
+            return None
         raise CredentialError(
             f"the OS keychain could not be read: {exc}. On a headless machine there "
             f"may be no Secret Service running — set the key in an environment "
@@ -109,6 +115,20 @@ def _from_keychain() -> Credential | None:
             f"never sent."
         )
     return Credential(raw.strip(), SOURCE_KEYCHAIN)
+
+
+def _no_keychain_here(exc: BaseException) -> bool:
+    """Whether *exc* says this machine has no keychain at all.
+
+    ``keyring`` installs a placeholder backend when it finds nothing to talk to,
+    and every call on it raises ``NoKeyringError``. That is a different fact from
+    a keychain that is locked or refused access, which stays an error.
+    """
+    try:
+        from keyring.errors import NoKeyringError  # noqa: PLC0415
+    except ImportError:
+        return False
+    return isinstance(exc, NoKeyringError)
 
 
 #: Whether a key may be read out of a file on this machine at all.
@@ -272,15 +292,21 @@ def keychain_alternatives() -> str:
     )
 
 
-def store(value: str) -> str:
+def store(value: str, vault_root: Path | None = None) -> str:
     """Put *value* in the OS keychain. Returns the place, for a message.
 
-    The one write in this module, and the only one the app ever performs: the
-    environment belongs to whoever started the process and the credentials file
-    is a fallback for machines with no keychain, so neither is this program's to
-    edit. Both are still read, and both still win or lose by the resolution
-    order above — which is why the caller is told where a key *actually* comes
-    from afterwards rather than being left to assume it is this one.
+    The environment belongs to whoever started the process, so it is never this
+    program's to edit. Whatever is stored here still wins or loses by the
+    resolution order above — which is why the caller is told where a key
+    *actually* comes from afterwards rather than being left to assume.
+
+    **On a machine with no keychain at all** — a container, a headless server —
+    the key goes in the credentials file instead, created owner-only. That is
+    the place the resolution order already reads on exactly that machine, and
+    the alternative was a Store button that could only fail there and an
+    instruction to export a variable and edit the settings file. Never on
+    Windows, where a file cannot be shown to be private
+    (:data:`FILE_FALLBACK`), and never inside the record folder.
     """
     if not value.strip():
         raise CredentialError(
@@ -295,6 +321,8 @@ def store(value: str) -> str:
     try:
         keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, value.strip())
     except Exception as exc:  # keyring raises backend-specific errors
+        if FILE_FALLBACK and _no_keychain_here(exc):
+            return _store_in_file(value.strip(), credentials_path(), vault_root)
         raise CredentialError(
             f"the OS keychain would not accept the key: {exc}."
             + (
@@ -307,6 +335,31 @@ def store(value: str) -> str:
             )
         ) from None
     return f"{SOURCE_KEYCHAIN} ({KEYRING_SERVICE}/{KEYRING_ACCOUNT})"
+
+
+def _store_in_file(value: str, path: Path, vault_root: Path | None) -> str:
+    """Replace the credentials file with *value*, mode ``0600`` from the start.
+
+    Written beside it and renamed over it, so a reader never sees half a key and
+    the file is never, even for an instant, wider than its owner.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    resolved = path.parent.resolve() / path.name
+    if vault_root is not None and _is_inside(resolved, vault_root.resolve()):
+        raise CredentialError(
+            f"nothing was stored: {resolved} is inside the record folder, which "
+            f"syncs, and a key there would already be disclosed."
+        )
+    staging = resolved.with_name(f".{resolved.name}.{os.getpid()}.tmp")
+    try:
+        staging.unlink(missing_ok=True)
+        files_mod.write_text(staging, value + "\n", mode=MAX_FILE_MODE)
+        os.chmod(staging, MAX_FILE_MODE)  # the umask cannot widen it, only narrow
+        os.replace(staging, resolved)
+    except OSError as exc:
+        staging.unlink(missing_ok=True)
+        raise CredentialError(f"nothing was stored: cannot write {resolved}: {exc}") from None
+    return f"{SOURCE_FILE} ({resolved})"
 
 
 def status(

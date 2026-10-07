@@ -807,7 +807,13 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
     """
     value = args.key or getpass.getpass("key for the inference box (not echoed): ")
     try:
-        where = credentials_mod.store(value)
+        # Only to keep a keychain-less machine's file out of the record folder;
+        # a vault that will not open does not stop a key being stored.
+        vault_root = Vault.open(args.vault).root
+    except HealthAgentError:
+        vault_root = None
+    try:
+        where = credentials_mod.store(value, vault_root)
     except CredentialError as exc:
         print(f"error: {exc}", file=out)
         # A terminal is not a settings screen: there is no disclosure to put
@@ -817,7 +823,7 @@ def cmd_set_key(args: argparse.Namespace, out: TextIO) -> int:
             print(f"          {credentials_mod.keychain_alternatives()}", file=out)
         return EXIT_PROBLEMS
 
-    print(f"stored    in the OS {where}", file=out)
+    print(f"stored    in {where}", file=out)
     print("          run `health-agent probe` to check the box accepts it", file=out)
     return EXIT_OK
 

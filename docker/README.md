@@ -38,10 +38,12 @@ and Windows does not share the host's loopback that way; use the desktop app the
 
 - **Your user id.** Files in the record belong to uid/gid 1000. If `id -u` says
   otherwise, build with `HEALTH_UID=$(id -u) HEALTH_GID=$(id -g) docker compose up --build`.
-- **No keychain.** For an inference box on another computer, export the key as
-  `HEALTH_VLM_TOKEN` before `up` (and name that variable in `api_key_env` under
-  `[models.vlm.auth]`). Compose passes it through only when it is set. It is
-  never written into the record folder.
+- **No keychain.** There is no keychain inside a container, so the password for
+  an inference box on another computer, put in Settings, is kept in a file only
+  you can read (`0600`) in the `health-machine` volume — never in the record
+  folder. `docker compose down -v` deletes it with the rest of the volume.
+  Exporting `HEALTH_VLM_TOKEN` before `up` (and naming that variable in
+  `api_key_env` under `[models.vlm.auth]`) still works, and wins over the file.
 - **Commands the interface mentions** run inside the container:
   `docker compose exec health-record health-agent check`.
 - **Port 7777 must be free**, so don't run the desktop app against the same port

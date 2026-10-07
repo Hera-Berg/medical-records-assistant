@@ -426,7 +426,7 @@ def set_key(
     exactly the work this key exists to let finish.
     """
     try:
-        where = credentials_mod.store(key)
+        where = credentials_mod.store(key, state.vault.root)
     except CredentialError as exc:
         raise HTTPException(status_code=400, detail=redaction.scrub(str(exc))) from None
 
