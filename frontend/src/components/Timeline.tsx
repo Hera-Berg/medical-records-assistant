@@ -22,6 +22,20 @@ import { api } from "../api";
 import { Link } from "../router";
 import type { Timeline as TimelineData, TimelineRow, Tier } from "../types";
 import { ALL_TIERS, Cite, DateCell, Empty, MONTHS, TierMark, tierLabel } from "./marks";
+import { TimelineCalendar } from "./TimelineCalendar";
+
+type View = "list" | "calendar";
+
+/** Which way this browser last looked at the timeline. A convenience, nothing more. */
+const VIEW_KEY = "health-agent.timeline-view";
+
+function readView(): View {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "list";
+  } catch {
+    return "list";
+  }
+}
 
 export function Timeline({
   navigate,
@@ -37,8 +51,19 @@ export function Timeline({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [tiers, setTiers] = useState<Tier[]>([]);
+  const [view, setViewState] = useState<View>(readView);
+
+  const setView = (next: View) => {
+    setViewState(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Private window or blocked storage: the choice lasts for this visit only.
+    }
+  };
 
   useEffect(() => {
+    if (view !== "list") return;
     let live = true;
     setError(null);
     api
@@ -48,18 +73,35 @@ export function Timeline({
     return () => {
       live = false;
     };
-  }, [from, to, subject, tiers, version]);
+  }, [from, to, subject, tiers, version, view]);
 
   const toggleTier = (tier: Tier) =>
     setTiers((current) =>
       current.includes(tier) ? current.filter((t) => t !== tier) : [...current, tier],
     );
 
-  const filtered = Boolean(from || to || tiers.length > 0);
+  const filtered = Boolean((view === "list" && (from || to)) || tiers.length > 0);
 
   return (
     <section>
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[color:var(--color-rule)] pb-3 no-print">
+        <span className="flex items-center gap-2" role="group" aria-label="How to show the timeline">
+          {(["list", "calendar"] as View[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setView(option)}
+              aria-pressed={view === option}
+              className={`btn ${view === option ? "btn-primary" : ""}`}
+            >
+              {option === "list" ? "List" : "Calendar"}
+            </button>
+          ))}
+        </span>
+
+        {/* The calendar moves a month at a time with its own buttons, so the
+            date range would be a second, conflicting way to say which dates. */}
+        {view === "list" ? (
         <span className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2">
             <span className="text-[color:var(--color-muted)]">From</span>
@@ -80,6 +122,7 @@ export function Timeline({
             />
           </label>
         </span>
+        ) : null}
 
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-[color:var(--color-muted)]">Show</span>
@@ -132,9 +175,13 @@ export function Timeline({
         ) : null}
       </div>
 
-      {error ? <Empty>Could not read the timeline: {error}</Empty> : null}
+      {view === "calendar" ? (
+        <TimelineCalendar navigate={navigate} subject={subject} tiers={tiers} version={version} />
+      ) : null}
 
-      {data && data.rows.length === 0 ? (
+      {view === "list" && error ? <Empty>Could not read the timeline: {error}</Empty> : null}
+
+      {view === "list" && data && data.rows.length === 0 ? (
         <Empty>
           {data.total === 0 && !filtered
             ? "Nothing in the record yet. Drop a file anywhere on this page, or paste one."
@@ -142,7 +189,7 @@ export function Timeline({
         </Empty>
       ) : null}
 
-      {data && data.rows.length > 0 ? (
+      {view === "list" && data && data.rows.length > 0 ? (
         <>
           <p className="pb-2 text-[color:var(--color-muted)]">
             {data.total} {data.total === 1 ? "entry" : "entries"}

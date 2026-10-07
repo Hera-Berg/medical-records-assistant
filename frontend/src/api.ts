@@ -123,6 +123,8 @@ export const api = {
     const suffix = query.toString();
     return request<Timeline>(`/api/timeline${suffix ? `?${suffix}` : ""}`);
   },
+  timelineMonths: () =>
+    request<{ months: { month: string; rows: number }[]; as_of: string }>("/api/timeline/months"),
 
   /**
    * Send files.

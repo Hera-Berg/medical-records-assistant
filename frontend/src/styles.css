@@ -309,6 +309,54 @@ tbody tr:hover {
   border-bottom: 1px solid var(--color-rule-strong);
 }
 
+/* The month grid. Fixed columns so a long first entry truncates rather than
+   widening its day; ruled on every side, because a calendar without its lines
+   is a list of numbers. Wide enough to read on a phone by scrolling inside its
+   own box, like every other table. */
+.calendar {
+  table-layout: fixed;
+  min-width: 42rem;
+}
+.calendar th,
+.calendar td {
+  padding: 0;
+  border: 1px solid var(--color-rule);
+}
+.calendar th {
+  padding: 0.3rem 0.5rem;
+}
+.calendar tbody tr:hover {
+  background: transparent;
+}
+.calendar-day {
+  display: block;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-ink);
+}
+.calendar-day:hover:not([disabled]) {
+  background: var(--color-shade);
+}
+.calendar-day[disabled] {
+  cursor: default;
+  color: var(--color-muted);
+}
+.calendar-blank {
+  background: var(--color-shade);
+}
+/* The chosen day is outlined as well as tinted: the outline is the meaning,
+   the tint only makes it findable again. */
+.calendar-chosen {
+  background: var(--color-accent-soft);
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
 }
 
 /* -------------------------------------------------------------------- print */
