@@ -139,10 +139,12 @@ def test_a_sidecar_with_no_artefact_is_reported(stocked):
 
 
 def test_a_file_that_does_not_match_the_grammar_is_reported(stocked):
-    vault, _, _ = stocked
-    stray = vault.root / "raw" / "2026" / "09" / "scan.jpg"
+    # Beside a real artefact, in whatever month folder ingest chose today: a
+    # hard-coded month breaks the day the calendar leaves it.
+    vault, first, _ = stocked
+    stray = first.path.parent / "scan.jpg"
     stray.write_bytes(b"dropped in by hand")
-    assert check(vault).foreign == ("raw/2026/09/scan.jpg",)
+    assert check(vault).foreign == (first.rel.rsplit("/", 1)[0] + "/scan.jpg",)
 
 
 def test_two_ingested_events_for_one_hash_are_reported(vault):
@@ -203,8 +205,8 @@ def test_an_artefact_that_has_not_downloaded_yet_is_not_called_corrupt(stocked):
 
 
 def test_sync_client_and_file_manager_litter_is_ignored(stocked):
-    vault, _, _ = stocked
-    (vault.root / "raw" / "2026" / "09" / ".DS_Store").write_bytes(b"\x00")
+    vault, first, _ = stocked
+    (first.path.parent / ".DS_Store").write_bytes(b"\x00")
     (vault.root / "raw" / "Thumbs.db").write_bytes(b"\x00")
     assert check(vault).is_clean
 
