@@ -1,0 +1,524 @@
+{
+  "example": true,
+  "patient": "Jane Doe",
+  "recipient": "Dr James Smith",
+  "notice": "Illustrative documents for Jane Doe. All names, dates, results and sharing statements are fictional examples; these documents are separate from your patient record.",
+  "documents": [
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "medication-review-2026-10-12",
+      "date": "2026-10-12",
+      "title": "Medication chart review",
+      "category": "Medication review",
+      "professional": "Dr Amelia Patel",
+      "role": "Consultant pharmacist",
+      "organisation": "Harbour Clinical Pharmacy",
+      "sections": [
+        {
+          "heading": "Reason for review",
+          "text": "A routine review of Jane Doe’s medication chart and recorded medicines was completed. The chart, dispensing history and patient-reported list were compared."
+        },
+        {
+          "heading": "Review summary",
+          "text": "The example chart records amlodipine 5 mg once daily and metformin 500 mg twice daily with meals. Jane reports using a weekly organiser. Medication names, doses and indications were checked against the chart supplied for this fictional review."
+        },
+        {
+          "heading": "Correspondence",
+          "text": "A copy of the review has been sent to Dr James Smith for reconciliation with the practice record. No prescription is issued by this sample document."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "blood-panel-2026-10-08",
+      "date": "2026-10-08",
+      "title": "Full blood panel including lipids",
+      "category": "Pathology",
+      "professional": "Dr Sarah Chen",
+      "role": "Chemical pathologist",
+      "organisation": "Sydney Labs",
+      "sections": [
+        {
+          "heading": "Specimen",
+          "text": "Fictional venous blood sample collected on 2026-10-08. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+        },
+        {
+          "heading": "Laboratory note",
+          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+        }
+      ],
+      "results": [
+        {
+          "test": "Haemoglobin",
+          "result": "132",
+          "unit": "g/L"
+        },
+        {
+          "test": "White cell count",
+          "result": "6.3",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Platelets",
+          "result": "254",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Total cholesterol",
+          "result": "4.8",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "LDL cholesterol",
+          "result": "2.6",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "HDL cholesterol",
+          "result": "1.4",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Triglycerides",
+          "result": "1.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Fasting glucose",
+          "result": "5.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Creatinine",
+          "result": "71",
+          "unit": "µmol/L"
+        }
+      ]
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "cardiology-2026-09-24",
+      "date": "2026-09-24",
+      "title": "Cardiology consultation letter",
+      "category": "Specialist letter",
+      "professional": "Dr Matthew Thompson",
+      "role": "Cardiologist",
+      "organisation": "Harbourside Cardiology",
+      "sections": [
+        {
+          "heading": "Dear Dr Smith",
+          "text": "Thank you for referring Jane Doe for a routine cardiovascular review. We discussed her medical history, usual activities and current medication list."
+        },
+        {
+          "heading": "Consultation summary",
+          "text": "In this fictional consultation, Jane described occasional awareness of her heartbeat. A clinic examination and a resting ECG were recorded. No medication change is documented in this sample letter."
+        },
+        {
+          "heading": "Correspondence",
+          "text": "The consultation findings and a copy of the ECG report have been forwarded to your practice for inclusion in Jane’s record."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "ecg-2026-09-18",
+      "date": "2026-09-18",
+      "title": "Sydney Labs — resting ECG",
+      "category": "Investigation",
+      "professional": "Dr Olivia Williams",
+      "role": "Reporting cardiologist",
+      "organisation": "Sydney Labs",
+      "sections": [
+        {
+          "heading": "Investigation",
+          "text": "Resting 12-lead electrocardiogram. Requested by Dr James Smith for Jane Doe."
+        },
+        {
+          "heading": "Recorded findings",
+          "text": "Example tracing: sinus rhythm at 72 beats per minute. PR interval 160 ms, QRS duration 88 ms and QTc 410 ms. These are fictional measurements supplied to demonstrate a report layout."
+        },
+        {
+          "heading": "Report distribution",
+          "text": "Electronic report addressed to Dr James Smith. The sample tracing is described in text; no original ECG image is attached."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "podiatry-2026-09-10",
+      "date": "2026-09-10",
+      "title": "Podiatrist assessment letter",
+      "category": "Allied health",
+      "professional": "Ms Emily Carter",
+      "role": "Podiatrist",
+      "organisation": "Northside Foot & Ankle Clinic",
+      "sections": [
+        {
+          "heading": "Dear Dr Smith",
+          "text": "Jane Doe attended for a routine foot and footwear assessment. Skin condition, nails, pressure areas and footwear fit were reviewed."
+        },
+        {
+          "heading": "Assessment record",
+          "text": "This example records intact skin, a small callused area at the right forefoot and a discussion of her usual walking activities. A basic sensory screen and pedal pulse assessment were documented in the clinic notes."
+        },
+        {
+          "heading": "Summary",
+          "text": "A copy of this fictional assessment is provided for your records. No new diagnosis or medication is established by this example."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "blood-panel-2026-08-14",
+      "date": "2026-08-14",
+      "title": "Full blood panel including lipids",
+      "category": "Pathology",
+      "professional": "Dr Sarah Chen",
+      "role": "Chemical pathologist",
+      "organisation": "Sydney Labs",
+      "sections": [
+        {
+          "heading": "Specimen",
+          "text": "Fictional venous blood sample collected on 2026-08-14. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+        },
+        {
+          "heading": "Laboratory note",
+          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+        }
+      ],
+      "results": [
+        {
+          "test": "Haemoglobin",
+          "result": "130",
+          "unit": "g/L"
+        },
+        {
+          "test": "White cell count",
+          "result": "6.8",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Platelets",
+          "result": "267",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Total cholesterol",
+          "result": "5.0",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "LDL cholesterol",
+          "result": "2.8",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "HDL cholesterol",
+          "result": "1.3",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Triglycerides",
+          "result": "1.4",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Fasting glucose",
+          "result": "5.3",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Creatinine",
+          "result": "73",
+          "unit": "µmol/L"
+        }
+      ]
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "imaging-2026-07-22",
+      "date": "2026-07-22",
+      "title": "Chest X-ray report",
+      "category": "Imaging",
+      "professional": "Dr Benjamin Lee",
+      "role": "Radiologist",
+      "organisation": "Sydney Diagnostic Imaging",
+      "sections": [
+        {
+          "heading": "Examination",
+          "text": "Example PA and lateral chest radiographs. Referrer: Dr James Smith. Patient: Jane Doe."
+        },
+        {
+          "heading": "Findings",
+          "text": "The fictional report describes clear lung fields, no pleural effusion and an unremarkable cardiomediastinal silhouette."
+        },
+        {
+          "heading": "Report",
+          "text": "This sample contains report text only. No diagnostic images are attached."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "physiotherapy-2026-06-17",
+      "date": "2026-06-17",
+      "title": "Physiotherapy progress report",
+      "category": "Allied health",
+      "professional": "Mr Daniel Wilson",
+      "role": "Physiotherapist",
+      "organisation": "Riverside Allied Health",
+      "sections": [
+        {
+          "heading": "Dear Dr Smith",
+          "text": "Jane Doe attended a scheduled physiotherapy review concerning a previously reported knee complaint."
+        },
+        {
+          "heading": "Progress record",
+          "text": "In this fictional record, Jane reported improved comfort with ordinary walking. Range of movement and walking tolerance were documented at the visit. Her existing exercise program was reviewed."
+        },
+        {
+          "heading": "Correspondence",
+          "text": "This progress update is provided to the referring practitioner for continuity of records."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "blood-panel-2026-05-15",
+      "date": "2026-05-15",
+      "title": "Full blood panel including lipids",
+      "category": "Pathology",
+      "professional": "Dr Sarah Chen",
+      "role": "Chemical pathologist",
+      "organisation": "Sydney Labs",
+      "sections": [
+        {
+          "heading": "Specimen",
+          "text": "Fictional venous blood sample collected on 2026-05-15. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+        },
+        {
+          "heading": "Laboratory note",
+          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+        }
+      ],
+      "results": [
+        {
+          "test": "Haemoglobin",
+          "result": "131",
+          "unit": "g/L"
+        },
+        {
+          "test": "White cell count",
+          "result": "6.1",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Platelets",
+          "result": "249",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Total cholesterol",
+          "result": "5.1",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "LDL cholesterol",
+          "result": "2.9",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "HDL cholesterol",
+          "result": "1.3",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Triglycerides",
+          "result": "1.5",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Fasting glucose",
+          "result": "5.4",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Creatinine",
+          "result": "72",
+          "unit": "µmol/L"
+        }
+      ]
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "ophthalmology-2026-04-02",
+      "date": "2026-04-02",
+      "title": "Ophthalmology review letter",
+      "category": "Specialist letter",
+      "professional": "Dr Sophie Martin",
+      "role": "Ophthalmologist",
+      "organisation": "City Eye Specialists",
+      "sections": [
+        {
+          "heading": "Dear Dr Smith",
+          "text": "Thank you for referring Jane Doe for a routine eye review. Visual acuity, intraocular pressure and a dilated eye examination were documented."
+        },
+        {
+          "heading": "Review summary",
+          "text": "The fictional examination records stable corrected visual acuity and no new finding noted in the sample clinic entry. Her current spectacles and ocular history were reviewed."
+        },
+        {
+          "heading": "Correspondence",
+          "text": "A copy of this illustrative letter is supplied for your practice record."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "discharge-2026-03-11",
+      "date": "2026-03-11",
+      "title": "Day procedure discharge summary",
+      "category": "Discharge summary",
+      "professional": "Dr William Harris",
+      "role": "Medical officer",
+      "organisation": "Example Day Hospital",
+      "sections": [
+        {
+          "heading": "Episode of care",
+          "text": "Fictional same-day admission for a planned outpatient procedure. Admitting practitioner and nursing observations were documented during the episode."
+        },
+        {
+          "heading": "Discharge record",
+          "text": "Jane Doe was recorded as comfortable and accompanied by a support person at the end of the example episode. A copy of the discharge information was provided to her and forwarded to Dr James Smith."
+        },
+        {
+          "heading": "Medication reconciliation",
+          "text": "The sample discharge record refers to the existing medication list. It does not introduce a new prescription."
+        }
+      ],
+      "results": []
+    },
+    {
+      "example": true,
+      "recipient": "Dr James Smith",
+      "patient": "Jane Doe",
+      "release_note": "Released for viewing by Dr James Smith",
+      "practice": "Example Medical Centre",
+      "id": "blood-panel-2026-02-12",
+      "date": "2026-02-12",
+      "title": "Full blood panel including lipids",
+      "category": "Pathology",
+      "professional": "Dr Sarah Chen",
+      "role": "Chemical pathologist",
+      "organisation": "Sydney Labs",
+      "sections": [
+        {
+          "heading": "Specimen",
+          "text": "Fictional venous blood sample collected on 2026-02-12. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+        },
+        {
+          "heading": "Laboratory note",
+          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+        }
+      ],
+      "results": [
+        {
+          "test": "Haemoglobin",
+          "result": "129",
+          "unit": "g/L"
+        },
+        {
+          "test": "White cell count",
+          "result": "6.5",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Platelets",
+          "result": "260",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Total cholesterol",
+          "result": "5.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "LDL cholesterol",
+          "result": "3.0",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "HDL cholesterol",
+          "result": "1.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Triglycerides",
+          "result": "1.6",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Fasting glucose",
+          "result": "5.4",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Creatinine",
+          "result": "74",
+          "unit": "µmol/L"
+        }
+      ]
+    }
+  ]
+}

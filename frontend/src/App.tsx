@@ -3,8 +3,8 @@
  *
  * Shaped like the assistants people already know how to use: a button at the
  * top left opens a menu down the left, and the page is one readable column.
- * The app opens on the patient profile. Questions live at `/ask` and the
- * timeline at `/timeline`, both reachable from the menu.
+ * Overview is the home screen. The patient profile lives at `/profile`,
+ * questions at `/ask`, and the timeline at `/timeline`.
  *
  * Timeline, record, one entity, one artefact, the folder and settings — plus
  * capture, which is not a screen so much as something the whole window does.
@@ -128,7 +128,9 @@ export function App() {
   const tail = [second, ...rest].filter(Boolean).join("/");
 
   let screen: React.ReactNode;
-  if (!first || first === "profile") {
+  if (!first || first === "overview") {
+    screen = createElement("health-overview", { key: version });
+  } else if (first === "profile") {
     screen = createElement("patient-profile");
   } else if (first === "ask") {
     screen = (
@@ -308,7 +310,7 @@ export function App() {
             quietReview={first === "review"}
           />
 
-          {asking ? null : (
+          {asking || !header.subtitle ? null : (
             <p className="mt-2 mb-5 max-w-2xl text-[color:var(--color-muted)]">
               {header.subtitle}
             </p>
@@ -405,7 +407,10 @@ function readMenuPreference(): boolean {
  */
 function defaultHeader(segments: string[]): PageHeader {
   const [first, second] = segments;
-  if (!first || first === "profile") {
+  if (!first || first === "overview") {
+    return { title: "Overview", subtitle: "" };
+  }
+  if (first === "profile") {
     return { title: "Patient profile", subtitle: "" };
   }
   if (first === "timeline") {

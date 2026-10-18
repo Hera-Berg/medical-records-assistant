@@ -8,7 +8,7 @@
  * rems of navigation down the side of a 390px screen leaves nothing for the
  * record itself. Either way it opens and closes at once, with no slide.
  *
- * The patient profile comes first, followed by questions and adding documents.
+ * Overview comes first, followed by the patient profile, questions and capture.
  * The rest of the record is grouped under one heading beneath them.
  *
  * The footer is the part that earns the menu: it says, permanently and without
@@ -87,7 +87,7 @@ export function Sidebar({
       : (ENDPOINT_WORDS[health.endpoint.state] ?? ENDPOINT_WORDS.unknown)
     : null;
   const folder = health ? folderName(health.vault.root) : null;
-  const item = { path, navigate };
+  const item = { path: path === "/overview" ? "/" : path, navigate };
 
   return (
     <aside
@@ -95,14 +95,14 @@ export function Sidebar({
       className="no-print flex h-full w-72 flex-col bg-[color:var(--color-nav)] text-[color:var(--color-ink)]"
       aria-label="Sections of your record"
     >
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+      <div className="health-brand flex items-center gap-2 px-3 pt-3 pb-2">
         <span
           aria-hidden="true"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--color-accent)]"
+          className="health-brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--color-accent)]"
         >
           <Mark />
         </span>
-        <span className="min-w-0 flex-1 truncate font-semibold">Your health record</span>
+        <span className="health-brand-name min-w-0 flex-1 truncate font-semibold">My health</span>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close the menu">
           <CloseMenu />
         </button>
@@ -110,7 +110,8 @@ export function Sidebar({
 
       <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
         <div className="flex flex-col gap-0.5">
-          <Item to="/" label="Patient profile" exact icon={<Book />} {...item} />
+          <Item to="/" label="Overview" exact icon={<Home />} {...item} />
+          <Item to="/profile" label="Patient profile" icon={<Book />} {...item} />
           <Item to="/ask" label="Ask your record" icon={<Question />} {...item} />
           <Item
             to="/add"
@@ -289,6 +290,14 @@ function Lock() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <rect x="5" y="11" width="14" height="9" rx="2" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Home() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+      <path d="M3 10l9-7 9 7v11h-6v-7H9v7H3z" />
     </svg>
   );
 }

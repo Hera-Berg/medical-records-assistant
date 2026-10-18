@@ -3,7 +3,9 @@
 Vite + React + TypeScript + Tailwind, built to static files and served by
 FastAPI at `/`. One origin, no dev proxy in production, no CDN, no webfont.
 
-The opening route is the patient profile; questions live at `/ask`. Profile
+The opening route is Overview (`/` or `/overview`); the patient profile lives at
+`/profile` and questions at `/ask`. The overview reads `/api/profile` and the
+recent timeline, with no model call or record writes. Profile
 details are user edits stored as `patient.profile.updated` events, served by
 `/api/profile`. Confirmed clinical entries come from the reconciled record;
 patient-entered allergy notes are labelled separately. The native profile
