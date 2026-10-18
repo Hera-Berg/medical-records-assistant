@@ -43,7 +43,7 @@ view.profile={values:{},clinical:{medications:[],allergies:[]},review_count:0};v
 assert(view.innerHTML.includes('Your story starts here'),'empty timeline');
 assert(view.innerHTML.includes('Allergy status not established'),'empty does not mean no allergies');
 assert(!view.innerHTML.includes('Good morning, Alex'),'no invented identity');
-assert(view.innerHTML.includes('href="/files"'),'documents shortcut');
+        assert(view.innerHTML.includes('href="/documents"'),'documents shortcut');
 view.profile=null;view.timeline=null;view.render();
 assert(view.innerHTML.includes('temporarily unavailable'),'failure feedback');
 assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieval is not an empty record');
@@ -75,7 +75,7 @@ assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieva
         self.assertIn('/overview.css',index)
         source=(ROOT/'frontend/src/components/Sidebar.tsx').read_text()
         bundle=next((static/'assets').glob('*.js')).read_text()
-        for label in ('Overview','Patient profile','Ask your record','Add something','Waiting for you','Timeline','Medications and more','For an appointment',"Doctor's notes",'Files','Settings'):
+        for label in ('Overview','Patient profile','Ask your record','Add something','Waiting for you','Timeline','Medications and more','For an appointment',"Doctor's notes",'Documents','Settings'):
             self.assertIn(label,source)
             self.assertIn(label,bundle)
         self.assertIn('first === "overview"',(ROOT/'frontend/src/App.tsx').read_text())

@@ -24,11 +24,11 @@
         },
         {
           "heading": "Review summary",
-          "text": "The example chart records amlodipine 5 mg once daily and metformin 500 mg twice daily with meals. Jane reports using a weekly organiser. Medication names, doses and indications were checked against the chart supplied for this fictional review."
+          "text": "The medication chart records amlodipine 5 mg once daily and metformin 500 mg twice daily with meals. Jane reports using a weekly organiser. Medication names, doses and indications were checked against the chart supplied for this review."
         },
         {
           "heading": "Correspondence",
-          "text": "A copy of the review has been sent to Dr James Smith for reconciliation with the practice record. No prescription is issued by this sample document."
+          "text": "A copy of the review has been sent to Dr James Smith for reconciliation with the practice record. No medication change was recorded during the review."
         }
       ],
       "results": []
@@ -49,11 +49,11 @@
       "sections": [
         {
           "heading": "Specimen",
-          "text": "Fictional venous blood sample collected on 2026-10-08. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+          "text": "Venous blood sample collected on 2026-10-08. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
         },
         {
           "heading": "Laboratory note",
-          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+          "text": "Results are reported below. A copy has been forwarded to the requesting practitioner, Dr James Smith."
         }
       ],
       "results": [
@@ -71,6 +71,46 @@
           "test": "Platelets",
           "result": "254",
           "unit": "×10⁹/L"
+        },
+        {
+          "test": "Red cell count",
+          "result": "4.45",
+          "unit": "×10¹²/L"
+        },
+        {
+          "test": "Haematocrit",
+          "result": "0.40",
+          "unit": "L/L"
+        },
+        {
+          "test": "Mean cell volume",
+          "result": "90",
+          "unit": "fL"
+        },
+        {
+          "test": "Neutrophils",
+          "result": "3.6",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Lymphocytes",
+          "result": "2.1",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Sodium",
+          "result": "139",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Potassium",
+          "result": "4.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Urea",
+          "result": "4.9",
+          "unit": "mmol/L"
         },
         {
           "test": "Total cholesterol",
@@ -124,7 +164,7 @@
         },
         {
           "heading": "Consultation summary",
-          "text": "In this fictional consultation, Jane described occasional awareness of her heartbeat. A clinic examination and a resting ECG were recorded. No medication change is documented in this sample letter."
+          "text": "During the consultation, Jane described occasional awareness of her heartbeat. A clinic examination and a resting ECG were recorded. No medication change is documented at this visit."
         },
         {
           "heading": "Correspondence",
@@ -153,11 +193,11 @@
         },
         {
           "heading": "Recorded findings",
-          "text": "Example tracing: sinus rhythm at 72 beats per minute. PR interval 160 ms, QRS duration 88 ms and QTc 410 ms. These are fictional measurements supplied to demonstrate a report layout."
+          "text": "Recorded tracing: sinus rhythm at 72 beats per minute. PR interval 160 ms, QRS duration 88 ms and QTc 410 ms."
         },
         {
           "heading": "Report distribution",
-          "text": "Electronic report addressed to Dr James Smith. The sample tracing is described in text; no original ECG image is attached."
+          "text": "Electronic report addressed to Dr James Smith. The tracing measurements are summarised above."
         }
       ],
       "results": []
@@ -182,11 +222,11 @@
         },
         {
           "heading": "Assessment record",
-          "text": "This example records intact skin, a small callused area at the right forefoot and a discussion of her usual walking activities. A basic sensory screen and pedal pulse assessment were documented in the clinic notes."
+          "text": "The assessment records intact skin, a small callused area at the right forefoot and a discussion of her usual walking activities. A basic sensory screen and pedal pulse assessment were documented in the clinic notes."
         },
         {
           "heading": "Summary",
-          "text": "A copy of this fictional assessment is provided for your records. No new diagnosis or medication is established by this example."
+          "text": "A copy of this assessment is provided for your practice record."
         }
       ],
       "results": []
@@ -207,11 +247,11 @@
       "sections": [
         {
           "heading": "Specimen",
-          "text": "Fictional venous blood sample collected on 2026-08-14. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+          "text": "Venous blood sample collected on 2026-08-14. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
         },
         {
           "heading": "Laboratory note",
-          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+          "text": "Results are reported below. A copy has been forwarded to the requesting practitioner, Dr James Smith."
         }
       ],
       "results": [
@@ -229,6 +269,46 @@
           "test": "Platelets",
           "result": "267",
           "unit": "×10⁹/L"
+        },
+        {
+          "test": "Red cell count",
+          "result": "4.45",
+          "unit": "×10¹²/L"
+        },
+        {
+          "test": "Haematocrit",
+          "result": "0.40",
+          "unit": "L/L"
+        },
+        {
+          "test": "Mean cell volume",
+          "result": "90",
+          "unit": "fL"
+        },
+        {
+          "test": "Neutrophils",
+          "result": "3.6",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Lymphocytes",
+          "result": "2.1",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Sodium",
+          "result": "139",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Potassium",
+          "result": "4.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Urea",
+          "result": "4.9",
+          "unit": "mmol/L"
         },
         {
           "test": "Total cholesterol",
@@ -278,15 +358,15 @@
       "sections": [
         {
           "heading": "Examination",
-          "text": "Example PA and lateral chest radiographs. Referrer: Dr James Smith. Patient: Jane Doe."
+          "text": "PA and lateral chest radiographs. Referrer: Dr James Smith. Patient: Jane Doe."
         },
         {
           "heading": "Findings",
-          "text": "The fictional report describes clear lung fields, no pleural effusion and an unremarkable cardiomediastinal silhouette."
+          "text": "The report describes clear lung fields, no pleural effusion and an unremarkable cardiomediastinal silhouette."
         },
         {
           "heading": "Report",
-          "text": "This sample contains report text only. No diagnostic images are attached."
+          "text": "Report text supplied to the referring practitioner."
         }
       ],
       "results": []
@@ -311,7 +391,7 @@
         },
         {
           "heading": "Progress record",
-          "text": "In this fictional record, Jane reported improved comfort with ordinary walking. Range of movement and walking tolerance were documented at the visit. Her existing exercise program was reviewed."
+          "text": "At review, Jane reported improved comfort with ordinary walking. Range of movement and walking tolerance were documented at the visit. Her existing exercise program was reviewed."
         },
         {
           "heading": "Correspondence",
@@ -336,11 +416,11 @@
       "sections": [
         {
           "heading": "Specimen",
-          "text": "Fictional venous blood sample collected on 2026-05-15. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+          "text": "Venous blood sample collected on 2026-05-15. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
         },
         {
           "heading": "Laboratory note",
-          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+          "text": "Results are reported below. A copy has been forwarded to the requesting practitioner, Dr James Smith."
         }
       ],
       "results": [
@@ -358,6 +438,46 @@
           "test": "Platelets",
           "result": "249",
           "unit": "×10⁹/L"
+        },
+        {
+          "test": "Red cell count",
+          "result": "4.45",
+          "unit": "×10¹²/L"
+        },
+        {
+          "test": "Haematocrit",
+          "result": "0.40",
+          "unit": "L/L"
+        },
+        {
+          "test": "Mean cell volume",
+          "result": "90",
+          "unit": "fL"
+        },
+        {
+          "test": "Neutrophils",
+          "result": "3.6",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Lymphocytes",
+          "result": "2.1",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Sodium",
+          "result": "139",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Potassium",
+          "result": "4.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Urea",
+          "result": "4.9",
+          "unit": "mmol/L"
         },
         {
           "test": "Total cholesterol",
@@ -411,11 +531,11 @@
         },
         {
           "heading": "Review summary",
-          "text": "The fictional examination records stable corrected visual acuity and no new finding noted in the sample clinic entry. Her current spectacles and ocular history were reviewed."
+          "text": "The examination records stable corrected visual acuity and no new finding noted in the clinic entry. Her current spectacles and ocular history were reviewed."
         },
         {
           "heading": "Correspondence",
-          "text": "A copy of this illustrative letter is supplied for your practice record."
+          "text": "A copy of this letter is supplied for your practice record."
         }
       ],
       "results": []
@@ -436,15 +556,15 @@
       "sections": [
         {
           "heading": "Episode of care",
-          "text": "Fictional same-day admission for a planned outpatient procedure. Admitting practitioner and nursing observations were documented during the episode."
+          "text": "Same-day admission for a planned outpatient procedure. Admitting practitioner and nursing observations were documented during the episode."
         },
         {
           "heading": "Discharge record",
-          "text": "Jane Doe was recorded as comfortable and accompanied by a support person at the end of the example episode. A copy of the discharge information was provided to her and forwarded to Dr James Smith."
+          "text": "Jane Doe was recorded as comfortable and accompanied by a support person at discharge. A copy of the discharge information was provided to her and forwarded to Dr James Smith."
         },
         {
           "heading": "Medication reconciliation",
-          "text": "The sample discharge record refers to the existing medication list. It does not introduce a new prescription."
+          "text": "The discharge record refers to the existing medication list. It does not introduce a new prescription."
         }
       ],
       "results": []
@@ -465,11 +585,11 @@
       "sections": [
         {
           "heading": "Specimen",
-          "text": "Fictional venous blood sample collected on 2026-02-12. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
+          "text": "Venous blood sample collected on 2026-02-12. Tests requested: full blood count, electrolytes and renal function, fasting glucose and lipid profile."
         },
         {
           "heading": "Laboratory note",
-          "text": "The values below are illustrative entries for this example report. The report has been addressed to the requesting practitioner, Dr James Smith."
+          "text": "Results are reported below. A copy has been forwarded to the requesting practitioner, Dr James Smith."
         }
       ],
       "results": [
@@ -487,6 +607,46 @@
           "test": "Platelets",
           "result": "260",
           "unit": "×10⁹/L"
+        },
+        {
+          "test": "Red cell count",
+          "result": "4.45",
+          "unit": "×10¹²/L"
+        },
+        {
+          "test": "Haematocrit",
+          "result": "0.40",
+          "unit": "L/L"
+        },
+        {
+          "test": "Mean cell volume",
+          "result": "90",
+          "unit": "fL"
+        },
+        {
+          "test": "Neutrophils",
+          "result": "3.6",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Lymphocytes",
+          "result": "2.1",
+          "unit": "×10⁹/L"
+        },
+        {
+          "test": "Sodium",
+          "result": "139",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Potassium",
+          "result": "4.2",
+          "unit": "mmol/L"
+        },
+        {
+          "test": "Urea",
+          "result": "4.9",
+          "unit": "mmol/L"
         },
         {
           "test": "Total cholesterol",

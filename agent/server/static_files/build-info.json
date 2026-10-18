@@ -1,7 +1,7 @@
 {
   "commit": null,
   "dirty": true,
-  "built": "2026-10-18T03:07:53Z",
+  "built": "2026-10-18T03:22:24Z",
   "source": "frontend/",
-  "note": "Overview, profile and appearance sources and shipped assets updated together; full Vite rebuild unavailable in this environment."
+  "note": "Documents, overview, profile and appearance source and shipped assets updated together; full Vite rebuild unavailable in this environment."
 }

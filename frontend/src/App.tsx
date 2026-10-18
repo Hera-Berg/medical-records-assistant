@@ -132,6 +132,8 @@ export function App() {
     screen = createElement("health-overview", { key: version });
   } else if (first === "profile") {
     screen = createElement("patient-profile");
+  } else if (first === "documents") {
+    screen = createElement("health-documents", { key: version });
   } else if (first === "ask") {
     screen = (
       <Ask
@@ -412,6 +414,9 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "profile") {
     return { title: "Patient profile", subtitle: "" };
+  }
+  if (first === "documents") {
+    return { title: "Documents", subtitle: "" };
   }
   if (first === "timeline") {
     return {

@@ -57,7 +57,7 @@ class PatientProfileTests(unittest.TestCase):
             try:
                 app = create_app(self.vault, worker=False)
                 with TestClient(app,base_url='http://127.0.0.1:7777') as client:
-                    for path in ('/api/profile','/api/timeline?limit=3','/','/overview','/profile','/ask','/timeline','/record','/review','/files','/doctor-notes','/summary','/settings','/patient-profile.js','/patient-profile.css','/appearance.js','/overview.js','/overview.css'):
+                    for path in ('/api/profile','/api/documents','/api/timeline?limit=3','/','/overview','/profile','/documents','/ask','/timeline','/record','/review','/files','/doctor-notes','/summary','/settings','/patient-profile.js','/patient-profile.css','/appearance.js','/overview.js','/overview.css','/documents.js','/documents.css','/document-examples.json'):
                         response = client.get(path)
                         self.assertEqual(response.status_code,200,(path,response.text[:150]))
                     self.assertIn('no-store',client.get('/api/profile').headers['cache-control'])

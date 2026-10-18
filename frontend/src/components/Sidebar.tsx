@@ -138,7 +138,7 @@ export function Sidebar({
           <Item to="/record" label="Medications and more" icon={<Book />} {...item} />
           <Item to="/summary" label="For an appointment" icon={<Sheet />} {...item} />
           <Item to="/doctor-notes" label="Doctor's notes" icon={<Lock />} {...item} />
-          <Item to="/files" label="Files" icon={<Folder />} {...item} />
+          <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
         </div>
 
         <div className="mt-auto flex flex-col gap-0.5 pt-4">

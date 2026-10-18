@@ -9,9 +9,15 @@ recent timeline, with no model call or record writes. Profile
 details are user edits stored as `patient.profile.updated` events, served by
 `/api/profile`. Confirmed clinical entries come from the reconciled record;
 patient-entered allergy notes are labelled separately. The native profile
-editor and appearance control live in `public/` as shared browser assets,
+editor, Overview, Documents and appearance control live in `public/` as shared browser assets,
 copied unchanged by Vite. React mounts their custom elements in the relevant
 screens. Keep their shipped copies in `agent/server/static_files/` in sync.
+
+Documents (`/documents`) separates the bundled fictional Jane Doe examples in
+`public/document-examples.json` from the user's uploads (`/api/documents`).
+Examples never enter a vault or its clinical projection. Their dates and
+sharing statements apply only to the examples. The original folder browser
+remains accessible at `/files` and through Documents → Browse record folder.
 
 ## The build is committed
 
