@@ -24,7 +24,7 @@
  * what the app watches for and hands nothing to anybody.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { createElement, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { PageHeader } from "../App";
 import type { ReadsOn, Settings as SettingsData, SyncOption } from "../types";
@@ -120,6 +120,7 @@ export function Settings({
 
   return (
     <section>
+      {createElement("health-appearance")}
       <h2 className="text-lg font-semibold">Where your folder is</h2>
       <p className="mt-1 max-w-2xl">{settings.explanation}</p>
 

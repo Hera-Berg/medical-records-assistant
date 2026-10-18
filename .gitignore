@@ -19,3 +19,17 @@ pytest-tmp/
 # committed.
 /vault/
 .env
+
+# Project-local Python environments and the Mac launcher's downloaded runtime.
+.venv/
+.venv314/
+.runtime/
+
+# Local Git metadata (used when the session cannot create .git directly).
+.git-history/
+
+# Local caches, Finder metadata, and environment-specific secrets.
+.pytest_cache/
+.DS_Store
+.env.*
+!.env.example

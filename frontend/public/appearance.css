@@ -1,0 +1,39 @@
+/* Screen-only overrides leave every printed page on the original light palette. */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-ink: #eef2ef;
+    --color-muted: #b0bcb5;
+    --color-paper: #181e1b;
+    --color-ground: #181e1b;
+    --color-shade: #252e28;
+    --color-rule: #39473e;
+    --color-rule-strong: #697c6e;
+    --color-link: #9bbfff;
+    --color-accent: #91d9b3;
+    --color-accent-soft: #253c2f;
+    --color-nav: #121814;
+    --color-nav-hover: #253127;
+    --color-nav-active: #324537;
+    --color-alarm: #ffb4ad;
+    --color-alarm-soft: #442723;
+    --color-warn: #f0cd83;
+    --color-warn-soft: #3c3320;
+    --color-tier-rx: #9ddbb1;
+    --color-tier-lab: #a8c4ff;
+    --color-tier-dev: #d2b7f4;
+    --color-tier-pt: #f1c09a;
+    --color-tier-inf: #ffb4ad;
+    --color-tier-file: #c4cbd0;
+  }
+}
+health-appearance { display: block; margin-bottom: 2rem; }
+.appearance-settings { border: 0; padding: 0 0 1.5rem; border-bottom: 1px solid var(--color-rule); }
+.appearance-settings legend { font-size: var(--text-lg); font-weight: 600; }
+.appearance-settings p { margin-top: .5rem; color: var(--color-muted); }
+.appearance-options { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
+.appearance-options label { display: flex; align-items: center; gap: .5rem; padding: .65rem 1rem; border: 1px solid var(--color-rule-strong); border-radius: .625rem; cursor: pointer; }
+.appearance-options label:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.appearance-options input { accent-color: var(--color-accent); }
+.appearance-status:empty { display: none; }
+@media print { health-appearance { display: none; } }

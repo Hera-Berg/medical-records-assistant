@@ -3,6 +3,14 @@
 Vite + React + TypeScript + Tailwind, built to static files and served by
 FastAPI at `/`. One origin, no dev proxy in production, no CDN, no webfont.
 
+The opening route is the patient profile; questions live at `/ask`. Profile
+details are user edits stored as `patient.profile.updated` events, served by
+`/api/profile`. Confirmed clinical entries come from the reconciled record;
+patient-entered allergy notes are labelled separately. The native profile
+editor and appearance control live in `public/` as shared browser assets,
+copied unchanged by Vite. React mounts their custom elements in the relevant
+screens. Keep their shipped copies in `agent/server/static_files/` in sync.
+
 ## The build is committed
 
 `npm run build` writes to `../agent/server/static_files`, and **that output is

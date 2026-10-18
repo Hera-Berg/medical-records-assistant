@@ -3,9 +3,8 @@
  *
  * Shaped like the assistants people already know how to use: a button at the
  * top left opens a menu down the left, and the page is one readable column.
- * The app opens on "Ask your record", because a box that says "ask" is the
- * least daunting first thing a record can show — and everything else it did
- * before is one tap away in the menu. The timeline moved to `/timeline`.
+ * The app opens on the patient profile. Questions live at `/ask` and the
+ * timeline at `/timeline`, both reachable from the menu.
  *
  * Timeline, record, one entity, one artefact, the folder and settings — plus
  * capture, which is not a screen so much as something the whole window does.
@@ -38,7 +37,7 @@
  * shell cannot know it without fetching what the screen is already fetching.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Link, useRoute } from "./router";
 import type { Health } from "./types";
@@ -85,9 +84,6 @@ export function App() {
   const [header, setHeader] = useState<PageHeader>(() => defaultHeader(route.segments));
 
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
-  // Whether the first health answer has been seen, so the welcome question is
-  // offered once when the record opens and never again until the next opening.
-  const welcomed = useRef(false);
   const capture = useCapture(refresh);
   const dragging = useWindowCapture(capture.enqueue);
   const [wide, menuOpen, setMenuOpen] = useMenu();
@@ -117,13 +113,6 @@ export function App() {
           if (!live) return;
           rememberInstallation(result.packaged);
           setHealth(result);
-          // The first run's last question comes before anything else, once per
-          // opening. Not on every poll: the timeline is also at "/", so leaving
-          // the question by the sidebar sent the next poll straight back to it.
-          if (result.welcome && !welcomed.current && window.location.pathname === "/") {
-            navigate("/welcome");
-          }
-          welcomed.current = true;
           setHealthError(null);
         })
         .catch((exc: Error) => live && setHealthError(exc.message));
@@ -139,7 +128,9 @@ export function App() {
   const tail = [second, ...rest].filter(Boolean).join("/");
 
   let screen: React.ReactNode;
-  if (!first) {
+  if (!first || first === "profile") {
+    screen = createElement("patient-profile");
+  } else if (first === "ask") {
     screen = (
       <Ask
         navigate={navigate}
@@ -194,17 +185,6 @@ export function App() {
     screen = <Welcome navigate={navigate} onChanged={refresh} />;
   } else if (first === "settings") {
     screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
-  } else if (first === "ask") {
-    // Where asking used to live. Kept so an old bookmark still lands somewhere.
-    screen = (
-      <p>
-        Asking your record is now the first page.{" "}
-        <Link to="/" navigate={navigate}>
-          Ask a question
-        </Link>
-        .
-      </p>
-    );
   } else {
     screen = (
       <p>
@@ -217,7 +197,7 @@ export function App() {
     );
   }
 
-  const asking = !first;
+  const asking = first === "ask";
 
   return (
     <div className="flex min-h-screen items-stretch">
@@ -425,8 +405,8 @@ function readMenuPreference(): boolean {
  */
 function defaultHeader(segments: string[]): PageHeader {
   const [first, second] = segments;
-  if (!first) {
-    return { title: "Your health record", subtitle: "" };
+  if (!first || first === "profile") {
+    return { title: "Patient profile", subtitle: "" };
   }
   if (first === "timeline") {
     return {

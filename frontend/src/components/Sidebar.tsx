@@ -8,8 +8,7 @@
  * rems of navigation down the side of a 390px screen leaves nothing for the
  * record itself. Either way it opens and closes at once, with no slide.
  *
- * Asking comes first, because it is the page the app opens on, and adding
- * something second, because those are the two things a person arrives to do.
+ * The patient profile comes first, followed by questions and adding documents.
  * The rest of the record is grouped under one heading beneath them.
  *
  * The footer is the part that earns the menu: it says, permanently and without
@@ -111,7 +110,8 @@ export function Sidebar({
 
       <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
         <div className="flex flex-col gap-0.5">
-          <Item to="/" label="Ask your record" exact icon={<Question />} {...item} />
+          <Item to="/" label="Patient profile" exact icon={<Book />} {...item} />
+          <Item to="/ask" label="Ask your record" icon={<Question />} {...item} />
           <Item
             to="/add"
             label="Add something"

@@ -38,6 +38,7 @@ from .routes import (
     doctor_notes,
     files,
     health,
+    profile,
     reader,
     rebuild,
     record,
@@ -151,6 +152,7 @@ def create_app(
 
     for module in (
         health,
+        profile,
         ask,
         capture,
         doctor_notes,

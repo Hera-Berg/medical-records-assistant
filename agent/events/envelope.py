@@ -28,6 +28,7 @@ ACTORS = (ACTOR_USER, ACTOR_AGENT)
 
 #: Event type -> the only actor permitted to author it (CLAUDE.md, "Event types").
 EVENT_TYPES: dict[str, str] = {
+    "patient.profile.updated": ACTOR_USER,
     "artifact.ingested": ACTOR_USER,
     "artifact.reseen": ACTOR_USER,
     "extraction.completed": ACTOR_AGENT,
