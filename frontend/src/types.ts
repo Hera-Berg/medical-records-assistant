@@ -466,6 +466,7 @@ export interface JobState {
 }
 
 export interface ArtifactMeta {
+  native?: { title: string };
   demo?: { title: string; author: string; event_date: string; source_type: string; original_wording_artifact: string; related: { artifact: string; title: string }[] };
   short: string;
   digest: string;

@@ -260,8 +260,11 @@ def compose(
             before = project(_as_at(events, before_at), before_at).entities
 
     artifacts = citations_mod.index_artifacts(events)
+    from ..prescriptions import listing
+    prescription_rows = listing(events, artifacts, as_of, now)
     return build(
         now.entities,
+        prescriptions=tuple(prescription_rows),
         before=before,
         review=now.review,
         citer=Citer(artifacts, events),

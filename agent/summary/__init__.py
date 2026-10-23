@@ -79,6 +79,7 @@ def build(
     since_note: str = "",
     demo: bool = False,
     summary_id: str = PREVIEW_ID,
+    prescriptions: tuple = (),
 ) -> Summary:
     """Assemble one sheet from the record, in the order the spec fixes.
 
@@ -100,7 +101,7 @@ def build(
                 "nothing to compare against."
             ),
         ),
-        select.medications(entities, citer, prepared),
+        select.medications(entities, citer, prepared, prescriptions=prescriptions),
         select.allergies(entities, citer),
         select.problems(entities, citer),
     )

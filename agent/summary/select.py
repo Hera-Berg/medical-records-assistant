@@ -147,7 +147,7 @@ def _state_words(entity: Entity, slot: Slot | None) -> str | None:
 
 
 def medications(
-    entities: Mapping[str, Entity], citer: Citer, as_of: date
+    entities: Mapping[str, Entity], citer: Citer, as_of: date, *, prescriptions=()
 ) -> Section:
     """Every medication still on the list, stale and conflicted included.
 
@@ -189,13 +189,25 @@ def medications(
             notes.append("I have reported stopping this")
 
         cited = claims or _fallback_claims(entity)
+        sources = _sources(cited, citer)
+        prescription = next((p for p in prescriptions if p['medicine_id']==row.id
+                             and p['treatment_status']=='current' and p['original_directions']==row.dose), None)
+        if prescription:
+            rx = prescription
+            notes.append('Prescription: '+rx['expiry']['label']+'; quantity '+str(rx.get('quantity_per_dispensing') or 'not recorded')
+                         +'; original repeats '+str(rx['original_repeats'] if rx.get('original_repeats') is not None else 'not recorded')
+                         +'; '+rx['repeat_label']+'; '+rx['supply_label'])
+            artifact = citer.artifacts.get(rx['source'])
+            if artifact and not any(s.artifact==rx['source'] for s in sources):
+                sources = (*sources, Source(tier='prescriber-issued', when=rx['prescribed_date'],
+                    citation=citer.cite(rx['source'],'Prescription'), artifact=rx['source'], rel='../'+artifact.rel))
         lines.append(
             Line(
                 label=row.name,
                 value=value,
                 note="; ".join(notes) or None,
                 state=_state_words(entity, slot),
-                sources=_sources(cited, citer),
+                sources=sources,
                 subject_id=row.id,
                 alternatives=alternatives,
                 claims=_claim_ids(cited),

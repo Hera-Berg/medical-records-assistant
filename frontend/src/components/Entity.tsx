@@ -18,7 +18,7 @@
  * them. The API cannot send it, so this cannot render it.
  */
 
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
 import type { PageHeader } from "../App";
@@ -102,6 +102,8 @@ export function Entity({
           show only this on the timeline
         </Link>
       </div>
+
+      {data.id.startsWith("med:") ? createElement("health-prescriptions", { subject: data.id, key: `${data.id}-${version}` }) : null}
 
       {data.is_stub ? (
         <p className="mt-2">

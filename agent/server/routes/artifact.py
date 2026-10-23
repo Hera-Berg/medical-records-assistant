@@ -210,7 +210,29 @@ def artifact_meta(
                                     + [{'artifact':previous, 'title':'Previous authored demo source version'}
                                        for previous in dict.fromkeys(p.get('previous_artifacts', []))
                                        if previous in snapshot.artifacts and previous != short]}
+        if p.get('native_document'):
+            from ...prescriptions import listing
+            native=dict(p['native_document'])
+            prescribed={row['id']:row for row in listing(snapshot.events,snapshot.artifacts,state.now(),snapshot.projection)
+                        if row['source']==p['artifact']}
+            native['prescriptions']=[prescribed[row['id']] for row in native.get('prescriptions',[]) if row['id'] in prescribed]
+            extra['native']=native
         break
+    if 'native' not in extra and located.exists and located.artifact.mime == 'application/pdf':
+        # Text-layer PDFs only. No OCR, model-generated prose or missing passages.
+        try:
+            if located.path.stat().st_size <= 20_000_000:
+                import pdfplumber
+                with pdfplumber.open(located.path) as pdf:
+                    if len(pdf.pages)<=100:
+                        pages=[page.extract_text(layout=True) or '' for page in pdf.pages]
+                        # A mixed scanned/text PDF is not silently presented as complete.
+                        if pages and all(text.strip() and '\ufffd' not in text and '(cid:' not in text for text in pages):
+                            extra['native']={'title':(extra.get('sidecar',{}).get('capture') or {}).get('original_filename') or 'Document text',
+                                'extracted':True,'sections':[{'heading':f'Page {i+1}','text':text} for i,text in enumerate(pages)],
+                                'prescriptions':[], 'results':[], 'medications':[], 'release':None}
+        except Exception:  # Optional reader or unreadable original: preserve existing access.
+            pass
     return serialise.artifact_summary(located.artifact, extra)
 
 
@@ -234,3 +256,10 @@ def artifacts(
         )
     ]
     return {"total": len(rows), "artifacts": rows, "as_of": snapshot.built_ts}
+
+
+@router.get('/api/prescriptions')
+def prescription_records(state: RecordState = Depends(get_state)):
+    from ...prescriptions import listing
+    snapshot=state.snapshot()
+    return {'prescriptions':listing(snapshot.events,snapshot.artifacts,state.now(),snapshot.projection)}

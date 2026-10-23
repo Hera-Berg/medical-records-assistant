@@ -11,7 +11,7 @@
  * of files.
  */
 
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { api, artifactUrl } from "../api";
 import type { PageHeader } from "../App";
 import type { ArtifactMeta } from "../types";
@@ -57,14 +57,15 @@ export function Artifact({
   useEffect(() => {
     if (!meta) return;
     setHeader({
-      title: kindOf(meta.mime),
+      title: meta.native?.title || kindOf(meta.mime),
       subtitle:
-        "The original, exactly as it arrived. Every citation in your record ends here.",
+        meta.native ? "Readable document · original file retained separately." : "The original, exactly as it arrived. Every citation in your record ends here.",
     });
   }, [meta, setHeader]);
 
   if (error) return <Empty>{error}</Empty>;
   if (!meta) return <Empty>Reading…</Empty>;
+  if (meta.native) return createElement("health-native-document", { source: meta.short, key: meta.short });
 
   return (
     <article>

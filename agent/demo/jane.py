@@ -152,16 +152,21 @@ def seed(root, as_of=None, endpoint_from=None):
     artifacts = index_artifacts(events)
     seeded = entries(events, artifacts)
     references = {}
+    from .jane_documents import native_document
     for item in HISTORY:
+        native = native_document(item)
         text = source_text(item)
         pdf = source_pdf(text)
         previous = seeded.get(item['id'])
+        if previous is not None and previous.payload.get('native_document', {}).get('release'):
+            native['release'] = previous.payload['native_document']['release']
         if previous is not None:
             previous_short = previous.payload['artifact']
             # Version updates append a new source/note; immutable originals and
             # user additions remain untouched. An unchanged run writes nothing.
             if (artifacts[previous_short].digest == hashlib.sha256(pdf).hexdigest()
-                    and all(previous.payload.get(k) == v for k,v in item.items())):
+                    and all(previous.payload.get(k) == v for k,v in item.items())
+                    and previous.payload.get('native_document') == native):
                 references[item['date']] = previous_short
                 continue
         result = ingest.ingest_bytes(vault, pdf, ingest.CaptureContext(
@@ -175,6 +180,7 @@ def seed(root, as_of=None, endpoint_from=None):
         payload = {**item, 'demo_item_id': item['id'], 'demo_scenario': SCENARIO,
                    'fictional': True, 'patient_visible': True,
                    'event_date': item['date'], 'artifact': result.short,
+                   'native_document': native,
                    'original_wording_artifact': wording.short,
                    'status': 'Authored fictional demonstration; not clinician-verified',
                    'related_dates': RELATED.get(item['date'], []),

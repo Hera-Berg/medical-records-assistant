@@ -16,7 +16,7 @@
  * needs to ask about, not one to hide.
  */
 
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
 import type { MedicationRow, WikiIndex } from "../types";
@@ -113,6 +113,7 @@ export function Record({
                 </td>
                 <td>
                   <Dose row={row} />
+                  {createElement("health-prescriptions", { subject: row.id, compact: "", key: `${row.id}-${version}` })}
                 </td>
                 <td>{row.evidence_tier ? <TierMark tier={row.evidence_tier} /> : null}</td>
                 <td className="whitespace-nowrap">

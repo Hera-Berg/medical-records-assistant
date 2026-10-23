@@ -87,3 +87,58 @@ not available in the execution environment. FastAPI pages and assets were tested
 through its in-process HTTP client; binding a local server port was blocked by
 the execution sandbox. The shipped JavaScript includes the corresponding small
 source-view and timeline-link changes so this Mac does not need a frontend build.
+
+## Native reading pages and prescription details
+
+Document links now open a readable page inside the app using the existing
+letter template. Full native editions are stored in the demo's append-only
+notes; PDFs and UTF-8 originals remain unchanged as secondary downloads.
+The native edition is identified separately in optional provenance details.
+Personal and carer wording is preserved. Pathology uses the recorded results,
+with reference intervals explicitly unknown where the source supplies none.
+Text-layer uploads can also show extracted text; scanned, unreadable or mixed
+pages without reliable text retain their original-file viewer. No OCR or AI is
+invented for this view.
+
+Document rows and reading pages show the recorded releasing person and date,
+separately from author and recipient. Demo releases are simulated metadata, not
+an authentication or permission system. Patient/carer entries show their named
+contributor instead. Existing recorded release identities are preserved on
+repopulation; ordinary records receive no release grants.
+
+Open **Health record → Amlodipine** to compare the current and superseded
+prescriptions. The source chart also displays its full prescription fields:
+
+- Current 28 August 2026 prescription: amlodipine 2.5 mg once daily, 30 tablets,
+  originally two repeats. The 15 October shared GP record explicitly records
+  zero repeats remaining. Expiry is 31 October 2026.
+- Historical 20 August 2026 prescription: amlodipine 5 mg once daily, superseded
+  by the 28 August chart. Its recorded expiry is 12 October 2026.
+- The current apixaban, metoprolol and rosuvastatin records have later recorded
+  expiry dates. No undocumented repeat balance or medicine supply is inferred.
+
+Expiry badges use Australia/Sydney calendar days at request time. The expiry
+day itself is blue; it becomes red the following day. Today through 30 days is
+blue, more than 30 days uses normal styling, and unknown expiry is neutral.
+Expiry does not stop treatment, and repeat balance is independent of expiry.
+These dates are fixed fictional prescription data, not rolled forward to make
+screenshots retain a particular colour. As time passes, the badges change.
+
+The medication list shows the current prescription badge; medication detail
+pages show the fuller current and historical records. Source pages and the
+appointment sheet use the same recorded prescription data. Original directions
+remain visible, with no conversion of "twice daily" to undocumented clock times.
+Missing fields read "Not recorded". Supply is not estimated from repeats or PRN
+maximums.
+
+Additional focused checks:
+
+```sh
+.venv314/bin/python -m unittest tests.test_native_documents -v
+```
+
+The full focused set contains 33 tests. Native page rendering, escaping,
+release attribution, stable originals, prescription/source consistency,
+Sydney midnight boundaries, repeat balances, unknown/PRN fields, and uploaded
+PDF text views are covered. Desktop/mobile visual browser testing and the
+TypeScript build remain unverified in the restricted execution environment.

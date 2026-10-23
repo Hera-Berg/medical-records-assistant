@@ -1,0 +1,23 @@
+health-native-document,health-prescriptions { display:block; }
+.native-toolbar { display:flex; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1rem; }
+.native-letter { max-width:58rem; border:1px solid var(--color-rule); border-radius:12px; background:var(--color-paper); }
+.native-section p { white-space:pre-wrap; overflow-wrap:anywhere; }
+.native-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem 1.25rem; margin:1rem 0; }
+.native-facts dt { color:var(--color-muted); font-size:.9rem; }
+.native-facts dd { margin:0; overflow-wrap:anywhere; }
+.native-prescription { padding:1rem; border:1px solid var(--color-rule); border-radius:10px; margin:1rem 0; }
+.native-prescription h3 { margin-top:0; }
+.rx-badge { display:inline-block; border-radius:6px; padding:.2rem .5rem; font-size:.9rem; background:var(--color-shade); color:var(--color-ink); }
+.rx-badge.rx-expired { background:#fbe9e7; color:#962d27; }
+.rx-badge.rx-soon { background:#e5f1fc; color:#185d91; }
+.native-prescription.rx-expired { border-left:3px solid #b94e45; background:#fff9f8; }
+.native-prescription.rx-soon { border-left:3px solid #4385b3; background:#f8fbff; }
+.native-prescription.rx-valid,.rx-badge.rx-valid { background:var(--color-paper); }
+.native-prescriptions { margin-top:1.5rem; }
+@media(max-width:700px) { .native-facts { grid-template-columns:1fr; } .native-letter { max-width:100%; } }
+@media screen {
+  :root[data-theme="dark"] .native-prescription.rx-expired { background:#302321; border-left-color:#d38379; }
+  :root[data-theme="dark"] .native-prescription.rx-soon { background:#1c2b36; border-left-color:#7db1d5; }
+  :root[data-theme="dark"] .rx-badge.rx-expired { background:#442723; color:#ffb4ad; }
+  :root[data-theme="dark"] .rx-badge.rx-soon { background:#203b50; color:#b4d9ff; }
+}

@@ -57,7 +57,14 @@ def documents(state: RecordState = Depends(get_state)):
             p = by_source[short].payload
             item.update(title=p['title'], category=p['source_type'], document_date=p['event_date'],
                         professional=p['author'], demo=True, event_type=p['event_type'],
-                        release_note='Fictional demo - patient-visible authored source; not clinician verification')
+                        release_note='Release information not recorded')
+            if p.get('native_document'):
+                from ...prescriptions import release_label
+                native=p['native_document']
+                item.update(title=native['title'], organisation=native.get('organisation'), role=native.get('specialty'),
+                            recipient=native.get('recipient'),release_note=release_label(native),
+                            release_date=(native.get('release') or {}).get('date'),
+                            contribution=native.get('contribution'))
         items.append(item)
     items.sort(key=lambda item: (item["document_date"] or item["added_date"] or "", item["id"]), reverse=True)
     return {"documents": items, "total": len(items), **({"demo_scenario": SCENARIO} if demo else {})}
