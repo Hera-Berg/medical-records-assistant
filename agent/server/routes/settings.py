@@ -140,21 +140,14 @@ def _settings(state: RecordState) -> dict[str, Any]:
 #: network; everything else is true, useful, and answers a question nobody has
 #: asked yet.
 ENDPOINT_EXPLANATION = (
-    "Your documents are read by a model on a computer you own, and nothing "
-    "leaves your own network."
+    "Choose your private model server or https://api.openai.com/v1. With OpenAI, "
+    "content submitted for reading or answering is sent to OpenAI and API charges apply."
 )
-
-#: The rest, behind "What is this?". Not hidden — one tap away, and the tap is
-#: taken by the person who wants it rather than paid for by everyone.
 ENDPOINT_ABOUT = (
-    "The record needs something that can read a photograph of a prescription. "
-    "That is a model, and it runs on a computer you control — a desktop at home, "
-    "reached over your own private network. It will not talk to a company's "
-    "service or anything else outside that network: the app refuses to start if "
-    "you point it at one, which is the whole reason your record can live in a "
-    "folder you own.\n\n"
-    "If that computer is off or asleep, nothing breaks. What you add waits in "
-    "your folder and is read when it comes back."
+    "Private servers remain supported. OpenAI is an optional external service; "
+    "using it does not mean local processing. Use a model that supports images and JSON output. "
+    "API keys are stored outside your record folder. OpenAI credentials are separate "
+    "from private-server credentials. Encrypted progress notes remain protected."
 )
 
 
@@ -168,7 +161,8 @@ def _key_state(vlm: VlmSettings | None, vault_root) -> dict[str, Any]:
     five seconds of confusion rather than an afternoon of it.
     """
     env = vlm.auth.api_key_env if vlm else None
-    found, detail = credentials_mod.status(env, vault_root)
+    found, detail = (credentials_mod.status(env, vault_root, openai=True) if vlm and vlm.endpoint.is_openai
+                     else credentials_mod.status(env, vault_root))
     if found == "ok":
         return {"state": "configured", "source": detail, "detail": None}
     if found == "missing":
@@ -412,6 +406,7 @@ def connect_endpoint(
 @router.post("/api/settings/endpoint/key")
 def set_key(
     key: str = Body(..., embed=True),
+    base_url: str | None = Body(None, embed=True),
     state: RecordState = Depends(get_state),
 ) -> dict[str, Any]:
     """Store the key in the OS keychain. **There is no route that reads it back.**
@@ -426,8 +421,17 @@ def set_key(
     exactly the work this key exists to let finish.
     """
     try:
-        where = credentials_mod.store(key, state.vault.root)
-    except CredentialError as exc:
+        from ...llm.endpoint import parse as parse_endpoint
+        if base_url:
+            cloud = parse_endpoint(base_url).is_openai
+        else:
+            try:
+                cloud = session.settings_for(state.vault).vlm.endpoint.is_openai
+            except HealthAgentError:
+                cloud = False
+        where = (credentials_mod.store(key, state.vault.root, openai=True) if cloud
+                 else credentials_mod.store(key, state.vault.root))
+    except (CredentialError, EndpointNotPrivate) as exc:
         raise HTTPException(status_code=400, detail=redaction.scrub(str(exc))) from None
 
     # Registered so that anything written from here on — a log line, an httpx

@@ -1,3 +1,21 @@
+## Optional OpenAI API (explicit user opt-in)
+
+Settings → document reader → Read on another computer → Use OpenAI API.
+Use `https://api.openai.com/v1`; enter an OpenAI API key in Password and store it,
+then Connect, choose an image-capable model from the returned list and Connect again.
+ChatGPT subscriptions do not include API billing. This sends submitted content to
+OpenAI; it is not local processing. Encrypted progress notes remain protected.
+
+OpenAI keys use `OPENAI_API_KEY`, the separate keychain account
+`health-agent/openai-api-key`, or the owner-only `openai-credentials` file outside
+the vault. Private-server credentials are never reused. Only the canonical HTTPS
+OpenAI address is allowed publicly; private endpoints retain their address guard.
+OpenAI requests reserve at least 4096 completion tokens because the cap includes hidden reasoning. GPT-6 Luna (including dated snapshots) uses `reasoning_effort="none"` for these short source-reading tasks. Incomplete image tests are not treated as evidence that images are ignored.
+
+JSON output is schema-validated by the existing extraction pipeline. Unsupported
+models fail the connection checks. Model snapshots are recorded when available.
+This opt-in exception supersedes the earlier private-only policy below.
+
 # MODELS.md — inference layer
 
 Normative. `CLAUDE.md` defers to this file for anything model-related.
@@ -277,7 +295,7 @@ entire privacy premise of the project evaporates with no visible change in behav
   served with `tailscale serve`, never `tailscale funnel`. Say so in setup docs and verify with
   `tailscale serve status` when things look wrong.
 - **Refuse plaintext credentials to a public host** under any override. If someone genuinely wants a
-  commercial API they can fork the project; the guard is not a UX obstacle to be smoothed away.
+  commercial API, only the explicit official OpenAI HTTPS option above is supported.
 - **Authenticate anyway**, and put a Tailscale ACL in front of the box. Every device on your tailnet
   should not be able to query your health record's inference endpoint. See "Credentials" below.
 - **Validate the host before attaching credentials.** Resolve, check the address range, and only then

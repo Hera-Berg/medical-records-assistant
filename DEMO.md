@@ -198,3 +198,18 @@ retries, invalid/DST times, leap-year/month navigation, later user edits, correc
 and incorrect password handling, encrypted-note preservation, public-view
 exclusion and the served Progress notes interface. Full visual desktop/mobile
 browser checks remain unavailable in the execution environment.
+
+
+## Optional OpenAI connection
+
+Restart the application, open Settings, select **Read on another computer**,
+then **Use OpenAI API**. Store your OpenAI API key in the Password field,
+click Connect, choose a model that supports images and JSON output, and Connect
+again. Successful connection requires both the structured-response and image tests
+to pass. This uses `https://api.openai.com/v1` and sends submitted content to OpenAI;
+API billing is separate from ChatGPT. Preloaded demo content still needs no model.
+Keys stay outside the record folder and are isolated from private-server keys.
+Never put a key in chat, source code or the vault's config.toml.
+
+Provider tests: `.venv314/bin/python -m unittest tests.test_openai_provider -v`.
+These use mocked responses and do not establish live account access or billing.

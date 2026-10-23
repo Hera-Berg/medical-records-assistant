@@ -26,7 +26,7 @@ write plain files and let the sync client do its job.
 3. **Data stays on infrastructure the user controls.** No telemetry, no analytics, no crash
    reporting, no CDN fonts or scripts. Vendor every frontend dependency. Inference may run on another
    machine the user owns, reached over their own tailnet — but the endpoint is allowlisted to private
-   address space, and reaching a commercial API is a startup failure, not a config option. See
+   address space by default. Explicit user selection of https://api.openai.com/v1 is the sole external API exception; submitted content leaves the device, and Settings must say so. OpenAI keys must remain separate from private-server keys. See
    "endpoint safety" in `MODELS.md`.
 4. **Absence of evidence is never evidence of absence.** Nothing is removed from the active
    medication list because it stopped being mentioned. See "staleness" below.

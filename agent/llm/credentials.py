@@ -87,13 +87,13 @@ def _from_env(name: str | None) -> Credential | None:
     return Credential(raw.strip(), f"{SOURCE_ENV} ({name})")
 
 
-def _from_keychain() -> Credential | None:
+def _from_keychain(account: str = KEYRING_ACCOUNT) -> Credential | None:
     try:
         import keyring  # noqa: PLC0415 - optional dependency, imported where used
     except ImportError:
         return None
     try:
-        raw = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+        raw = keyring.get_password(KEYRING_SERVICE, account)
     except Exception as exc:  # keyring raises backend-specific errors
         if _no_keychain_here(exc):
             # Not a keychain that failed: there is none — a container, a
@@ -217,6 +217,7 @@ def resolve(
     api_key_env: str | None = None,
     vault_root: Path | None = None,
     path: Path | None = None,
+    *, openai: bool = False,
 ) -> Credential:
     """The key, or a :class:`CredentialError` saying exactly what to do.
 
@@ -226,14 +227,16 @@ def resolve(
     able to query a health record's inference server.
     """
     for source in (
-        lambda: _from_env(api_key_env),
-        _from_keychain,
-        lambda: _from_file(path or credentials_path(), vault_root),
+        lambda: _from_env("OPENAI_API_KEY" if openai else api_key_env),
+        lambda: _from_keychain("openai-api-key") if openai else _from_keychain(),
+        lambda: _from_file(path or (credentials_path().with_name("openai-credentials") if openai else credentials_path()), vault_root),
     ):
         found = source()
         if found is not None:
             return found
 
+    if openai:
+        raise CredentialError("no credential found for OpenAI. Enter your OpenAI API key in Settings after selecting the OpenAI address, or set OPENAI_API_KEY before launching the app.")
     named = f" {api_key_env}," if api_key_env else ""
     raise CredentialError(
         f"no credential found for the inference endpoint. Looked in:{named} the "
@@ -292,7 +295,7 @@ def keychain_alternatives() -> str:
     )
 
 
-def store(value: str, vault_root: Path | None = None) -> str:
+def store(value: str, vault_root: Path | None = None, *, openai: bool = False) -> str:
     """Put *value* in the OS keychain. Returns the place, for a message.
 
     The environment belongs to whoever started the process, so it is never this
@@ -319,10 +322,10 @@ def store(value: str, vault_root: Path | None = None) -> str:
     except ImportError:
         raise CredentialError(KEYCHAIN_MISSING) from None
     try:
-        keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, value.strip())
+        keyring.set_password(KEYRING_SERVICE, "openai-api-key" if openai else KEYRING_ACCOUNT, value.strip())
     except Exception as exc:  # keyring raises backend-specific errors
         if FILE_FALLBACK and _no_keychain_here(exc):
-            return _store_in_file(value.strip(), credentials_path(), vault_root)
+            return _store_in_file(value.strip(), credentials_path().with_name("openai-credentials") if openai else credentials_path(), vault_root)
         raise CredentialError(
             f"the OS keychain would not accept the key: {exc}."
             + (
@@ -334,7 +337,7 @@ def store(value: str, vault_root: Path | None = None) -> str:
                 "config.toml under [models.vlm.auth] api_key_env."
             )
         ) from None
-    return f"{SOURCE_KEYCHAIN} ({KEYRING_SERVICE}/{KEYRING_ACCOUNT})"
+    return f"{SOURCE_KEYCHAIN} ({KEYRING_SERVICE}/{'openai-api-key' if openai else KEYRING_ACCOUNT})"
 
 
 def _store_in_file(value: str, path: Path, vault_root: Path | None) -> str:
@@ -366,6 +369,7 @@ def status(
     api_key_env: str | None = None,
     vault_root: Path | None = None,
     path: Path | None = None,
+    *, openai: bool = False,
 ) -> tuple[str, str | None]:
     """``("ok", "keychain")``, ``("missing", None)`` or ``("error", reason)``.
 
@@ -374,7 +378,7 @@ def status(
     length — see MODELS.md, "The browser never sees the key".
     """
     try:
-        found = resolve(api_key_env, vault_root, path)
+        found = resolve(api_key_env, vault_root, path, openai=openai)
     except CredentialError as exc:
         message = str(exc)
         return ("missing", None) if message.startswith("no credential") else ("error", message)

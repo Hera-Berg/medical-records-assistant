@@ -144,18 +144,15 @@ def _check_grammar(answer) -> Check:
     server's guided-decoding setting, and a well-formed answer of the wrong
     shape to whether the schema crossed the wire at all.
     """
-    from ..llm.client import GRAMMAR_PROBE_TOKENS, parse_json_content  # noqa: PLC0415
+    from ..llm.client import parse_json_content  # noqa: PLC0415
 
     if answer.truncated:
         return Check(
             "grammar",
             False,
-            f"the box was still answering at {GRAMMAR_PROBE_TOKENS} tokens for a "
-            f"one-field object, which it could not be if the schema were being "
-            f"applied. Most likely response_format is ignored and the reply is "
-            f"prose — or a reasoning trace — rather than JSON. Turn on this "
-            f"server's guided-grammar option, and set a reasoning parser or "
-            f"disable thinking",
+            "The structured-response test reached its output limit before finishing. "
+            "This can include reasoning tokens; it does not establish that JSON "
+            "output is unsupported. Reconnect and retry with sufficient output room.",
         )
     try:
         payload = parse_json_content(answer.content)
@@ -204,7 +201,8 @@ def run(client, skip_vision: bool = False) -> ProbeReport:
         Check(
             "endpoint",
             True,
-            f"{settings.endpoint.base_url} resolves to {', '.join(addresses)} — private",
+            f"{settings.endpoint.base_url} resolves to {', '.join(addresses)} — "
+            + ("OpenAI external service" if settings.endpoint.is_openai else "private"),
         )
     )
 

@@ -117,12 +117,12 @@ export function EndpointSettings({
     setKeyNote(null);
     setKeyFailed(false);
     api
-      .setEndpointKey(keyValue)
+      .setEndpointKey(keyValue, address)
       .then((next) => {
         onSettings(next);
         onChanged();
         setKeyValue("");
-        setKeyNote(keyStoredNote(next));
+        setKeyNote(address.replace(/\/$/, "") === "https://api.openai.com/v1" ? "OpenAI key stored separately. Connect to check it; OPENAI_API_KEY takes precedence if set." : keyStoredNote(next));
       })
       .catch((exc: Error) => {
         setError(exc.message);
@@ -137,6 +137,11 @@ export function EndpointSettings({
     <section>
       <h2 className="text-lg font-semibold">The computer that reads your documents</h2>
       <p className="mt-1 max-w-2xl">{endpoint.explanation}</p>
+      <button type="button" className="btn mt-2" disabled={working}
+        onClick={() => { setAddress("https://api.openai.com/v1"); setModel(""); setHeader("Authorization"); setScheme("Bearer"); }}>
+        Use OpenAI API
+      </button>
+      {address.replace(/\/$/, "") === "https://api.openai.com/v1" ? <p className="mt-2">OpenAI sends submitted content to an external service. Enter your OpenAI API key in Password, store it, then Connect and choose an image-capable model. API billing is separate from ChatGPT.</p> : null}
       <details className="mt-1">
         <summary className="cursor-pointer text-[color:var(--color-muted)]">
           What is this?

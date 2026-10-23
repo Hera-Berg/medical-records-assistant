@@ -829,6 +829,50 @@ def retrieve(
         offer([_row_passage(row, citer, facet, rank, position)])
         rows_taken += len(passages) - before
 
+    # Full public native documents are projected alongside their timeline rows.
+    # This uses the current visible edition only, never raw or protected events.
+    source_terms = list(terms)
+    if "allergy" in question.kinds:
+        source_terms.extend(("allergy", "allergies", "allergic", "reaction"))
+    if "med" in question.kinds:
+        source_terms.extend(("medication", "medications", "prescriptions"))
+    if "problem" in question.kinds:
+        source_terms.extend(("history", "conditions", "diagnoses"))
+    if "person" in question.kinds:
+        source_terms.extend(("care team", "referring clinician", "author"))
+    aliases = {"cardiologist": ("cardiology",), "birthday": ("date of birth", "dob"),
+               "birth": ("date of birth", "dob"), "blood": ("pathology",),
+               "nurse": ("nursing",), "physiotherapist": ("physiotherapy",)}
+    for term in terms:
+        source_terms.extend(aliases.get(term, ()))
+    for position, row in enumerate(sorted(projection.rows, key=lambda r: r.date.value, reverse=True)):
+        if not row.source_sections:
+            continue
+        if question.window is not None and not _in_window(row, question.window):
+            continue
+        metadata = row.demo or {}
+        heading = " ".join(str(metadata.get(k, "")) for k in ("title", "author", "source_type"))
+        for index, (section, text) in enumerate(row.source_sections):
+            if section.startswith("Patient identity") and not any(
+                contains_phrase(question.text, word) for word in
+                ("name", "birthday", "birth", "dob", "identity", "address", "live", "lives", "jane", "doe")
+            ):
+                continue
+            searchable = f"{heading} {section} {text}"
+            matches = _matches_terms(searchable, source_terms) if source_terms else False
+            tier_match = bool(question.tiers and (row.marker in question.tiers or
+                ("prescriber-issued" in question.tiers and any(w in heading.lower() for w in ("letter", "gp", "cardiology", "discharge"))) or
+                ("lab-issued" in question.tiers and any(w in heading.lower() for w in ("pathology", "blood", "ecg", "imaging")))))
+            if not (matches or tier_match):
+                continue
+            offer([Passage(key=row.cite, kind=ROW, event_id=row.event_id,
+                subject_id=None, title=f"{metadata.get('title', 'Document')} — {section}",
+                text=f"{text} (Source author: {metadata.get('author', 'Not recorded')}; Fictional demo)",
+                predicate="~source", tier=row.marker, corrected=False, when=row.date.render(),
+                citation=citer.cite(row.cite, row.cite_description),
+                rank=1 if _matches_terms(heading, source_terms) or section == "Results" else 2,
+                order=("~source", f"{position:04d}", index), facet=classify_mod.TERMS)])
+
     # 7. Literal terms against the entities themselves.
     if terms:
         for subject_id in sorted(projection.entities):

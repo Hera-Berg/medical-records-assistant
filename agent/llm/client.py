@@ -216,7 +216,7 @@ class Client:
         """
         from .endpoint import is_private  # noqa: PLC0415 - avoids an import cycle
 
-        if not addresses or not all(is_private(address) for address in addresses):
+        if not addresses or not all(self.settings.endpoint.permits(address) for address in addresses):
             raise InferenceError(
                 "refusing to attach a credential to an endpoint that has not been "
                 "verified as private. This should be unreachable; if you are seeing "
@@ -224,14 +224,16 @@ class Client:
             )
         credential = self.resolve_credential()
         redaction.register(credential.value)
-        name, value = self.settings.auth.format(credential.value)
+        name, value = (("Authorization", f"Bearer {credential.value}")
+                       if self.settings.endpoint.is_openai else self.settings.auth.format(credential.value))
         return {name: value, "Content-Type": "application/json"}
 
     def resolve_credential(self) -> credentials_mod.Credential:
         """The key this client would send, from its own source. Never logged."""
         if self._credential is not None:
             return self._credential()
-        return credentials_mod.resolve(self.settings.auth.api_key_env, self.vault_root)
+        return credentials_mod.resolve(self.settings.auth.api_key_env, self.vault_root,
+                                       openai=self.settings.endpoint.is_openai)
 
     # -- requests ----------------------------------------------------------
 
@@ -344,7 +346,7 @@ class Client:
             "stream": False,
             **sampling,
         }
-        if settings.max_pixels:
+        if settings.max_pixels and not settings.endpoint.is_openai:
             # Explicit rather than relying on server defaults: the image, not the
             # prompt, is what blows the context and the RAM budget.
             body["max_pixels"] = settings.max_pixels
@@ -357,8 +359,28 @@ class Client:
                     "strict": True,
                 },
             }
-        if not settings.thinking:
+        if not settings.thinking and not settings.endpoint.is_openai:
             body["chat_template_kwargs"] = {"enable_thinking": False}
+
+        if settings.endpoint.is_openai:
+            # Local-only engine options and sampling knobs are not OpenAI parameters.
+            for key in ("temperature", "presence_penalty", "max_tokens"):
+                body.pop(key, None)
+            # OpenAI's cap includes hidden reasoning, unlike local max_tokens.
+            # Tiny 64/128-token probes can otherwise finish with no visible text.
+            cloud_budget = max(4096, max_tokens)
+            body["max_completion_tokens"] = cloud_budget
+            body["store"] = False
+            sampling = {"max_tokens": cloud_budget}
+            if re.fullmatch(r"gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?", settings.model):
+                body["reasoning_effort"] = "none"
+                sampling["reasoning_effort"] = "none"
+            if schema is not None:
+                # Existing extraction schemas are validated locally; they do not
+                # all meet OpenAI's strict JSON Schema subset.
+                body["response_format"] = {"type": "json_object"}
+                body["messages"] = [{"role": "system", "content":
+                    "Return only a JSON object matching this schema: " + json.dumps(dict(schema))}, *messages]
 
         started = time.monotonic()
         try:
@@ -409,7 +431,10 @@ class Client:
                 "produced this claim' has to be answerable a year later, so the "
                 "extraction is not recorded."
             )
-        if reported.strip() != self.settings.model:
+        alias_snapshot = (self.settings.endpoint.is_openai
+                          and not re.search(r"-\d{4}-\d{2}-\d{2}$", self.settings.model)
+                          and re.fullmatch(re.escape(self.settings.model) + r"-\d{4}-\d{2}-\d{2}", reported.strip()))
+        if reported.strip() != self.settings.model and not alias_snapshot:
             raise ModelIdentityMismatch(
                 f"the inference box is running {reported.strip()!r}, but config.toml "
                 f"pins {self.settings.model!r}. Stopping rather than recording claims "
@@ -459,6 +484,13 @@ class Client:
             ],
             max_tokens=128,
         )
+        if answer.truncated:
+            raise OutputTruncated(
+                "The image-reading test reached its output limit before finishing. "
+                "This does not establish that the model cannot read images."
+            )
+        if not answer.content.strip():
+            raise InferenceError("The image-reading test returned no visible text. Reconnect and retry.")
         return expected.lower() in answer.content.lower()
 
     def probe_grammar(self) -> Completion:
@@ -498,6 +530,8 @@ def _content_of(payload: Mapping[str, Any]) -> tuple[str, bool, str | None]:
     if not isinstance(message, dict):
         raise InferenceError("the inference box returned a choice with no message")
     content = message.get("content")
+    if content is None and choice.get("finish_reason") == "length":
+        content = ""
     if not isinstance(content, str):
         raise InferenceError("the inference box returned a message with no text")
     finish = choice.get("finish_reason")

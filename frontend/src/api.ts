@@ -317,11 +317,11 @@ export const api = {
    * and nothing in the response that carries the key, a prefix of it or its
    * length — see MODELS.md, "The browser never sees the key".
    */
-  setEndpointKey: (key: string) =>
+  setEndpointKey: (key: string, base_url?: string) =>
     request<Settings>("/api/settings/endpoint/key", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ key, base_url }),
     }),
 };
 

@@ -83,6 +83,7 @@ class Row:
     reading: str = ""
     reading_text: str = ""
     demo: dict[str, Any] | None = None
+    source_sections: tuple[tuple[str, str], ...] = ()
 
     @property
     def month(self) -> str:
@@ -194,7 +195,7 @@ def build(
     events = list(events)
     known = artifacts if artifacts is not None else citations.index_artifacts(events)
     readings = reading_mod.index(events, known, reconciliation.artifacts)
-    from ..demo_metadata import entries, source_ids, SCENARIO
+    from ..demo_metadata import entries, source_ids, SCENARIO, readable_sections
     demo_entries = entries(events, known)
     demo_sources = source_ids(events, known)
     demo_event_ids = {e.id for e in demo_entries.values()}
@@ -319,6 +320,7 @@ def build(
                     text=f"{p['title']} — {summary} ({p['author']}; Fictional demo)",
                     cite=p['artifact'], event_id=event.id, sort_key=event.sort_key,
                     cite_description='Patient-visible fictional demonstration source',
+                    source_sections=readable_sections(p),
                     demo={'title':p['title'], 'summary':summary, 'author':p['author'],
                           'event_type':p['event_type'], 'source_type':p['source_type'],
                           'fictional':True, 'status':p['status'], 'added_at':event.ts,

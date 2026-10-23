@@ -68,7 +68,8 @@ MESSAGES: dict[str, str] = {
         "none of it is shown. These are the entries that match your question."
     ),
     CUT_OFF: (
-        "The answer stopped before it was finished, so none of it is shown. "
+        "The model reached its response limit before finishing an answer, so the partial "
+        "answer is not shown. Try asking a narrower question. "
         "These are the entries that match your question."
     ),
     UNREADABLE: (

@@ -79,7 +79,7 @@ NOT_CHECKED = "not-checked"
 #: A step that was never reached still appears — a list that shortened itself
 #: would make "it stopped here" indistinguishable from "this is not checked".
 STEPS: tuple[tuple[str, str], ...] = (
-    ("address", "The address is on your own network"),
+    ("address", "The endpoint address is allowed"),
     ("credential", "A password is stored for it"),
     ("reachable", "The computer answered"),
     ("authentication", "It accepted the password"),
@@ -186,7 +186,7 @@ _HEADLINE = {
     "authentication": "That computer refused the password.",
     "model": "That computer is running a different model.",
     "grammar": "That computer does not answer in the shape the record needs.",
-    "vision": "That computer cannot read words out of a picture.",
+    "vision": "The image-reading test did not pass.",
 }
 
 #: What each step says when it fails. Fixed: nothing the far end wrote appears.
@@ -230,13 +230,11 @@ _FAILED = {
         "thinking mode turning off."
     ),
     "vision": (
-        "It answered, but it did not read the words out of a test picture, so it "
-        "is throwing pictures away. This is the one failure that looks like "
-        "nothing being wrong: it would answer everything else perfectly and "
-        "quietly ignore every photograph of a prescription. The usual cause is a "
-        "text-only server — `mlx_lm.server` is one, and `mlx-vlm` is what you "
-        "want — or, on llama.cpp, weights loaded without their separate mmproj "
-        "file."
+        "The model did not return the expected text from the test picture. "
+        "A response limit, an API error or an image-reading problem can cause this; "
+        "the test does not prove that images were ignored. Check the selected model "
+        "supports image input, then Connect again. Your settings are saved only "
+        "after all checks pass."
     ),
 }
 
@@ -274,7 +272,7 @@ def settings_for(draft: Mapping[str, Any], current: VlmSettings | None) -> VlmSe
     endpoint = parse_endpoint(draft.get("base_url"))
     model = str(draft.get("model") or "").strip()
     auth = AuthSettings(
-        api_key_env=current.auth.api_key_env if current else None,
+        api_key_env="OPENAI_API_KEY" if endpoint.is_openai else (current.auth.api_key_env if current and not current.endpoint.is_openai else None),
         header=str(draft.get("header") or DEFAULT_AUTH_HEADER).strip(),
         # Empty is a real answer: a server wanting `X-API-Key: <key>` with no
         # word in front of the value is asking for exactly this.
@@ -360,7 +358,7 @@ def _facts(report) -> dict[str, str]:
             _, _, after = check.detail.partition(" resolves to ")
             addresses = after.split(" \u2014 ")[0].strip()
             found["address"] = (
-                f"It points at {addresses}, which is on your own network."
+                f"Endpoint addresses checked: {addresses}."
                 if addresses
                 else "It is on your own network."
             )
@@ -586,6 +584,8 @@ def connect(
     checked = replace(settings, model=chosen)
     report = run(vault, checked, skip_vision=skip_vision)
     if report.ok:
+        if settings.endpoint.is_openai and report.model_reported:
+            chosen = report.model_reported
         return ConnectResult(
             outcome="connected",
             status=f"Connected — reading with {chosen}.",

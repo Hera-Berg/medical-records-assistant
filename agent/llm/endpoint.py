@@ -4,7 +4,8 @@
 ``https://api.openai.com/v1`` and a key, and the entire privacy premise of the
 project evaporates with no visible change in behaviour."
 
-So the host must resolve into private address space — Tailscale's CGNAT range,
+Unless the user explicitly selects the canonical official OpenAI HTTPS endpoint,
+the host must resolve into private address space — Tailscale's CGNAT range,
 RFC1918, loopback, or their IPv6 equivalents — and it is checked **on every
 call**, not only at startup. A hostname that resolved privately at boot can
 resolve elsewhere an hour later, and a check that only ran once would not
@@ -90,6 +91,21 @@ class Endpoint:
     port: int | None
 
     @property
+    def is_openai(self) -> bool:
+        """Explicit cloud opt-in: only the canonical official HTTPS endpoint."""
+        return (self.base_url.rstrip('/') == "https://api.openai.com/v1"
+                and self.scheme == "https" and self.host == "api.openai.com"
+                and self.port is None)
+
+    def permits(self, address: str) -> bool:
+        if self.is_openai:
+            try:
+                return ipaddress.ip_address(address).is_global
+            except ValueError:
+                return False
+        return is_private(address)
+
+    @property
     def is_loopback_only(self) -> bool:
         return self.host in ("localhost", "127.0.0.1", "::1")
 
@@ -122,7 +138,7 @@ class Endpoint:
             raise EndpointNotPrivate(
                 f"the inference endpoint host {self.host!r} resolved to no addresses"
             )
-        public = [address for address in addresses if not is_private(address)]
+        public = [address for address in addresses if not self.permits(address)]
         if public:
             raise EndpointNotPrivate(_public_message(self, addresses, public))
         return addresses
@@ -139,7 +155,7 @@ def _public_message(
         f"The endpoint must resolve into Tailscale's 100.64.0.0/10, RFC1918, or "
         f"loopback. A MagicDNS name such as macbook-pro.tailnet.ts.net is fine — it "
         f"resolves to 100.x. Reaching a commercial API is not a configuration "
-        f"option: if you genuinely want one, fork the project.\n"
+        f"option except explicit use of https://api.openai.com/v1.\n"
         f"(resolved: {', '.join(addresses)})"
     )
 
@@ -171,6 +187,8 @@ def parse(base_url: object) -> Endpoint:
             "there has already been handed to a third party: remove it, rotate it, "
             "and keep the key in the OS keychain (see MODELS.md, 'Credentials')."
         )
+    if split.query or split.fragment:
+        raise EndpointNotPrivate("Endpoint URLs must not contain queries or fragments.")
     if not split.hostname:
         raise EndpointNotPrivate(f"models.vlm.base_url has no host: {base_url!r}")
     try:

@@ -46,7 +46,7 @@ const DESCRIPTIONS: Record<ReadsOn, string> = {
   "this-computer":
     "A model runs here, on this computer. Nothing to set up except a one-time download, and nothing from your record leaves this computer.",
   "another-computer":
-    "A faster computer you own reads them, reached over your own private network. It needs its address and password.",
+    "Use your private server or the OpenAI API. OpenAI sends submitted content outside this computer and requires an API key.",
 };
 
 const BUSY = new Set(["downloading", "verifying", "unpacking"]);
