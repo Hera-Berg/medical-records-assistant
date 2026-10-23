@@ -365,6 +365,7 @@ def timeline_row(
     prevent.
     """
     return {
+        **({'demo': row.demo} if row.demo is not None else {}),
         "event_id": row.event_id,
         "subject_id": row.subject_id,
         "marker": row.marker,

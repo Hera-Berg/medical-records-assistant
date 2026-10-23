@@ -105,11 +105,10 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* Deliberately no transitions anywhere. State changes are instant. */
+/* No ambient animations. Control transitions live in public/interactions.css. */
 *,
 *::before,
 *::after {
-  transition: none !important;
   animation: none !important;
 }
 
@@ -282,9 +281,7 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 
-tbody tr:hover {
-  background: var(--color-shade);
-}
+/* Actionable row feedback is scoped in public/interactions.css. */
 
 }
 

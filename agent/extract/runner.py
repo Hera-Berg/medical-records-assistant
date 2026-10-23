@@ -869,6 +869,10 @@ def enqueue_unread(vault, queue: jobs_mod.Queue) -> tuple[jobs_mod.Job, ...]:
     artifacts = citations_mod.index_artifacts(events)
     readings = [event for event in events if not _is_transcription(event)]
     done = {key[0] for key in propose.completed_keys(readings)}
+    # Authored demonstration originals are already usable. Do not schedule a
+    # model, download or pretend extraction happened merely to display them.
+    from ..demo_metadata import source_ids
+    done.update(source_ids(events, artifacts))
     typed_up: set[str] = set()
     for short, event in transcripts_mod.latest(events).items():
         if transcripts_mod.spoken_text(transcripts_mod.transcript_payload(event) or {}):

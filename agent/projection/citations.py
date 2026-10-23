@@ -109,6 +109,7 @@ def _date_phrase(stamp: str | None) -> str | None:
 
 def index_artifacts(events: Iterable[Event]) -> dict[str, Artifact]:
     """Index every ingested artefact by the short hash claims cite it with."""
+    events = list(events)
     artifacts: dict[str, Artifact] = {}
     reseen: dict[str, int] = {}
     for event in events:
@@ -133,6 +134,15 @@ def index_artifacts(events: Iterable[Event]) -> dict[str, Artifact]:
             artifact_ts=_string_or_none(payload.get("artifact_ts")),
             source=(capture or {}).get("source") if isinstance(capture, dict) else None,
         )
+    from ..demo_metadata import history
+    from dataclasses import replace
+    for event in history(events, artifacts):
+        p = event.payload
+        day = dates.parse_iso_date(p.get('event_date'))
+        if day is not None:
+            for short in (p['artifact'], p.get('original_wording_artifact')):
+                if short in artifacts:
+                    artifacts[short] = replace(artifacts[short], artifact_ts=day.isoformat()+'T00:00:00Z')
     return {
         short: (
             artifact

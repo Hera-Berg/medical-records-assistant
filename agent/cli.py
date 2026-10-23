@@ -345,7 +345,10 @@ def cmd_summary(args: argparse.Namespace, out: TextIO) -> int:
 
 def cmd_demo(args: argparse.Namespace, out: TextIO) -> int:
     """Seed a scratch vault with invented data and rebuild it."""
-    report = demo_mod.seed(
+    seed = demo_mod.seed
+    if getattr(args, "jane", False):
+        from .demo.jane import seed
+    report = seed(
         args.path,
         as_of=projection_mod.parse_as_of(args.as_of),
         endpoint_from=args.endpoint_from,
@@ -1288,6 +1291,7 @@ def build_parser() -> argparse.ArgumentParser:
             "default: a demo vault reaches no model"
         ),
     )
+    demo.add_argument("--jane", action="store_true", help="Populate the isolated Jane Doe 2024-2026 scenario; safe to repeat on the same Jane demo folder")
     demo.add_argument("--json", action="store_true", help="machine-readable output")
     _add_vault(demo)
     demo.set_defaults(func=cmd_demo)

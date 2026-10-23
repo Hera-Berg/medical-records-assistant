@@ -104,6 +104,8 @@ class Reading:
         Never a bare status word either. "unread" needs a legend; "Not read yet"
         does not, and this text is read by the person whose record it is.
         """
+        if self.state == 'demo-authored':
+            return 'Authored fictional demonstration data; not live AI extraction or clinician verification.'
         if self.state == TRANSCRIBED:
             if not self.spoke:
                 return "No speech was found in it."
@@ -187,7 +189,12 @@ def index(
 
     done = unread_mod.acknowledged(events)
     found: dict[str, Reading] = {}
+    from ..demo_metadata import source_ids
+    demo_sources = source_ids(events, artifacts)
     for short, artifact in artifacts.items():
+        if short in demo_sources:
+            found[short] = Reading(short, 'demo-authored')
+            continue
         mime = str(getattr(artifact, "mime", "") or "")
         recording = mime.startswith(("audio/", "video/"))
         review = reviews.get(short)

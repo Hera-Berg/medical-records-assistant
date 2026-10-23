@@ -81,6 +81,16 @@ export function Artifact({
         </a>
       </div>
 
+      {meta.demo ? (
+        <section className="mt-2">
+          <h3>{meta.demo.title}</h3>
+          <p>{meta.demo.event_date} · {meta.demo.author} · Fictional demonstration data</p>
+          <p>Patient-visible authored source; not live AI extraction or clinician verification.</p>
+          <p><a href={`/api/artifact/${meta.demo.original_wording_artifact}`}>Open original text / transcript wording</a></p>
+          {meta.demo.related.map(source => <p key={source.artifact}><a href={`/artifact/${source.artifact}`}>Related source: {source.title}</a></p>)}
+        </section>
+      ) : null}
+
       {!meta.present ? (
         <Empty>
           The record says this exists, but its bytes are not in the vault. Restore it

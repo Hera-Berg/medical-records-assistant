@@ -35,9 +35,15 @@ def documents(state: RecordState = Depends(get_state)):
         short = event.payload.get("short")
         if isinstance(short, str) and isinstance(name, str) and name.strip():
             originals[short] = name.replace("\\", "/").rsplit("/", 1)[-1]
+    from ...demo_metadata import entries, source_ids, SCENARIO
+    demo = entries(snapshot.events, snapshot.artifacts)
+    by_source = {e.payload['artifact']: e for e in demo.values()}
+    hidden_originals = source_ids(snapshot.events, snapshot.artifacts) - by_source.keys()
     items = []
     for short, artifact in snapshot.artifacts.items():
-        items.append({
+        if short in hidden_originals:
+            continue  # UTF-8 wording remains available by its original-file link.
+        item = {
             "id": short,
             "title": originals.get(short) or artifact.rel.replace("\\", "/").rsplit("/", 1)[-1],
             "category": _kind(artifact.mime),
@@ -46,6 +52,12 @@ def documents(state: RecordState = Depends(get_state)):
             "mime": artifact.mime,
             "url": f"/artifact/{short}",
             "example": False,
-        })
+        }
+        if short in by_source:
+            p = by_source[short].payload
+            item.update(title=p['title'], category=p['source_type'], document_date=p['event_date'],
+                        professional=p['author'], demo=True, event_type=p['event_type'],
+                        release_note='Fictional demo - patient-visible authored source; not clinician verification')
+        items.append(item)
     items.sort(key=lambda item: (item["document_date"] or item["added_date"] or "", item["id"]), reverse=True)
-    return {"documents": items, "total": len(items)}
+    return {"documents": items, "total": len(items), **({"demo_scenario": SCENARIO} if demo else {})}

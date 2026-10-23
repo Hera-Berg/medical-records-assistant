@@ -197,6 +197,20 @@ def artifact_meta(
         state.endpoint,
         located.artifact.mime,
     )
+    from ...demo_metadata import entries
+    demo = entries(snapshot.events, snapshot.artifacts)
+    for event in demo.values():
+        p = event.payload
+        if short not in (p['artifact'], p.get('original_wording_artifact')):
+            continue
+        extra['demo'] = {'title':p['title'], 'author':p['author'], 'event_date':p['event_date'],
+                         'source_type':p['source_type'], 'original_wording_artifact':p.get('original_wording_artifact'),
+                         'related': [{'artifact':other.payload['artifact'], 'title':other.payload['title']}
+                                     for other in demo.values() if other.payload['event_date'] in p.get('related_dates', [])]
+                                    + [{'artifact':previous, 'title':'Previous authored demo source version'}
+                                       for previous in dict.fromkeys(p.get('previous_artifacts', []))
+                                       if previous in snapshot.artifacts and previous != short]}
+        break
     return serialise.artifact_summary(located.artifact, extra)
 
 

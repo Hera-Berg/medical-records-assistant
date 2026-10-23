@@ -253,6 +253,7 @@ export interface EntityDetail extends EntitySummary {
 }
 
 export interface TimelineRow {
+  demo?: { title: string; summary: string; author: string; event_type: string; fictional: boolean; status: string; added_at: string };
   event_id: string;
   subject_id: string | null;
   marker: Tier;
@@ -465,6 +466,7 @@ export interface JobState {
 }
 
 export interface ArtifactMeta {
+  demo?: { title: string; author: string; event_date: string; source_type: string; original_wording_artifact: string; related: { artifact: string; title: string }[] };
   short: string;
   digest: string;
   path: string;

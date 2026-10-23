@@ -211,8 +211,8 @@ function RowTable({ rows, navigate }: { rows: TimelineRow[]; navigate: (to: stri
                 <DateCell date={row.date} kind={row.date_label} />
               </td>
               <td>
-                {row.subject_id ? (
-                  <Link to={`/record/${row.subject_id}`} navigate={navigate}>
+                {(row.subject_id || row.demo) ? (
+                  <Link to={row.subject_id ? `/record/${row.subject_id}` : `/artifact/${row.citation.artifact}`} navigate={navigate}>
                     {row.text}
                   </Link>
                 ) : (

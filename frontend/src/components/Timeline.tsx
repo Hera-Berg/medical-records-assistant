@@ -224,8 +224,8 @@ export function Timeline({
                       <DateCell date={entry.row.date} kind={entry.row.date_label} />
                     </td>
                     <td>
-                      {entry.row.subject_id ? (
-                        <Link to={`/record/${entry.row.subject_id}`} navigate={navigate}>
+                      {(entry.row.subject_id || entry.row.demo) ? (
+                        <Link to={entry.row.subject_id ? `/record/${entry.row.subject_id}` : `/artifact/${entry.row.citation.artifact}`} navigate={navigate}>
                           {entry.row.text}
                         </Link>
                       ) : (

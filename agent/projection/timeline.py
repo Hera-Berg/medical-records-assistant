@@ -25,6 +25,7 @@ was recorded in, labelled ``recorded``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
@@ -81,6 +82,7 @@ class Row:
     #: sentence stops short of saying *why* something is still waiting.
     reading: str = ""
     reading_text: str = ""
+    demo: dict[str, Any] | None = None
 
     @property
     def month(self) -> str:
@@ -192,6 +194,13 @@ def build(
     events = list(events)
     known = artifacts if artifacts is not None else citations.index_artifacts(events)
     readings = reading_mod.index(events, known, reconciliation.artifacts)
+    from ..demo_metadata import entries, source_ids, SCENARIO
+    demo_entries = entries(events, known)
+    demo_sources = source_ids(events, known)
+    demo_event_ids = {e.id for e in demo_entries.values()}
+    demo_claim_ids = {e.id for e in events
+                      if e.payload.get('demo_scenario') == SCENARIO
+                      and (e.provenance or {}).get('artifact') in demo_sources}
 
     admitted: dict[str, Claim] = {}
     # Which entity each claim was actually filed under. A salt variant is
@@ -219,6 +228,8 @@ def build(
 
     for event in events:
         if event.type == "artifact.ingested":
+            if event.payload.get("short") in demo_sources:
+                continue
             placed = _artifact_date(event)
             if placed is None:
                 continue
@@ -285,6 +296,32 @@ def build(
                 )
             )
         elif event.type == "note.recorded":
+            if event.payload.get('demo_scenario') == SCENARIO:
+                if event.id not in demo_event_ids:
+                    continue
+                p = event.payload
+                parsed = dates.parse_iso_date(p.get('event_date'))
+                if parsed is None:
+                    continue
+                personal = p['author'] in ('Jane Doe', 'Emily Doe, daughter')
+                if personal:
+                    marker = MARKER_NOTE
+                elif p['event_type'] == 'medication':
+                    marker = 'prescriber-issued'
+                elif p['source_type'] == 'Released fictional pathology report':
+                    marker = 'lab-issued'
+                else:
+                    marker = MARKER_ARTEFACT
+                summary = _preview(' '.join(re.split(r'(?<=[.!?])\s+(?=[A-Z“])', p['text'])[:2]), 360)
+                rows.append(Row(date=FuzzyDate(parsed), date_kind=OCCURRED, marker=marker,
+                    text=f"{p['title']} — {summary} ({p['author']}; Fictional demo)",
+                    cite=p['artifact'], event_id=event.id, sort_key=event.sort_key,
+                    cite_description='Patient-visible fictional demonstration source',
+                    demo={'title':p['title'], 'summary':summary, 'author':p['author'],
+                          'event_type':p['event_type'], 'source_type':p['source_type'],
+                          'fictional':True, 'status':p['status'], 'added_at':event.ts,
+                          'original_wording_artifact':p.get('original_wording_artifact')}))
+                continue
             parsed = _date_from_ts(event.ts)
             if parsed is None:
                 continue
@@ -302,6 +339,8 @@ def build(
 
     for event_id in sorted(admitted):
         claim = admitted[event_id]
+        if event_id in demo_claim_ids:
+            continue
         placed = _claim_date(claim)
         if placed is None:
             continue

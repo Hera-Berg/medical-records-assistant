@@ -1,0 +1,120 @@
+/* Control feedback only: no layout, content, routing or event-handler changes. */
+@media screen {
+  :root {
+    --interaction-teal: #006674;
+    --interaction-duration: 150ms;
+    --interaction-ease: cubic-bezier(.2, 0, .2, 1);
+    --interaction-overview-button: #006674;
+  }
+  :root[data-theme="dark"] {
+    --interaction-teal: #91dad7;
+    --interaction-overview-button: #91dad7;
+  }
+
+  :is(button, a[href], summary, [role="button"], input[type="button"], input[type="submit"]) {
+    cursor: pointer;
+  }
+  :is(button, .btn, .icon-btn, .ov-primary-link, .ov-profile-switch,
+      .profile-quicklinks a, #menu nav a, input, textarea, select, .composer) {
+    transition: background-color var(--interaction-duration) var(--interaction-ease),
+      border-color var(--interaction-duration) var(--interaction-ease),
+      box-shadow var(--interaction-duration) var(--interaction-ease),
+      scale var(--interaction-duration) var(--interaction-ease);
+  }
+  :is(.ov-link, .ov-primary-link, .docs-open, .profile-detail-link, .profile-quicklinks a) > span[aria-hidden="true"],
+  button[aria-label="Ask"] > svg {
+    display: inline-block;
+    transition: transform var(--interaction-duration) var(--interaction-ease);
+  }
+
+  /* Mouse and keyboard get the same visible focus, without changing dimensions. */
+  :is(a[href], button, summary, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--interaction-teal);
+    outline-offset: 3px;
+  }
+  :is(input, textarea, select):focus {
+    border-color: var(--interaction-teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interaction-teal) 16%, transparent);
+  }
+  .composer:focus-within { border-color: var(--interaction-teal); }
+
+  /* Transform only button surfaces; document text and row geometry stay still. */
+  :is(button:not(.docs-title, .docs-open, .profile-text-button, .ov-text-button),
+      a.btn, .ov-primary-link):not(:disabled, [aria-disabled="true"]):active {
+    scale: .98;
+  }
+  :is(:disabled, [aria-disabled="true"]), .profile-text-button:disabled {
+    cursor: default;
+    scale: none;
+  }
+
+  #menu nav a:has(> .sr-only) {
+    background-color: var(--color-nav-active);
+  }
+
+  /* Rows respond only when their actual link/button is focused, not empty cells. */
+  :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):focus-visible) {
+    background-color: color-mix(in srgb, var(--interaction-teal) 6%, var(--color-paper));
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    button:not(:disabled, [aria-disabled="true"], .docs-title, .docs-open,
+        .profile-text-button, .ov-text-button):hover,
+    a.btn:not([aria-disabled="true"]):hover {
+      /* An inset tint deepens each button's own background, including selected tabs. */
+      box-shadow: inset 0 0 0 100vmax rgb(0 0 0 / .045);
+    }
+    :is(.btn-primary, .icon-btn-primary):not(:disabled, [aria-disabled="true"]):hover {
+      background-color: color-mix(in srgb, var(--color-accent) 92%, black);
+    }
+    .ov-primary-link:not([aria-disabled="true"]):hover {
+      background-color: color-mix(in srgb, var(--interaction-overview-button) 92%, black);
+    }
+    :is(.ov-link, .ov-primary-link, .docs-open, .profile-detail-link, .profile-quicklinks a):not(:disabled, [aria-disabled="true"]):hover > span[aria-hidden="true"] {
+      transform: translateX(3px);
+    }
+    button[aria-label="Ask"]:not(:disabled):hover > svg { transform: translateY(-3px); }
+
+    /* Only whole-card links/buttons receive a card effect. Static panels do not. */
+    :is(a.panel, button.panel, .ov-profile-switch, .profile-quicklinks a):not(:disabled, [aria-disabled="true"]):hover {
+      border-color: color-mix(in srgb, var(--interaction-teal) 45%, var(--color-rule));
+      background-color: color-mix(in srgb, var(--interaction-teal) 4%, var(--color-paper));
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--interaction-teal) 8%, transparent);
+    }
+    :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):hover) {
+      background-color: color-mix(in srgb, var(--interaction-teal) 6%, var(--color-paper));
+    }
+    :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):hover) > td {
+      border-bottom-color: color-mix(in srgb, var(--interaction-teal) 35%, var(--color-rule));
+    }
+  }
+  :is(.docs-table, .table-wrap table) tbody tr,
+  :is(.docs-table, .table-wrap table) tbody td {
+    transition: background-color var(--interaction-duration) var(--interaction-ease),
+      border-color var(--interaction-duration) var(--interaction-ease);
+  }
+
+  /* Touch uses native activation feedback, without a sticky mouse-hover state. */
+  @media (hover: none), (pointer: coarse) {
+    .btn:not(.btn-primary):not(:disabled):hover { border-color: var(--color-rule-strong); }
+    :is(.btn-primary, .icon-btn-primary):not(:disabled):hover {
+      background-color: var(--color-accent);
+      border-color: var(--color-accent);
+    }
+    .icon-btn:not(.icon-btn-primary):not(:disabled):hover { background: transparent; }
+    .ov-primary-link:hover { background-color: var(--interaction-overview-button); }
+    .ov-profile-switch:hover { background: transparent; }
+    #menu nav a:not(:has(> .sr-only)):hover { background: transparent; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :is(button, a, input, textarea, select, .composer, tbody tr, tbody td),
+    :is(.ov-link, .ov-primary-link, .docs-open, .profile-detail-link, .profile-quicklinks a) > span[aria-hidden="true"],
+    button[aria-label="Ask"] > svg {
+      transition: none !important;
+    }
+    :is(button, a.btn, .ov-primary-link):active { scale: none !important; }
+    :is(.ov-link, .ov-primary-link, .docs-open, .profile-detail-link, .profile-quicklinks a):hover > span[aria-hidden="true"],
+    button[aria-label="Ask"]:hover > svg { transform: none !important; }
+  }
+}

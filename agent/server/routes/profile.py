@@ -16,6 +16,9 @@ router = APIRouter()
 def listing(state):
     snapshot = state.snapshot()
     result = profile.read(snapshot.events)
+    from ...demo_metadata import entries, SCENARIO
+    if entries(snapshot.events, snapshot.artifacts):
+        result['demo_scenario'] = SCENARIO
     result["sections"] = profile.SECTIONS
     result["age"] = None
     try:
