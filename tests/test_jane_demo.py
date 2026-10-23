@@ -104,7 +104,7 @@ class JaneDemoTests(unittest.TestCase):
     def test_profile_and_latest_medications_agree_with_sources(self):
         data = self.get('/api/profile').json()
         self.assertEqual(data['values'],{**{k:'' for k in profile.FIELDS},**PROFILE})
-        self.assertEqual(data['values']['date_of_birth'],'1935-01-01')
+        self.assertEqual(data['values']['date_of_birth'],'1935-11-01')
         self.assertIn('Patient-reported; not clinician-verified',data['values']['allergy_notes'])
         self.assertEqual(data['clinical']['allergies'],[])
         meds = data['clinical']['medications']

@@ -33,7 +33,7 @@ it does not overwrite profile edits, source files, settings or user-added notes.
 '''
 
 PROFILE = {
-    'full_name': 'Jane Doe', 'preferred_name': 'Jane', 'date_of_birth': '1935-01-01',
+    'full_name': 'Jane Doe', 'preferred_name': 'Jane', 'date_of_birth': '1935-11-01',
     'pronouns': 'she/her', 'sex_at_birth': 'Female', 'gender': 'Woman',
     'language': 'English', 'interpreter': 'No',
     'address': 'Example Gardens Residential Aged Care (fictional)\n1 Demonstration Lane\nSydney NSW 2000',
@@ -49,7 +49,7 @@ PROFILE = {
     'accessibility': 'Usually walks to meals with a frame; manages eating independently (24 October 2024). Hearing aids fitted 3 September 2025; allow extra time to answer. Prefers plain-language explanations and written medication-change information. Recent changes and temporary assistance needs are attributed in the timeline, not a replacement for this usual baseline.',
     'advance_care': 'Advance directive and formal substitute decision-maker: Not provided. Emily is an involved daughter, not assumed to hold legal authority. Include her in discussions with Jane\'s permission.',
     'allergy_notes': 'Penicillin: Jane reports an itchy rash many years ago (recorded 28 October 2024). Timing and severity uncertain. Patient-reported; not clinician-verified.',
-    'important_notes': 'FICTIONAL DEMONSTRATION DATA - not for clinical use. Residential aged care. Values meals, gardening and family visits. Cardiologist: Dr Matthew Thompson, Harbourside Cardiology (fictional). Hypertension and knee osteoarthritis recorded 24 October 2024 (original diagnosis dates unknown); atrial fibrillation documented 2 May 2025. Current directions come from the released 28 August 2026 chart, reviewed 15 October 2026. Seeded transcription acceptance does not establish clinical verification. No live AI processing was used.',
+    'important_notes': 'FICTIONAL DEMONSTRATION DATA - not for clinical use. Residential aged care. Values meals, gardening and family visits. Cardiologist: Dr Matthew Thompson, Harbourside Cardiology (fictional). Facility nurse: Morgan Bell. Locum GPs: Dr Olivia Bennett and Dr Liam Wilson, Sydney Aged Care. Hypertension and knee osteoarthritis recorded 24 October 2024 (original diagnosis dates unknown); atrial fibrillation documented 2 May 2025. Current directions come from the released 28 August 2026 chart, reviewed 15 October 2026. Seeded transcription acceptance does not establish clinical verification. No live AI processing was used.',
     **{key: 'Not provided' for key in ('medicare_number','medicare_irn','ihi','dva_number','concession_number','private_fund','private_member_number')},
 }
 
@@ -79,7 +79,7 @@ RELATED = {
 def source_text(item):
     lines = ['FICTIONAL DEMONSTRATION DOCUMENT - NOT FOR CLINICAL USE',
              item['source_type'], item['title'], '',
-             'Patient: Jane Doe | DOB: 1 January 1935',
+             'Patient: Jane Doe | DOB: 1 November 1935',
              'Example Gardens Residential Aged Care (fictional)',
              '1 Demonstration Lane, Sydney NSW 2000',
              'Event / document date: ' + item['date'],
@@ -192,6 +192,16 @@ def seed(root, as_of=None, endpoint_from=None):
     # is an edit too: never reinstate seeded values once that key was written.
     touched = {k for e in events if e.type == profile.UPDATED for k in e.payload.get('values', {})}
     missing = {k:v for k,v in PROFILE.items() if k not in touched}
+    current_profile=profile.read(events)['values']
+    birthday_migrated=any(e.payload.get('demo_calendar_key')=='birthday-november-v1' for e in events)
+    if not birthday_migrated and current_profile['date_of_birth'] != PROFILE['date_of_birth']:
+        missing['date_of_birth']=PROFILE['date_of_birth']
+    prior_seeded_note=next((e.payload.get('values',{}).get('important_notes') for e in reversed(events)
+                            if e.type==profile.UPDATED and e.payload.get('demo_scenario')==SCENARIO
+                            and 'important_notes' in e.payload.get('values',{})),None)
+    if prior_seeded_note is not None and current_profile['important_notes']==prior_seeded_note:
+        if current_profile['important_notes']!=PROFILE['important_notes']:
+            missing['important_notes']=PROFILE['important_notes']
     if missing:
         profile.validate(missing, datetime.now(timezone.utc).date())
         vault.append(envelope.new(profile.UPDATED, vault.identity.id,
@@ -223,6 +233,9 @@ def seed(root, as_of=None, endpoint_from=None):
             'model_rev':'no-model-run','prompt_hash':'not-applicable','artifact':short})
         vault.append(proposed)
         vault.append(confirm(vault.identity.id, proposed.id))
+    from . import calendar_data, progress
+    calendar_data.seed(vault)
+    progress.seed(vault)
     result = projection.rebuild(vault, as_of=as_of)
     return DemoReport(root=root, artifacts=len(index_artifacts(vault.read().events)),
                       events=len(vault.read().events)-before, rebuild=result)

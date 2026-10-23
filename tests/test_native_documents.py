@@ -27,7 +27,7 @@ class NativeDocumentTests(unittest.TestCase):
             meta=self.get('/api/artifact/'+doc['id']+'/meta').json()
             native=meta['native']; metadata.append(meta)
             self.assertTrue(native['sections'])
-            self.assertEqual(native['patient']['dob'],'1935-01-01')
+            self.assertEqual(native['patient']['dob'],'1935-11-01')
             self.assertEqual(native['author'],doc['professional'])
             body=' '.join(s['text'] for s in native['sections'])
             self.assertNotIn('Matching original example content',body)

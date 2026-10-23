@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 from datetime import date
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Body, Depends, HTTPException
 from ... import profile
 from ...events import envelope
@@ -19,11 +20,13 @@ def listing(state):
     from ...demo_metadata import entries, SCENARIO
     if entries(snapshot.events, snapshot.artifacts):
         result['demo_scenario'] = SCENARIO
+        from .calendar import team
+        result['care_team'] = team(snapshot.events)
     result["sections"] = profile.SECTIONS
     result["age"] = None
     try:
         born = date.fromisoformat(result["values"]["date_of_birth"])
-        today = state.now().date()
+        today = state.now().astimezone(ZoneInfo('Australia/Sydney')).date()
         if born <= today:
             result["age"] = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
     except ValueError:

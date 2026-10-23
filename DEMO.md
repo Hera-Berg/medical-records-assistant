@@ -142,3 +142,59 @@ release attribution, stable originals, prescription/source consistency,
 Sydney midnight boundaries, repeat balances, unknown/PRN fields, and uploaded
 PDF text views are covered. Desktop/mobile visual browser testing and the
 TypeScript build remain unverified in the restricted execution environment.
+
+## Calendar and facility progress notes
+
+Open **Calendar** (`/calendar`) for the month view and upcoming list. Select a
+day to see its events; select an event for its time, professional, location and
+supporting record where available. **Add event** saves an appointment or other
+event in the current vault. It does not clutter the health timeline with future
+bookings. Times use Australia/Sydney; invalid dates and nonexistent daylight
+saving times are rejected. Retrying a save does not create a second entry.
+
+Jane's corrected DOB is **1 November 1935**, so her annual birthday marker is
+1 November. This task's birthday migration runs once; later manual profile
+changes are preserved. Current native editions show the corrected DOB. Older
+source files remain immutable and accessible through their original links.
+The optional native provenance details explain the correction.
+
+The fictional calendar includes past appointments drawn from the same stored
+visit records, facility locum visits, and bookings for podiatry (28 October
+2026, 10:30 am), GP review (3 November), physiotherapy, audiology, cardiology
+and a care-plan review. Prescription expiry events use the recorded dates and
+link to the prescription source; expiry is not a treatment-stop instruction.
+Bookings do not automatically become "attended" as time passes.
+
+**Progress notes** (`/progress-notes`; older `/doctor-notes` links still work)
+opens with a short password prompt. The fictional facility collection uses:
+
+    pass
+
+It contains 21 encrypted notes from October 2024 to October 2026 by Dr James
+Smith, Morgan Bell (registered nurse), and locum GPs Dr Olivia Bennett and
+Dr Liam Wilson. It begins with routine follow-up, not an admission consultation.
+External specialists are not seeded into this collection. The nurse and locums
+also appear in the Overview care team; GP and specialist membership remain
+separate. Notes expand individually after unlocking, and adding a note is in a
+collapsed section. The existing automatic lock and lock-on-leaving behaviour
+remain in place.
+
+The password is for this **fictional demo collection only**. Existing encrypted
+notes, keys and passwords are not reset or decrypted during population. A
+previous collection with a different password remains locked and is reported
+as such. The facility notes use the same PBKDF2/AES-GCM format as existing notes;
+only ciphertext is returned by the notes API. They do not appear in calendar
+previews, the health timeline, document summaries, appointment sheets or answers.
+Names entered or selected do not establish authenticated professional identity.
+
+Additional focused checks:
+
+```sh
+.venv314/bin/python -m unittest tests.test_calendar_progress -v
+```
+
+These cover birthday boundaries, bookings/source links, calendar saves and
+retries, invalid/DST times, leap-year/month navigation, later user edits, correct
+and incorrect password handling, encrypted-note preservation, public-view
+exclusion and the served Progress notes interface. Full visual desktop/mobile
+browser checks remain unavailable in the execution environment.

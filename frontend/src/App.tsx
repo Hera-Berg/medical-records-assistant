@@ -142,6 +142,8 @@ export function App() {
         documents={health?.record.artifacts ?? null}
       />
     );
+  } else if (first === "calendar") {
+    screen = createElement("health-calendar", { key: version });
   } else if (first === "timeline") {
     screen = <Timeline navigate={navigate} subject={tail || undefined} version={version} />;
   } else if (first === "record" && tail) {
@@ -181,7 +183,7 @@ export function App() {
         setHeader={setHeader}
       />
     );
-  } else if (first === "doctor-notes") {
+  } else if ((first === "progress-notes" || first === "doctor-notes")) {
     screen = <DoctorNotes version={version} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
@@ -418,6 +420,7 @@ function defaultHeader(segments: string[]): PageHeader {
   if (first === "documents") {
     return { title: "Documents", subtitle: "" };
   }
+  if (first === "calendar") return { title: "Calendar", subtitle: "Appointments and important dates." };
   if (first === "timeline") {
     return {
       title: "Timeline",
@@ -451,11 +454,10 @@ function defaultHeader(segments: string[]): PageHeader {
   if (first === "ask") {
     return { title: "Ask your record", subtitle: "" };
   }
-  if (first === "doctor-notes") {
+  if ((first === "progress-notes" || first === "doctor-notes")) {
     return {
-      title: "Doctor's notes",
-      subtitle:
-        "Notes a doctor types here are locked with a passphrase. They are kept apart from the rest of the record and never appear in it, on the timeline, on an appointment sheet or in an answer.",
+      title: "Progress notes",
+      subtitle: "",
     };
   }
   if (first === "review") {

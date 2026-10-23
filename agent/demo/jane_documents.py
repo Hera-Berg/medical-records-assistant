@@ -64,10 +64,10 @@ def native_document(item):
                'Pathology' if 'Labs' in author else 'Radiology' if 'Rao' in author else
                'General practice' if 'Smith' in author else author.split(', ',1)[1] if ', ' in author else None)
     doc={'title':item['title'],'type':item['source_type'], 'date':day, 'consultation_date':day,
-         'patient':{'name':'Jane Doe','dob':'1935-01-01','address':'Example Gardens Residential Aged Care, 1 Demonstration Lane, Sydney NSW 2000'},
+         'patient':{'name':'Jane Doe','dob':'1935-11-01','address':'Example Gardens Residential Aged Care, 1 Demonstration Lane, Sydney NSW 2000'},
          'author':author,'specialty':specialty,'organisation':None if personal else organisation,
          'recipient':None if personal else 'Dr James Smith, Sydney Aged Care',
-         'fictional':True,'edition':'Native demo edition; original files retained',
+         'fictional':True,'edition':'Native demo edition; date of birth corrected to 1 November 1935. Earlier original copies are retained',
          'release':None if personal else {'released_by':'Dr James Smith','organisation':'Sydney Aged Care','date':day,'simulated':True},
          'contribution':{'name':'Emily Doe' if 'Emily' in author else 'Jane Doe','role':'Daughter and involved family carer' if 'Emily' in author else 'Patient','date':day} if personal else None,
          'sections':[{'heading':'Original wording' if personal else 'Shared record','text':item['text'] if personal else clean(item['text'])}],
@@ -126,4 +126,6 @@ def native_document(item):
         doc['sections'].append({'heading':'Recorded prescription update',
             'text':'The remaining repeat balance for the 28 August amlodipine prescription is recorded as zero on 15 October 2026. Current medicine supply and dispensing dates are not recorded. This does not stop the medicine or change the prescription expiry date.'})
         doc['repeat_updates']=[{'prescription_id':'2026-08-28:amlodipine','remaining':0,'date':'2026-10-15','contributor':'Dr James Smith'}]
+    from .calendar_data import appointment
+    doc['calendar_appointment']=appointment(item)
     return doc

@@ -296,6 +296,8 @@ def build(
                 )
             )
         elif event.type == "note.recorded":
+            if event.payload.get("calendar_only") is True:
+                continue
             if event.payload.get('demo_scenario') == SCENARIO:
                 if event.id not in demo_event_ids:
                     continue

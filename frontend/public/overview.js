@@ -72,7 +72,7 @@
       if (!this.profile) return this.retry('Your care team details are temporarily unavailable.');
       const p = this.profile.values;
       if (!p.gp_name && !p.gp_practice && !p.pharmacy) return '<p class="ov-empty-text">Keep your usual GP and pharmacy close at hand. Add their details in your patient profile.</p>';
-      return `<dl class="ov-care-details">${p.gp_name || p.gp_practice ? `<div><dt>Usual GP</dt><dd>${escape(p.gp_name || 'Name not added')}${p.gp_practice ? `<span>${escape(p.gp_practice)}</span>` : ''}${p.gp_phone ? `<span>${escape(p.gp_phone)}</span>` : ''}</dd></div>` : ''}${p.pharmacy ? `<div><dt>Pharmacy</dt><dd>${escape(p.pharmacy)}</dd></div>` : ''}</dl>`;
+      return `<dl class="ov-care-details">${p.gp_name || p.gp_practice ? `<div><dt>Usual GP</dt><dd>${escape(p.gp_name || 'Name not added')}${p.gp_practice ? `<span>${escape(p.gp_practice)}</span>` : ''}${p.gp_phone ? `<span>${escape(p.gp_phone)}</span>` : ''}</dd></div>` : ''}${(this.profile.care_team || []).filter(member=>member.facility && member.role !== 'Usual GP').map(member=>`<div><dt>${escape(member.role)}</dt><dd>${escape(member.name)}<span>${escape(member.organisation)}</span></dd></div>`).join('')}${p.pharmacy ? `<div><dt>Pharmacy</dt><dd>${escape(p.pharmacy)}</dd></div>` : ''}</dl>`;
     }
     render() {
       const p = this.profile?.values || {};

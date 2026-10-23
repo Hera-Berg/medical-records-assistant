@@ -201,7 +201,7 @@ def artifact_meta(
     demo = entries(snapshot.events, snapshot.artifacts)
     for event in demo.values():
         p = event.payload
-        if short not in (p['artifact'], p.get('original_wording_artifact')):
+        if short not in (p['artifact'], p.get('original_wording_artifact'), *p.get('previous_artifacts', [])):
             continue
         extra['demo'] = {'title':p['title'], 'author':p['author'], 'event_date':p['event_date'],
                          'source_type':p['source_type'], 'original_wording_artifact':p.get('original_wording_artifact'),

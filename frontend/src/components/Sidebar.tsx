@@ -87,7 +87,7 @@ export function Sidebar({
       : (ENDPOINT_WORDS[health.endpoint.state] ?? ENDPOINT_WORDS.unknown)
     : null;
   const folder = health ? folderName(health.vault.root) : null;
-  const item = { path: path === "/overview" ? "/" : path, navigate };
+  const item = { path: path === "/overview" ? "/" : path === "/doctor-notes" ? "/progress-notes" : path, navigate };
 
   return (
     <aside
@@ -135,9 +135,10 @@ export function Sidebar({
             {...item}
           />
           <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
+          <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
           <Item to="/record" label="Medications and more" icon={<Book />} {...item} />
           <Item to="/summary" label="For an appointment" icon={<Sheet />} {...item} />
-          <Item to="/doctor-notes" label="Doctor's notes" icon={<Lock />} {...item} />
+          <Item to="/progress-notes" label="Progress notes" icon={<Lock />} {...item} />
           <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
         </div>
 

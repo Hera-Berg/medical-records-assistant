@@ -75,7 +75,7 @@ assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieva
         self.assertIn('/overview.css',index)
         source=(ROOT/'frontend/src/components/Sidebar.tsx').read_text()
         bundle=next((static/'assets').glob('*.js')).read_text()
-        for label in ('Overview','Patient profile','Ask your record','Add something','Waiting for you','Timeline','Medications and more','For an appointment',"Doctor's notes",'Documents','Settings'):
+        for label in ('Overview','Patient profile','Ask your record','Add something','Waiting for you','Timeline','Calendar','Medications and more','For an appointment',"Progress notes",'Documents','Settings'):
             self.assertIn(label,source)
             self.assertIn(label,bundle)
         self.assertIn('first === "overview"',(ROOT/'frontend/src/App.tsx').read_text())

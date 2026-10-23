@@ -28,6 +28,7 @@ const IDLE_LOCK_MS = 10 * 60 * 1000;
 interface Opened {
   compartment: NotesCompartment;
   key: CryptoKey;
+  keys?: Record<string, CryptoKey>;
 }
 
 export function DoctorNotes({ version }: { version: number }) {
@@ -61,7 +62,7 @@ export function DoctorNotes({ version }: { version: number }) {
     };
   }, [opened]);
 
-  if (error) return <Empty>Could not read the doctor's notes: {error}</Empty>;
+  if (error) return <Empty>Could not read the progress notes: {error}</Empty>;
   if (!data) return null;
 
   if (data.compartments.length === 0) {
@@ -89,11 +90,11 @@ export function DoctorNotes({ version }: { version: number }) {
 
 function WhatTheLockDoes() {
   return (
-    <p className="max-w-2xl text-[color:var(--color-muted)]">
+    <details><summary>About password protection</summary><p className="max-w-2xl text-[color:var(--color-muted)]">
       Anyone who can open your record's folder can see that these notes exist and the date each
       one was saved. Who wrote a note and what it says can only be read with the passphrase. The
       passphrase is not kept anywhere — not in the folder, not on this computer.
-    </p>
+    </p></details>
   );
 }
 
@@ -199,28 +200,26 @@ function Unlock({ data, onOpened }: { data: Notes; onOpened: (opened: Opened) =>
     setWrong(false);
     // Oldest first: if two computers each set a passphrase before seeing the
     // other's, the first one set is the record's.
+    const keys: Record<string, CryptoKey> = {};
+    let first: Opened | null = null;
     for (const compartment of data.compartments) {
       const key = await unlock(compartment, passphrase);
       if (key) {
-        setBusy(false);
-        onOpened({ compartment, key });
-        return;
+        keys[compartment.id] = key;
+        first ??= { compartment, key };
       }
     }
     setBusy(false);
-    setWrong(true);
+    if (first) onOpened({ ...first, keys });
+    else setWrong(true);
   };
 
   const count = data.notes.length;
   return (
     <form className="flex max-w-2xl flex-col gap-3" onSubmit={attempt}>
-      <p>
-        {count === 0
-          ? "No notes yet. Enter the passphrase to write one."
-          : `${count} ${count === 1 ? "note" : "notes"}, locked. Enter the passphrase to read or add to them.`}
-      </p>
+      <p role="status">Password protected. Please enter your password.</p>
       <label className="flex flex-col gap-1">
-        <span>Passphrase</span>
+        <span>Password</span>
         <input
           type="password"
           autoComplete="current-password"
@@ -237,13 +236,12 @@ function Unlock({ data, onOpened }: { data: Notes; onOpened: (opened: Opened) =>
           {busy ? "Opening…" : "Open the notes"}
         </button>
         {!passphrase ? (
-          <span className="text-[color:var(--color-muted)]">Type the passphrase first.</span>
+          <span className="text-[color:var(--color-muted)]"></span>
         ) : null}
       </div>
       {wrong ? (
-        <p className="text-[color:var(--color-alarm)]">That passphrase does not open these notes.</p>
+        <p className="text-[color:var(--color-alarm)]">That password does not open these notes.</p>
       ) : null}
-      <WhatTheLockDoes />
     </form>
   );
 }
@@ -276,9 +274,10 @@ function OpenNotes({
         event_id: note.event_id,
         ts: note.ts,
         device: note.device,
-        content: note.compartment === opened.compartment.id ? await openNote(opened.key, note) : null,
+        content: (opened.keys?.[note.compartment] || (note.compartment === opened.compartment.id ? opened.key : null))
+          ? await openNote(opened.keys?.[note.compartment] || opened.key, note) : null,
       })),
-    ).then((result) => live && setShown(result));
+    ).then((result) => live && setShown(result.sort((a,b) => (b.content?.written || b.ts).localeCompare(a.content?.written || a.ts))));
     return () => {
       live = false;
     };
@@ -314,16 +313,16 @@ function OpenNotes({
   return (
     <section className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span>The notes are open.</span>
+        <span>Progress notes</span>
         <button type="button" className="btn" onClick={onLock}>
           Lock
         </button>
         <span className="text-[color:var(--color-muted)]">
-          They lock by themselves after ten minutes untouched, or when you leave this page.
+          Locks after 10 minutes of inactivity or when you leave this page.
         </span>
       </div>
 
-      <div className="flex max-w-2xl flex-col gap-3">
+      <details><summary>Add a progress note</summary><div className="flex max-w-2xl flex-col gap-3">
         <h2 className="font-semibold">Write a note</h2>
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1">
@@ -369,34 +368,32 @@ function OpenNotes({
           A saved note cannot be changed or removed. To correct one, write another below it.
         </p>
         {error ? <p className="text-[color:var(--color-alarm)]">Not saved: {error}</p> : null}
-      </div>
+      </div></details>
 
       <div>
-        <h2 className="pb-1 font-semibold">Notes</h2>
+        <h2 className="pb-1 font-semibold">Progress notes</h2>
         {shown && shown.length === 0 ? <Empty>No notes yet.</Empty> : null}
         {unreadable > 0 ? (
           <p className="pb-2 text-[color:var(--color-alarm)]">
-            {unreadable} {unreadable === 1 ? "note was" : "notes were"} locked with a different
-            passphrase, set on another computer before this one saw it, and{" "}
-            {unreadable === 1 ? "is" : "are"} not shown.
+            {unreadable} other {unreadable === 1 ? "note remains" : "notes remain"} locked with a different password.
           </p>
         ) : null}
         {shown
           ?.filter((note) => note.content !== null)
           .map((note) => (
-            <article
+            <details
               key={note.event_id}
               className="border-t border-[color:var(--color-rule)] py-3"
             >
-              <p>
+              <summary>
                 <span className="font-semibold">{note.content!.author || "Not signed"}</span>
                 {note.content!.written ? `, ${longDate(note.content!.written)}` : null}
-              </p>
+              </summary>
               <p className="whitespace-pre-wrap">{note.content!.text}</p>
               <p className="text-[color:var(--color-muted)]">
-                Saved {longStamp(note.ts)} on {note.device}
+                Saved {longStamp(note.ts)}
               </p>
-            </article>
+            </details>
           ))}
       </div>
     </section>

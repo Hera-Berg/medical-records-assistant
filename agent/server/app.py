@@ -32,6 +32,7 @@ from . import endpoint_state, static
 from .origin import OriginGuard
 from .index import Index
 from .routes import (
+    calendar,
     artifact,
     ask,
     capture,
@@ -152,6 +153,7 @@ def create_app(
     _install_handlers(app)
 
     for module in (
+        calendar,
         health,
         profile,
         ask,
