@@ -29,6 +29,7 @@
 
 import { Link } from "../router";
 import type { EndpointState, Health } from "../types";
+import type { Workspace } from "../workspace";
 
 const SYNC_WORDS: Record<string, string> = {
   local: "A folder on this computer",
@@ -68,12 +69,14 @@ const DOT: Record<"good" | "quiet" | "alarm", string> = {
 };
 
 export function Sidebar({
+  workspace,
   health,
   path,
   navigate,
   uploading,
   onClose,
 }: {
+  workspace: Workspace;
   health: Health | null;
   path: string;
   navigate: (to: string) => void;
@@ -110,7 +113,7 @@ export function Sidebar({
 
       <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
         <div className="flex flex-col gap-0.5">
-          <Item to="/" label="Overview" exact icon={<Home />} {...item} />
+          <Item to={workspace === "clinician" ? "/clinician" : "/"} label={workspace === "clinician" ? "Review dashboard" : "Overview"} exact icon={<Home />} {...item} />
           <Item to="/profile" label="Patient profile" icon={<Book />} {...item} />
           <Item to="/ask" label="Ask your record" icon={<Question />} {...item} />
           <Item

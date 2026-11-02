@@ -57,6 +57,8 @@ import { SummaryScreen } from "./components/Summary";
 import { DoctorNotes } from "./components/DoctorNotes";
 import { Timeline } from "./components/Timeline";
 import { Welcome } from "./components/Welcome";
+import { ClinicianHome } from "./components/ClinicianHome";
+import { useWorkspace } from "./workspace";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
@@ -76,6 +78,7 @@ export interface PageHeader {
 
 export function App() {
   const [route, navigate] = useRoute();
+  const workspace = useWorkspace(route.path);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   // Bumped whenever the record changes, so every open screen re-reads. Cheaper
@@ -130,6 +133,8 @@ export function App() {
   let screen: React.ReactNode;
   if (!first || first === "overview") {
     screen = createElement("health-overview", { key: version });
+  } else if (first === "clinician" && !tail) {
+    screen = <ClinicianHome />;
   } else if (first === "profile") {
     screen = createElement("patient-profile");
   } else if (first === "documents") {
@@ -213,6 +218,7 @@ export function App() {
         wide ? (
           <div className="no-print sticky top-0 h-screen shrink-0 border-r border-[color:var(--color-rule)]">
             <Sidebar
+              workspace={workspace}
               health={health}
               path={route.path}
               navigate={go}
@@ -224,6 +230,7 @@ export function App() {
           <div className="no-print fixed inset-0 z-40 flex">
             <div className="h-full">
               <Sidebar
+                workspace={workspace}
                 health={health}
                 path={route.path}
                 navigate={go}
@@ -243,7 +250,7 @@ export function App() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-4 bg-[color:var(--color-paper)] px-2 py-2 sm:px-3">
+        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center gap-4 bg-[color:var(--color-paper)] px-2 py-2 sm:px-3">
           {menuOpen && wide ? null : (
             <button
               type="button"
@@ -280,6 +287,17 @@ export function App() {
               </span>
             ) : null}
           </span>
+          <label className="demo-workspace-switch">
+            <span>Demo workspace switch</span>
+            <select
+              value={workspace}
+              title="Demonstration only. Does not sign you in or unlock clinical notes."
+              onChange={(event) => go(event.target.value === "clinician" ? "/clinician" : "/overview")}
+            >
+              <option value="patient-carer">Patient &amp; carer workspace</option>
+              <option value="clinician">Clinician workspace</option>
+            </select>
+          </label>
           <Link
             to="/add"
             navigate={go}
@@ -411,6 +429,9 @@ function readMenuPreference(): boolean {
  */
 function defaultHeader(segments: string[]): PageHeader {
   const [first, second] = segments;
+  if (first === "clinician" && !second) {
+    return { title: "Clinician workspace", subtitle: "" };
+  }
   if (!first || first === "overview") {
     return { title: "Overview", subtitle: "" };
   }

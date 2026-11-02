@@ -213,3 +213,20 @@ one page and does not.
 **Print one.** A PDF answers "does it fit"; only paper answers "is this a thing
 a person would read in a waiting room", and paper is how this document actually
 reaches a clinician.
+
+## Demo workspaces
+
+The header's **Demo workspace switch** opens the patient & carer homepage at
+`/overview` (also `/`) or the clinician placeholder at `/clinician`. Shared
+record routes keep the workspace preference in browser local storage; opening
+one of the home routes explicitly selects its workspace. This is a view
+preference, not authentication, and does not unlock the encrypted progress notes.
+
+After building, check navigation against a running demo server:
+
+```sh
+HEALTH_ORIGIN=http://127.0.0.1:7788 node tools/check-workspaces.mjs
+```
+
+This checks the rendered DOM, switching, shared routes, stored preference,
+browser Back and unavailable local storage. It does not check browser layout.

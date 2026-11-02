@@ -214,7 +214,6 @@ function Unlock({ data, onOpened }: { data: Notes; onOpened: (opened: Opened) =>
     else setWrong(true);
   };
 
-  const count = data.notes.length;
   return (
     <form className="flex max-w-2xl flex-col gap-3" onSubmit={attempt}>
       <p role="status">Password protected. Please enter your password.</p>

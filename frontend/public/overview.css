@@ -1,6 +1,6 @@
 /* System fonts and local SVGs only. The reference's palette follows both themes. */
 @media screen {
-  :root:has(health-overview):not([data-theme="dark"]) {
+  :root:has(health-overview, .clinician-home):not([data-theme="dark"]) {
     --color-ink: #142735;
     --color-muted: #536471;
     --color-ground: #fdfefd;
@@ -14,7 +14,7 @@
     --color-nav-hover: #eaf0ec;
     --color-nav-active: #e5eeea;
   }
-  :root:has(health-overview)[data-theme="dark"] {
+  :root:has(health-overview, .clinician-home)[data-theme="dark"] {
     --color-accent: #91dad7;
     --color-accent-soft: #203d3b;
     --color-link: #91dad7;
@@ -28,8 +28,8 @@
 .health-brand-mark { background: #006674; border-radius: .65rem .2rem .65rem .65rem; }
 #menu nav > div > a { padding-top: .7rem; padding-bottom: .7rem; }
 #menu nav a > span:first-child svg { width: 21px; height: 21px; }
-body:has(health-overview) #menu nav a[href="/"] { color: var(--color-accent); }
-health-overview { display: block; padding: .5rem 0 0; --ov-serif: Georgia, "Times New Roman", serif; }
+body:has(health-overview) #menu nav a[href="/"], body:has(.clinician-home) #menu nav a[href="/clinician"] { color: var(--color-accent); }
+:is(health-overview, .clinician-home) { display: block; padding: .5rem 0 0; --ov-serif: Georgia, "Times New Roman", serif; }
 .ov-topline { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .ov-eyebrow { font-weight: 600; letter-spacing: .13em; color: var(--color-muted); margin: 0; }
 .ov-profile-switch { display: inline-flex; align-items: center; gap: .9rem; color: var(--color-ink); text-decoration: none; border: 1px solid var(--color-rule); border-radius: .65rem; padding: .4rem .65rem .4rem .8rem; flex-shrink: 0; }
