@@ -312,7 +312,7 @@ function OpenNotes({
   return (
     <section className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span>Progress notes</span>
+        <span>Clinical notes</span>
         <button type="button" className="btn" onClick={onLock}>
           Lock
         </button>
@@ -370,7 +370,7 @@ function OpenNotes({
       </div></details>
 
       <div>
-        <h2 className="pb-1 font-semibold">Progress notes</h2>
+        <h2 className="pb-1 font-semibold">Clinical notes</h2>
         {shown && shown.length === 0 ? <Empty>No notes yet.</Empty> : null}
         {unreadable > 0 ? (
           <p className="pb-2 text-[color:var(--color-alarm)]">

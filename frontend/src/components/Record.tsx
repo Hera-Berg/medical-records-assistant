@@ -60,7 +60,7 @@ export function Record({
   if (empty) {
     return (
       <Empty>
-        Nothing has been filed yet. Add something, and once it has been read and you
+        Nothing has been filed yet. Upload a document or record an update, and once it has been read and you
         have confirmed what it says, it appears here.
       </Empty>
     );
@@ -225,7 +225,7 @@ export function Record({
 
       {data.review.total > 0 ? (
         <>
-          <Heading>Waiting for you</Heading>
+          <Heading>Confirm extracted information</Heading>
           <p>
             {data.review.total} {data.review.total === 1 ? "thing is" : "things are"}{" "}
             waiting to be confirmed — {data.review.by_tier.high ?? 0} of them important.

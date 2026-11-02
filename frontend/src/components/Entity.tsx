@@ -324,7 +324,7 @@ export function Entity({
 
       {data.review.length > 0 ? (
         <>
-          <Heading>Waiting for you</Heading>
+          <Heading>Confirm extracted information</Heading>
           <ul>
             {data.review.map((item, index) => (
               <li key={`${item.kind}-${index}`}>

@@ -158,12 +158,10 @@ paths the client uses.
 These are not style preferences. Each has a reason, and they are enforced by
 review rather than by a linter.
 
-- **Three type sizes and two weights.** Body, section heading, page title;
-  regular and semibold. Density comes from tight leading and small margins,
-  never from small text: this is read at arm's length in bad clinic lighting,
-  and hierarchy bought by shrinking things disappears first. The page title is
-  the only size that has ever been added, and it was added *upwards* — nothing
-  on the page is smaller than it was.
+- **Shared type scale.** Use the system sans-serif stack. Page titles are 26px
+  (24px on smaller screens), section headings 17px and clinician body text 15px.
+  Patient workspace body text stays at 16px. Metadata and control labels may be
+  smaller when secondary to the main content.
 - **Colour carries no meaning on its own.** Every evidence tier, conflict and
   staleness state has a label as well as a hue. A colour-blind reader and a
   sheet of paper must both work — the consultation summary exists to be printed
@@ -217,10 +215,10 @@ reaches a clinician.
 ## Demo workspaces
 
 The header's **Demo workspace switch** opens the patient & carer homepage at
-`/overview` (also `/`) or the clinician placeholder at `/clinician`. Shared
+`/overview` (also `/`) or clinician sign-in/dashboard at `/clinician`. Shared
 record routes keep the workspace preference in browser local storage; opening
-one of the home routes explicitly selects its workspace. This is a view
-preference, not authentication, and does not unlock the encrypted progress notes.
+one of the home routes explicitly selects its workspace. This preference never grants access: clinician pages require server-verified
+sign-in, and encrypted progress notes still require their separate passphrase.
 
 After building, check navigation against a running demo server:
 
@@ -230,3 +228,112 @@ HEALTH_ORIGIN=http://127.0.0.1:7788 node tools/check-workspaces.mjs
 
 This checks the rendered DOM, switching, shared routes, stored preference,
 browser Back and unavailable local storage. It does not check browser layout.
+
+Desktop navigation stays visible in both workspaces; smaller screens use a
+collapsible menu. Clinicians have Review dashboard, Clinical record, Documents,
+Timeline and Clinical notes. Patients/carers have Home, Record an update,
+Calendar, Shared documents and My care team. `/care-team` renders the complete current care-team grid from the same
+`/api/profile` care-team data used by the profile and overview. Other record tools, profile
+and settings remain in secondary navigation. Clinical notes are omitted from
+patient/carer navigation; their existing encrypted, passphrase-protected routes
+are preserved. “Shared documents” is a navigation label for the existing document
+collection, not a new sharing or permissions system.
+
+## Shared design foundation
+
+`src/styles.css` owns the palette, type scale, spacing and shell geometry.
+`public/appearance.css` supplies the matching dark theme. Page styles must not
+change root palette tokens or shell branding. Light mode uses a neutral grey
+application background, white surfaces, dark text and purple for actions/selection.
+Warning/error hues are reserved for labelled status, never ordinary information.
+
+The sidebar is 232px and the desktop header 64px. Small screens wrap header
+controls and collapse navigation. Use `.surface`/`.panel`, `.section-heading`,
+`.metadata`, `.data-list`/`.data-row`, `.badge`, `.btn`/`.btn-primary`,
+`.tabs`/`.tab` and `.source-link` for future features. Tabs need the appropriate
+ARIA state and keyboard behaviour when implemented; these classes supply styling
+only. Panels use 8px corners; controls use 6px. Keyboard focus remains visible.
+
+The working title is “Care record”. The clinician route requires server-verified sign-in and opens a compact,
+source-linked review dashboard. Technical storage and reader status are under
+Settings → Advanced settings. The workspace switch remains a demonstration
+control and never authorises access to clinical notes.
+
+## Care-team membership and portraits
+
+`agent/care_team.py` reads explicit roster entries and documented allied-health
+follow-up bookings, then enriches existing members with matching native source
+documents. Historical authorship alone does not establish membership. Profile GP
+and pharmacy fields remain editable through the existing profile workflow. An
+explicitly identified family carer appears separately; next-of-kin status alone
+does not establish a care role. This projection never reads sealed notes or
+writes to the vault.
+
+Jane's grid includes the four facility members, cardiologist, physiotherapist,
+audiologist, podiatrist, pharmacist, pharmacy and involved daughter Emily.
+`public/assets/care-team/` contains only the three user-supplied photographs,
+copied without modification. The page uses CSS face crops, marks each photograph
+as illustrative, and uses neutral initials/organisation frames for everyone else.
+Photo mappings apply only to the Jane demo scenario, never ordinary records.
+
+## Clinician authentication and dashboard
+
+Clinician accounts are explicitly provisioned for the Jane development demo:
+
+```sh
+.venv314/bin/python -m agent.clinician_auth provision-demo --vault ./vault/jane-doe-demo
+```
+
+The command prints new random passwords once. Do not put that output in the
+repository or application UI. It refuses existing account files and ordinary
+records. Only salted PBKDF2-SHA256 hashes (600,000 iterations) are stored, in the
+machine config directory's `clinician-auth/` directory, scoped to the vault's
+resolved path. Nothing is written to Jane's clinical event history. Test setups
+can set `HEALTH_CLINICIAN_AUTH_DIR` to an isolated temporary directory.
+
+Sessions use random opaque tokens in host-only HttpOnly/SameSite=Strict cookies,
+with token hashes held on the server. Tokens rotate on login; sign-out revokes
+them. Idle expiry is 30 minutes, absolute expiry eight hours, and server restart
+invalidates all sessions. Unsafe clinical-note requests and sign-out require a
+per-session CSRF token and exact same-origin checks. Five failed login attempts
+per client address trigger a 15-minute cooldown. Identity and roles come from
+the verified account, never local-storage workspace preferences.
+
+`/clinician` and `/clinician/*` redirect signed-out visitors to
+`/clinician/sign-in`. `/api/clinician/*` and `/api/doctor-notes*` reject unauthenticated
+requests with 401. Read-only clinician aliases reuse the existing record/profile/
+calendar/document handlers. Original patient-visible `/api/profile`, documents,
+timeline and record APIs intentionally remain accessible through the existing
+patient flow; patient authentication is outside this task. Clinician-only notes
+remain encrypted and need their separate passphrase even after account sign-in.
+
+The service still binds to loopback only. On its existing HTTP loopback origin,
+the cookie cannot provide TLS transport encryption; the Secure cookie flag is
+set when served over HTTPS. This is local development authentication, not a
+production multi-user deployment or protection against someone who can read
+local files. Production use needs HTTPS, deployment hardening and independent
+security review. Accounts/sessions are machine-local and do not sync with the
+patient vault.
+
+The dashboard is a read-only projection of Jane's existing authored demo
+sources and explicit bookings. The default comparison is the authenticated
+clinician's latest completed/attended consultation (James: 21 October 2026;
+Olivia: 26 March 2025). A clinician without one must select a comparison date.
+No generated-summary timestamp becomes a consultation date. Prepared source
+excerpts are labelled as awaiting clinician review; there is no live generation,
+new review-completion state, task-management feature or other-patient inbox.
+Source-event dates determine the comparison interval; outstanding follow-up
+lists recorded bookings whose completion is not recorded, not inferred tasks.
+
+Verification: `python -m unittest tests.test_clinician_auth -q` covers password
+checks, access boundaries, account separation, source links, expiry/revocation,
+CSRF, assignment checks and the first-review path. Browser verification should
+also exercise both sign-ins, refresh, sign-out, the locked notes UI and responsive
+layout. Demo credentials must be supplied through the environment to any browser
+test runner, never checked into test code.
+
+The browser check is `frontend/tools/check-clinician.mjs`. Supply
+`CARE_JAMES_PASSWORD` and `CARE_OLIVIA_PASSWORD` locally, and optionally
+`HEALTH_ORIGIN`, `PLAYWRIGHT_MODULE` and `CHROME_PATH`. It requires developer-only
+Playwright and Chrome; neither is an application dependency. Older workspace
+checks that assume anonymous clinician access are superseded by this check.

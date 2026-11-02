@@ -1,16 +1,8 @@
-"""Binding a port, and refusing to bind the wrong one.
+"""Loopback binding remains mandatory.
 
-``CLAUDE.md``: "Multi-user accounts, roles, or an auth system" are on the list of
-things not to build — "Single user, localhost-bound. If it needs to be reachable
-elsewhere, that is the user's VPN problem, and binding to ``0.0.0.0`` is never a
-default."
-
-There is no authentication in front of this server and there is not going to be
-any. The port *is* the boundary, so binding it anywhere but loopback does not
-widen access a little: it publishes a complete health record to every device on
-the network with no credential of any kind. That is why the check below is a
-refusal rather than a warning, and why it does not read a config field — a
-setting that can be typed is a setting that can be typed by mistake.
+The patient workspace is intentionally unauthenticated. Clinician sign-in adds
+an account/session boundary for clinician pages and APIs; it does not turn the
+patient-held record into an internet-facing service.
 """
 
 from __future__ import annotations

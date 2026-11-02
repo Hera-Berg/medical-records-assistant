@@ -1,14 +1,14 @@
 /* Control feedback only: no layout, content, routing or event-handler changes. */
 @media screen {
   :root {
-    --interaction-teal: #006674;
+    --interaction-accent: var(--color-accent);
     --interaction-duration: 150ms;
     --interaction-ease: cubic-bezier(.2, 0, .2, 1);
-    --interaction-overview-button: #006674;
+    --interaction-overview-button: var(--color-accent);
   }
   :root[data-theme="dark"] {
-    --interaction-teal: #91dad7;
-    --interaction-overview-button: #91dad7;
+    --interaction-accent: var(--color-accent);
+    --interaction-overview-button: var(--color-accent);
   }
 
   :is(button, a[href], summary, [role="button"], input[type="button"], input[type="submit"]) {
@@ -29,14 +29,14 @@
 
   /* Mouse and keyboard get the same visible focus, without changing dimensions. */
   :is(a[href], button, summary, input, textarea, select, [tabindex]):focus-visible {
-    outline: 2px solid var(--interaction-teal);
+    outline: 2px solid var(--interaction-accent);
     outline-offset: 3px;
   }
   :is(input, textarea, select):focus {
-    border-color: var(--interaction-teal);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interaction-teal) 16%, transparent);
+    border-color: var(--interaction-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interaction-accent) 16%, transparent);
   }
-  .composer:focus-within { border-color: var(--interaction-teal); }
+  .composer:focus-within { border-color: var(--interaction-accent); }
 
   /* Transform only button surfaces; document text and row geometry stay still. */
   :is(button:not(.docs-title, .docs-open, .profile-text-button, .ov-text-button),
@@ -54,7 +54,7 @@
 
   /* Rows respond only when their actual link/button is focused, not empty cells. */
   :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):focus-visible) {
-    background-color: color-mix(in srgb, var(--interaction-teal) 6%, var(--color-paper));
+    background-color: color-mix(in srgb, var(--interaction-accent) 6%, var(--color-paper));
   }
 
   @media (hover: hover) and (pointer: fine) {
@@ -77,15 +77,15 @@
 
     /* Only whole-card links/buttons receive a card effect. Static panels do not. */
     :is(a.panel, button.panel, .ov-profile-switch, .profile-quicklinks a):not(:disabled, [aria-disabled="true"]):hover {
-      border-color: color-mix(in srgb, var(--interaction-teal) 45%, var(--color-rule));
-      background-color: color-mix(in srgb, var(--interaction-teal) 4%, var(--color-paper));
-      box-shadow: 0 2px 8px color-mix(in srgb, var(--interaction-teal) 8%, transparent);
+      border-color: color-mix(in srgb, var(--interaction-accent) 45%, var(--color-rule));
+      background-color: color-mix(in srgb, var(--interaction-accent) 4%, var(--color-paper));
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--interaction-accent) 8%, transparent);
     }
     :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):hover) {
-      background-color: color-mix(in srgb, var(--interaction-teal) 6%, var(--color-paper));
+      background-color: color-mix(in srgb, var(--interaction-accent) 6%, var(--color-paper));
     }
     :is(.docs-table, .table-wrap table) tbody tr:has(:is(a[href], button:not(:disabled)):hover) > td {
-      border-bottom-color: color-mix(in srgb, var(--interaction-teal) 35%, var(--color-rule));
+      border-bottom-color: color-mix(in srgb, var(--interaction-accent) 35%, var(--color-rule));
     }
   }
   :is(.docs-table, .table-wrap table) tbody tr,

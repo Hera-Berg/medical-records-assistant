@@ -1,72 +1,9 @@
-/**
- * The menu down the left: where you are, and where your record actually lives.
- *
- * Laid out the way the assistants people already use are: a pale column that a
- * button at the top left opens and closes. On a wide screen it sits beside the
- * page and pushes it over; on a phone it lies over the page with the page
- * dimmed behind it, and closes again as soon as somewhere is chosen — sixteen
- * rems of navigation down the side of a 390px screen leaves nothing for the
- * record itself. Either way it opens and closes at once, with no slide.
- *
- * Overview comes first, followed by the patient profile, questions and capture.
- * The rest of the record is grouped under one heading beneath them.
- *
- * The footer is the part that earns the menu: it says, permanently and without
- * being asked, which folder holds the record and whether anything is currently
- * able to read new files. Both of those used to be shorthand in a strip along
- * the top — `box none configured` — which is a developer's status line, not an
- * answer to "where is my stuff and is it safe".
- *
- * **Unreachable and unauthorised stay different states**, here as everywhere. A
- * sleeping box drains by itself and is worth a quiet line; a rejected key needs
- * a person and is worth an alarm, which is raised in the banner above the page
- * rather than whispered down here. Collapsing them into one "offline" is how a
- * rotated key looks like a sleeping Mac and nobody investigates for a week.
- *
- * Every state word is a word. The dot beside it repeats the state in colour and
- * carries none of the meaning on its own.
- */
+/** Persistent workspace navigation; technical record details live in advanced settings. */
 
 import { Link } from "../router";
-import type { EndpointState, Health } from "../types";
+import type { Health } from "../types";
+import { clinicianPath } from "../clinicianAuth";
 import type { Workspace } from "../workspace";
-
-const SYNC_WORDS: Record<string, string> = {
-  local: "A folder on this computer",
-  dropbox: "Synced by Dropbox",
-  gdrive: "Synced by Google Drive",
-  nextcloud: "Synced by Nextcloud",
-  other: "Synced by your own client",
-};
-
-/**
- * What the inference box is doing, in a sentence a patient can act on.
- *
- * `tone` is only ever used to pick the dot's colour; the sentence says the same
- * thing on its own.
- */
-export const ENDPOINT_WORDS: Record<
-  EndpointState,
-  { short: string; tone: "good" | "quiet" | "alarm" }
-> = {
-  working: { short: "Ready to read new files", tone: "good" },
-  unreachable: { short: "Asleep — files wait safely", tone: "quiet" },
-  unauthorised: { short: "Password rejected", tone: "alarm" },
-  misconfigured: { short: "Set up incorrectly", tone: "alarm" },
-  "vision-not-working": { short: "Cannot read pictures", tone: "alarm" },
-  "not-configured": { short: "Not set up yet", tone: "quiet" },
-  unknown: { short: "Not checked yet", tone: "quiet" },
-  "not-downloaded": { short: "Needs a one-time download", tone: "quiet" },
-  sleeping: { short: "Sleeping — wakes when you add something", tone: "quiet" },
-  starting: { short: "Starting up", tone: "quiet" },
-  stopped: { short: "Stopped — see Settings", tone: "alarm" },
-};
-
-const DOT: Record<"good" | "quiet" | "alarm", string> = {
-  good: "#2f8a64",
-  quiet: "#8d9a92",
-  alarm: "#b4413a",
-};
 
 export function Sidebar({
   workspace,
@@ -82,112 +19,69 @@ export function Sidebar({
   navigate: (to: string) => void;
   uploading: number;
   /** Close the menu. The shell decides whether choosing a page does too. */
-  onClose: () => void;
+  onClose?: () => void;
 }) {
-  const endpoint = health
-    ? health.endpoint.state === "working" && health.endpoint.where === "this-computer"
-      ? { short: "Reading on this computer", tone: "good" as const }
-      : (ENDPOINT_WORDS[health.endpoint.state] ?? ENDPOINT_WORDS.unknown)
-    : null;
-  const folder = health ? folderName(health.vault.root) : null;
-  const item = { path: path === "/overview" ? "/" : path === "/doctor-notes" ? "/progress-notes" : path, navigate };
+  const cleanPath = path.replace(/\/$/, "") || "/";
+  const item = { clinician: workspace === "clinician", path: cleanPath === "/overview" ? "/" : cleanPath === "/doctor-notes" ? "/progress-notes" : cleanPath === "/artifact" || cleanPath.startsWith("/artifact/") ? "/documents" : cleanPath, navigate };
+  const clinician = workspace === "clinician";
 
   return (
     <aside
       id="menu"
-      className="no-print flex h-full w-72 flex-col bg-[color:var(--color-nav)] text-[color:var(--color-ink)]"
+      className="app-sidebar no-print"
       aria-label="Sections of your record"
     >
-      <div className="health-brand flex items-center gap-2 px-3 pt-3 pb-2">
+      <div className="app-brand">
         <span
           aria-hidden="true"
-          className="health-brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--color-accent)]"
+          className="app-brand-mark"
         >
           <Mark />
         </span>
-        <span className="health-brand-name min-w-0 flex-1 truncate font-semibold">My health</span>
-        <button type="button" className="icon-btn" onClick={onClose} aria-label="Close the menu">
+        <span className="app-brand-name">Care record</span>
+        {onClose ? <button type="button" className="icon-btn" onClick={onClose} aria-label="Close the menu">
           <CloseMenu />
-        </button>
+        </button> : null}
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-        <div className="flex flex-col gap-0.5">
-          <Item to={workspace === "clinician" ? "/clinician" : "/"} label={workspace === "clinician" ? "Review dashboard" : "Overview"} exact icon={<Home />} {...item} />
-          <Item to="/profile" label="Patient profile" icon={<Book />} {...item} />
+      <nav className="app-navigation">
+        <p className="nav-group-label">{clinician ? "Clinician workspace" : "Patient & carer workspace"}</p>
+        <div className="flex flex-col gap-0.5" aria-label="Workspace navigation">
+          {clinician ? <>
+            <Item to="/clinician" label="Review dashboard" exact icon={<Home />} {...item} />
+            <Item to="/record" label="Clinical record" icon={<Book />} {...item} />
+            <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
+            <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
+            <Item to="/progress-notes" label="Clinical notes" icon={<Lock />} {...item} />
+          </> : <>
+            <Item to="/" label="Home" exact icon={<Home />} {...item} />
+            <Item to="/add" label="Record an update" icon={<Plus />} note={uploading > 0 ? `${uploading} sending` : undefined} {...item} />
+            <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
+            <Item to="/documents" label="Shared documents" icon={<Folder />} {...item} />
+            <Item to="/care-team" label="My care team" icon={<Book />} {...item} />
+          </>}
+        </div>
+
+        <p className="nav-group-label nav-group-divider">Record tools</p>
+        <div className="flex flex-col gap-0.5" aria-label="Record tools">
+          {clinician ? <>
+            <Item to="/add" label="Upload or record information" icon={<Plus />} note={uploading > 0 ? `${uploading} sending` : undefined} {...item} />
+            <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
+          </> : <>
+            <Item to="/record" label="My health record" icon={<Book />} {...item} />
+            <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
+          </>}
+          <Item to="/review" label="Confirm extracted information" icon={<Inbox />} note={health && health.review.total > 0 ? String(health.review.total) : undefined} {...item} />
           <Item to="/ask" label="Ask your record" icon={<Question />} {...item} />
-          <Item
-            to="/add"
-            label="Add something"
-            icon={<Plus />}
-            note={uploading > 0 ? `${uploading} sending` : undefined}
-            {...item}
-          />
+          <Item to="/summary" label="Appointment summary" icon={<Sheet />} {...item} />
         </div>
 
-        <p className="mt-5 mb-1 px-3 text-[color:var(--color-muted)]">Your record</p>
-        <div className="flex flex-col gap-0.5">
-          <Item
-            to="/review"
-            label="Waiting for you"
-            icon={<Inbox />}
-            /* The count, not a dot. "4" says how much work it is; a dot says
-               only that there is some, which is the thing people learn to
-               ignore. */
-            note={health && health.review.total > 0 ? String(health.review.total) : undefined}
-            {...item}
-          />
-          <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
-          <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
-          <Item to="/record" label="Medications and more" icon={<Book />} {...item} />
-          <Item to="/summary" label="For an appointment" icon={<Sheet />} {...item} />
-          <Item to="/progress-notes" label="Progress notes" icon={<Lock />} {...item} />
-          <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
-        </div>
-
-        <div className="mt-auto flex flex-col gap-0.5 pt-4">
+        <div className="mt-auto flex flex-col gap-0.5 pt-4" aria-label="Profile and settings">
+          <Item to="/profile" label={clinician ? "Patient profile" : "My profile"} icon={<Book />} {...item} />
           <Item to="/settings" label="Settings" icon={<Gear />} {...item} />
         </div>
       </nav>
 
-      <div className="border-t border-[color:var(--color-rule)] px-4 py-3">
-        {/* A link, because the sentence "your record is a folder" should be
-            something you can act on rather than only read. */}
-        <p className="text-[color:var(--color-muted)]">
-          Kept in{" "}
-          <Link to="/files" navigate={navigate} className="text-[color:var(--color-ink)]">
-            <span title={health?.vault.root ?? undefined}>{folder ?? "your folder"}</span>
-          </Link>
-          {/* A link, because "where is my record kept" and "tell it where my
-              record is kept" are the same question asked twice. */}
-          {health ? (
-            <>
-              {" · "}
-              <Link
-                to="/settings"
-                navigate={navigate}
-                className="text-[color:var(--color-muted)] no-underline hover:underline"
-              >
-                {SYNC_WORDS[health.vault.sync_profile] ?? "Synced by your own client"}
-              </Link>
-            </>
-          ) : null}
-        </p>
-
-        {endpoint ? (
-          <p className="mt-1 flex items-baseline gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-block h-2 w-2 shrink-0 rounded-full"
-              style={{ background: DOT[endpoint.tone] }}
-            />
-            <span>
-              <span className="text-[color:var(--color-muted)]">Reading your files: </span>
-              {endpoint.short}
-            </span>
-          </p>
-        ) : null}
-      </div>
     </aside>
   );
 }
@@ -246,6 +140,7 @@ function Inbox() {
 
 
 function Item({
+  clinician,
   to,
   label,
   path,
@@ -254,6 +149,7 @@ function Item({
   icon,
   note,
 }: {
+  clinician: boolean;
   to: string;
   label: string;
   path: string;
@@ -265,18 +161,17 @@ function Item({
   const active = exact ? path === to : path === to || path.startsWith(`${to}/`);
   return (
     <Link
-      to={to}
+      to={clinician ? clinicianPath(to) : to}
       navigate={navigate}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[color:var(--color-ink)] no-underline hover:bg-[color:var(--color-nav-hover)] ${
-        active ? "bg-[color:var(--color-nav-active)] font-semibold" : ""
-      }`}
+      ariaCurrent={active ? "page" : undefined}
+      className={`nav-link ${active ? "is-active" : ""}`}
     >
       <span aria-hidden="true" className="flex w-5 shrink-0 justify-center">
         {icon}
       </span>
-      <span className="whitespace-nowrap">{label}</span>
+      <span className="nav-label">{label}</span>
       {note ? (
-        <span className="ml-auto rounded-full bg-[color:var(--color-paper)] px-2 text-[color:var(--color-muted)]">
+        <span className="badge nav-count">
           {note}
         </span>
       ) : null}
@@ -358,14 +253,8 @@ function Gear() {
 
 function Mark() {
   return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M3 12h4l2-5 3 10 2-5h7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
-}
-
-/** The last segment of the vault path — what the folder is called in Finder. */
-function folderName(root: string): string {
-  const parts = root.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? root;
 }

@@ -5,7 +5,7 @@ from typing import Any
 from datetime import date
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Body, Depends, HTTPException
-from ... import profile
+from ... import profile, care_team
 from ...events import envelope
 from ..deps import get_state
 from ..state import RecordState
@@ -20,8 +20,8 @@ def listing(state):
     from ...demo_metadata import entries, SCENARIO
     if entries(snapshot.events, snapshot.artifacts):
         result['demo_scenario'] = SCENARIO
-        from .calendar import team
-        result['care_team'] = team(snapshot.events)
+
+    result["care_team"] = care_team.listing(snapshot.events, snapshot.artifacts, result["values"])
     result["sections"] = profile.SECTIONS
     result["age"] = None
     try:

@@ -20,7 +20,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -30,6 +30,11 @@ from ..extract import session
 from ..llm import redaction
 from . import endpoint_state, static
 from .origin import OriginGuard
+from ..clinician_auth import AuthStore, COOKIE
+from .routes import clinician
+from fastapi.responses import RedirectResponse
+from fastapi.routing import APIRoute
+import hmac
 from .index import Index
 from .routes import (
     calendar,
@@ -141,6 +146,7 @@ def create_app(
     elif not configured:
         state.set_endpoint(endpoint_state.not_configured())
 
+    app.state.clinician_auth = AuthStore(vault.root)
     app.state.record = state
     app.state.index = Index.open(vault.root / ".agent")
 
@@ -186,6 +192,42 @@ def create_app(
         info = dict(static.build_info())
         info["worker"] = app.state.worker.status() if app.state.worker else None
         return info
+
+    app.include_router(clinician.router)
+    # Clinician views reuse the same public shared-record implementations, under
+    # a protected namespace. Patient-visible originals remain in the patient flow.
+    for module in (record, documents, artifact, profile, calendar):
+        for route in module.router.routes:
+            if isinstance(route, APIRoute) and 'GET' in route.methods:
+                app.add_api_route(route.path.replace('/api/', '/api/clinician/', 1),
+                    route.endpoint, methods=['GET'], response_class=route.response_class,
+                    response_model=route.response_model, status_code=route.status_code,
+                    dependencies=route.dependencies, include_in_schema=False)
+
+    @app.middleware('http')
+    async def clinician_boundary(request: Request, call_next):
+        path = request.url.path
+        protected_api = path.startswith('/api/clinician/') or path.startswith('/api/doctor-notes')
+        protected_page = (path.rstrip('/') == '/clinician' or path.startswith('/clinician/')) and path.rstrip('/') != '/clinician/sign-in'
+        protected_page = protected_page or path.rstrip('/') in ('/doctor-notes', '/progress-notes')
+        if protected_api or protected_page:
+            session = app.state.clinician_auth.resolve(request.cookies.get(COOKIE))
+            if not session:
+                response = JSONResponse({'detail':'Sign in to the clinician workspace.'}, status_code=401) if protected_api else RedirectResponse('/clinician/sign-in', status_code=303)
+                response.headers['Cache-Control'] = 'no-store'
+                return response
+            request.state.clinician = session['account']
+            if request.method in ('POST','PUT','PATCH','DELETE'):
+                try:
+                    clinician.same_origin(request)
+                except HTTPException as exc:
+                    return JSONResponse({'detail':exc.detail},status_code=exc.status_code,headers={'Cache-Control':'no-store'})
+                if not hmac.compare_digest(request.headers.get('x-clinician-csrf',''),session['csrf']):
+                    return JSONResponse({'detail':'Refresh this page before saving.'},status_code=403,headers={'Cache-Control':'no-store'})
+        response = await call_next(request)
+        if protected_api or protected_page or path.startswith('/api/auth/') or path.startswith('/clinician/'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
     # Registered last: its catch-all path must lose to every API route above.
     static.mount(app)

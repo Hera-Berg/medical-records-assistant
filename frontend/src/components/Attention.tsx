@@ -160,7 +160,7 @@ export function Attention({
   const unread = health.review.could_not_read ?? 0;
   const review = quietReview ? null : (
     <Link to="/review" navigate={navigate}>
-      Go to Waiting for you
+      Go to Confirm extracted information
     </Link>
   );
   if (unread > 0 && !quietReview) {
@@ -173,7 +173,7 @@ export function Attention({
         folded
       >
         Nothing was guessed from the parts that could not be read. Check{" "}
-        {unread === 1 ? "it" : "them"} on the <strong>Waiting for you</strong> screen —
+        {unread === 1 ? "it" : "them"} on the <strong>Confirm extracted information</strong> screen —
         photograph again or type in anything that matters.
       </Banner>,
     );
@@ -196,7 +196,7 @@ export function Attention({
             record without you tapping to say so.{" "}
           </>
         ) : null}
-        They are on the <strong>Waiting for you</strong> screen, and your record shows
+        They are on the <strong>Confirm extracted information</strong> screen, and your record shows
         only what you have already agreed to until you get to them.
       </Banner>,
     );

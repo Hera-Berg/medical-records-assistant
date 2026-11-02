@@ -947,3 +947,36 @@ export interface DoctorNotes {
   compartments: NotesCompartment[];
   notes: DoctorNoteSealed[];
 }
+
+export interface CareTeamMember {
+  id: string;
+  name: string;
+  role: string;
+  organisation: string;
+  location?: string;
+  phone?: string;
+  facility: boolean;
+  kind: "person" | "organisation";
+  group: "facility" | "external" | "family";
+}
+export interface CareTeamProfile {
+  care_team: CareTeamMember[];
+  demo_scenario?: string;
+}
+
+export interface ClinicianIdentity {
+  username: string; name: string; role: string; salutation: string;
+}
+export interface ClinicianSession { clinician: ClinicianIdentity; csrf: string; }
+export interface ClinicianDashboardData {
+  clinician: ClinicianIdentity;
+  patient: {name: string; date_of_birth: string; facility: string};
+  today: string; comparison_date: string | null; first_review: boolean;
+  last_consultation: {date: string; title: string} | null;
+  upcoming: {date: string; title: string; professional?: string; time?: string} | null;
+  summary_kind: string;
+  groups: Record<'reported' | 'documents' | 'medications' | 'follow_up', Array<{
+    id: string; headline: string; summary: string; author: string; role: string;
+    date: string; source_url: string; status: string;
+  }>>;
+}

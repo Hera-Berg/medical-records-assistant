@@ -57,6 +57,9 @@ import { SummaryScreen } from "./components/Summary";
 import { DoctorNotes } from "./components/DoctorNotes";
 import { Timeline } from "./components/Timeline";
 import { Welcome } from "./components/Welcome";
+import { ClinicianLogin } from "./components/ClinicianLogin";
+import { useClinicianSession, authRequest, notifyAccountChange, clinicianPath } from "./clinicianAuth";
+import { CareTeam } from "./components/CareTeam";
 import { ClinicianHome } from "./components/ClinicianHome";
 import { useWorkspace } from "./workspace";
 
@@ -65,9 +68,6 @@ const HEALTH_INTERVAL_MS = 5000;
 
 /** Wide enough for the menu to sit beside the page rather than over it. */
 const WIDE = "(min-width: 1024px)";
-/** Whether the menu was left open on a wide screen. A convenience, per browser. */
-const MENU_KEY = "health-agent.menu-open";
-
 export interface PageHeader {
   title: string;
   subtitle: string;
@@ -77,14 +77,29 @@ export interface PageHeader {
 }
 
 export function App() {
-  const [route, navigate] = useRoute();
+  const [route, navigateBase] = useRoute();
   const workspace = useWorkspace(route.path);
+  const {session, checked, setSession} = useClinicianSession(route.path);
+  const navigate = useCallback((to: string) => navigateBase(workspace === "clinician" && session ? clinicianPath(to) : to), [navigateBase, workspace, session]);
+  const [signOutError, setSignOutError] = useState<string|null>(null);
+  const signingIn = route.path.replace(/\/$/, "") === "/clinician/sign-in";
+  const needsClinician = workspace === "clinician" || ["doctor-notes", "progress-notes"].includes(route.segments[0] ?? "");
+  useEffect(() => {
+    if (checked && needsClinician && !session && !signingIn) navigateBase("/clinician/sign-in");
+    if (checked && session && signingIn) navigateBase("/clinician");
+  }, [checked, needsClinician, session, signingIn, navigateBase]);
+  const signOut = async () => {
+    try {
+      await authRequest("logout", {}); setSession(null); notifyAccountChange(); setSignOutError(null);
+      navigateBase("/clinician/sign-in");
+    } catch (error) { setSignOutError((error as Error).message); }
+  };
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   // Bumped whenever the record changes, so every open screen re-reads. Cheaper
   // and more honest than each screen polling on its own.
   const [version, setVersion] = useState(0);
-  const [header, setHeader] = useState<PageHeader>(() => defaultHeader(route.segments));
+  const [header, setHeader] = useState<PageHeader>(() => defaultHeader(route.segments, workspace));
 
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
   const capture = useCapture(refresh);
@@ -104,8 +119,8 @@ export function App() {
   // better replaces it after its own fetch resolves — which is why this cannot
   // be derived during render: it would win the race back and flicker.
   useEffect(() => {
-    setHeader(defaultHeader(route.segments));
-  }, [route.path]);
+    setHeader(defaultHeader(route.segments, workspace));
+  }, [route.path, workspace]);
 
   useEffect(() => {
     let live = true;
@@ -127,14 +142,21 @@ export function App() {
     };
   }, [version]);
 
-  const [first, second, ...rest] = route.segments;
+  const segments = route.segments[0] === "clinician" && route.segments.length > 1 ? route.segments.slice(1) : route.segments;
+  const [first, second, ...rest] = segments;
   const tail = [second, ...rest].filter(Boolean).join("/");
 
   let screen: React.ReactNode;
-  if (!first || first === "overview") {
+  if (needsClinician && !checked) {
+    screen = <p role="status">Checking clinician session…</p>;
+  } else if (signingIn || (needsClinician && !session)) {
+    screen = <ClinicianLogin onSignedIn={result => { setSession(result); navigateBase("/clinician"); }} />;
+  } else if (!first || first === "overview") {
     screen = createElement("health-overview", { key: version });
   } else if (first === "clinician" && !tail) {
-    screen = <ClinicianHome />;
+    screen = <ClinicianHome key={session?.clinician.username} navigate={navigate} />;
+  } else if (first === "care-team") {
+    screen = <CareTeam version={version} />;
   } else if (first === "profile") {
     screen = createElement("patient-profile");
   } else if (first === "documents") {
@@ -189,13 +211,13 @@ export function App() {
       />
     );
   } else if ((first === "progress-notes" || first === "doctor-notes")) {
-    screen = <DoctorNotes version={version} />;
+    screen = <DoctorNotes key={session?.clinician.username} version={version} />;
   } else if (first === "review") {
     screen = <Review version={version} onChanged={refresh} navigate={navigate} />;
   } else if (first === "welcome") {
     screen = <Welcome navigate={navigate} onChanged={refresh} />;
   } else if (first === "settings") {
-    screen = <Settings version={version} onChanged={refresh} setHeader={setHeader} />;
+    screen = <Settings health={health} navigate={navigate} version={version} onChanged={refresh} setHeader={setHeader} />;
   } else {
     screen = (
       <p>
@@ -211,19 +233,28 @@ export function App() {
   const asking = first === "ask";
 
   return (
-    <div className="flex min-h-screen items-stretch">
+    <div className="app-shell" data-workspace={workspace} onClickCapture={event => {
+      if (workspace !== "clinician" || !session) return;
+      const anchor = (event.target as Element).closest("a");
+      const href = anchor?.getAttribute("href");
+      if (!anchor || !href || !href.startsWith("/")) return;
+      const next = clinicianPath(href);
+      if (next !== href) {
+        anchor.setAttribute("href", next);
+        if (!event.metaKey && !event.ctrlKey && !event.shiftKey && event.button === 0) { event.preventDefault(); navigate(next); }
+      }
+    }}>
       {dragging ? <DropOverlay /> : null}
 
-      {menuOpen ? (
+      {menuOpen && (!needsClinician || session) ? (
         wide ? (
           <div className="no-print sticky top-0 h-screen shrink-0 border-r border-[color:var(--color-rule)]">
             <Sidebar
               workspace={workspace}
               health={health}
-              path={route.path}
+              path={route.path.startsWith("/clinician/") ? route.path.slice(10) : route.path}
               navigate={go}
               uploading={capture.uploading}
-              onClose={() => setMenuOpen(false)}
             />
           </div>
         ) : (
@@ -232,7 +263,7 @@ export function App() {
               <Sidebar
                 workspace={workspace}
                 health={health}
-                path={route.path}
+                path={route.path.startsWith("/clinician/") ? route.path.slice(10) : route.path}
                 navigate={go}
                 uploading={capture.uploading}
                 onClose={() => setMenuOpen(false)}
@@ -250,8 +281,8 @@ export function App() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center gap-4 bg-[color:var(--color-paper)] px-2 py-2 sm:px-3">
-          {menuOpen && wide ? null : (
+        <header className="app-header no-print">
+          {(menuOpen && wide) || (needsClinician && !session) ? null : (
             <button
               type="button"
               className="icon-btn relative"
@@ -271,8 +302,8 @@ export function App() {
               ) : null}
             </button>
           )}
-          <span className="flex min-w-0 flex-1 items-center gap-3">
-            <h1 className="truncate font-semibold">
+          <div className="app-heading">
+            <h1 className="page-title">
               {asking ? "Your health record" : header.title}
             </h1>
             {asking ? null : header.badge}
@@ -280,15 +311,15 @@ export function App() {
                 is one, but a printed page or a screenshot must still say so. */}
             {health?.vault.demo ? (
               <span
-                className="chip border-[color:var(--color-warn)] text-[color:var(--color-warn)]"
+                className="badge demo-indicator"
                 title="Everything in this record was invented so the screens have something to show."
               >
-                Demo
+                Fictional demo
               </span>
             ) : null}
-          </span>
+          </div>
           <label className="demo-workspace-switch">
-            <span>Demo workspace switch</span>
+            <span className="switch-caption"><span>Demo workspace</span>{health?.vault.demo ? <span className="switch-demo-indicator">Fictional demo</span> : null}</span>
             <select
               value={workspace}
               title="Demonstration only. Does not sign you in or unlock clinical notes."
@@ -298,14 +329,19 @@ export function App() {
               <option value="clinician">Clinician workspace</option>
             </select>
           </label>
-          <Link
+          {workspace === "clinician" && session ? <div className="clinician-account">
+            <div><span>{session.clinician.name}</span><span className="metadata dashboard-line">{session.clinician.role}</span></div>
+            <button className="btn" onClick={signOut}>Sign out</button>
+          </div> : null}
+          {signOutError ? <p role="alert">{signOutError}</p> : null}
+          {(!needsClinician || session) ? <Link
             to="/add"
             navigate={go}
-            className="btn flex shrink-0 items-center gap-1.5 no-underline"
+            className="btn header-action"
           >
             <span aria-hidden="true">+</span>
             <span>
-              Add<span className="hidden sm:inline"> something</span>
+              {workspace === "clinician" ? "Upload information" : "Record an update"}
             </span>
             {capture.uploading > 0 ? (
               <span className="text-[color:var(--color-muted)]">
@@ -313,15 +349,11 @@ export function App() {
                 · {capture.uploading} sending
               </span>
             ) : null}
-          </Link>
+          </Link> : null}
         </header>
 
-        <div
-          className={`mx-auto flex w-full flex-1 flex-col px-4 pb-8 sm:px-6 ${
-            asking ? "max-w-3xl" : "max-w-[72rem]"
-          }`}
-        >
-          <Attention
+        <div className={`app-content ${asking ? "app-content-narrow" : ""}`}>
+          {(!needsClinician || session) ? <Attention
             health={health}
             error={healthError}
             navigate={go}
@@ -330,7 +362,7 @@ export function App() {
             quietEndpoint={first === "settings" || first === "welcome"}
             /* The waiting screen is the list those two notices point at. */
             quietReview={first === "review"}
-          />
+          /> : null}
 
           {asking || !header.subtitle ? null : (
             <p className="mt-2 mb-5 max-w-2xl text-[color:var(--color-muted)]">
@@ -346,16 +378,10 @@ export function App() {
             it" is an ordinary state here, not a rare one.
           */}
           <main className="flex flex-1 flex-col">
-            <Boundary resetKey={route.path}>{screen}</Boundary>
+            <Boundary key={session?.clinician.username ?? "signed-out"} resetKey={route.path}>{screen}</Boundary>
           </main>
 
-          {asking ? null : (
-            <footer className="mt-8 border-t border-[color:var(--color-rule)] pt-3 text-[color:var(--color-muted)] no-print">
-              Everything here is a file in{" "}
-              <code className="font-mono">{health?.vault.root ?? "your folder"}</code>. This
-              page reports and cites; it does not interpret.
-            </footer>
-          )}
+
         </div>
       </div>
     </div>
@@ -366,57 +392,33 @@ export function App() {
  * Whether the menu is open, and whether the screen is wide enough for it to sit
  * beside the page.
  *
- * Wide screens open with it showing, the way the assistants people know do, and
- * remember if it was folded away. Narrow screens always start with it closed,
- * because there it covers the page. The remembered choice is a convenience in
- * this browser only and the page works the same without it.
+ * The desktop sidebar is persistent. Narrow screens start with a collapsed
+ * menu and close it after navigation or Escape.
  */
 function useMenu(): [boolean, boolean, (open: boolean) => void] {
   const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
-  const [open, setOpenState] = useState(() => wide && readMenuPreference());
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const query = window.matchMedia(WIDE);
     const onChange = () => {
       setWide(query.matches);
-      setOpenState(query.matches && readMenuPreference());
+      setOpen(false);
     };
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
   }, []);
 
-  // Escape closes the menu when it is lying over the page.
   useEffect(() => {
     if (!open || wide) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenState(false);
+      if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, wide]);
 
-  const setOpen = useCallback(
-    (next: boolean) => {
-      setOpenState(next);
-      if (!wide) return;
-      try {
-        window.localStorage.setItem(MENU_KEY, next ? "open" : "closed");
-      } catch {
-        // Storage refused (a private window): the menu still works, unremembered.
-      }
-    },
-    [wide],
-  );
-
-  return [wide, open, setOpen];
-}
-
-function readMenuPreference(): boolean {
-  try {
-    return window.localStorage.getItem(MENU_KEY) !== "closed";
-  } catch {
-    return true;
-  }
+  return [wide, wide || open, setOpen];
 }
 
 /**
@@ -427,19 +429,22 @@ function readMenuPreference(): boolean {
  * page that briefly says "One entry in your record" and then says "Perindopril"
  * has never said anything untrue.
  */
-function defaultHeader(segments: string[]): PageHeader {
+function defaultHeader(segments: string[], workspace: "clinician" | "patient-carer"): PageHeader {
+  if (segments[0] === "clinician" && segments[1] === "sign-in") return { title: "Clinician sign-in", subtitle: "" };
+  if (segments[0] === "clinician" && segments.length > 1) segments = segments.slice(1);
   const [first, second] = segments;
   if (first === "clinician" && !second) {
-    return { title: "Clinician workspace", subtitle: "" };
+    return { title: "Review dashboard", subtitle: "" };
   }
   if (!first || first === "overview") {
-    return { title: "Overview", subtitle: "" };
+    return { title: "Home", subtitle: "" };
   }
+  if (first === "care-team") return { title: "My care team", subtitle: "" };
   if (first === "profile") {
-    return { title: "Patient profile", subtitle: "" };
+    return { title: workspace === "clinician" ? "Patient profile" : "My profile", subtitle: "" };
   }
   if (first === "documents") {
-    return { title: "Documents", subtitle: "" };
+    return { title: workspace === "clinician" ? "Documents" : "Shared documents", subtitle: "" };
   }
   if (first === "calendar") return { title: "Calendar", subtitle: "Appointments and important dates." };
   if (first === "timeline") {
@@ -455,7 +460,7 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "record") {
     return {
-      title: "Medications and more",
+      title: workspace === "clinician" ? "Clinical record" : "My health record",
       subtitle:
         "Your medications, allergies, health problems and the people who look after you — put together from your own documents, and only from what you have confirmed.",
     };
@@ -477,13 +482,13 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if ((first === "progress-notes" || first === "doctor-notes")) {
     return {
-      title: "Progress notes",
+      title: "Clinical notes",
       subtitle: "",
     };
   }
   if (first === "review") {
     return {
-      title: "Waiting for you",
+      title: "Confirm extracted information",
       subtitle:
         "Things read from your documents that need a quick yes or no from you. Nothing important joins your record until you say so.",
     };
@@ -492,7 +497,7 @@ function defaultHeader(segments: string[]): PageHeader {
     return second
       ? { title: "Your sheet for this appointment", subtitle: "Reading…" }
       : {
-          title: "For an appointment",
+          title: "Appointment summary",
           subtitle:
             "One page to take with you: what changed, what you take, what you are allergic to, and the question you came to ask. Every line says which of your documents it came from.",
         };
@@ -506,7 +511,7 @@ function defaultHeader(segments: string[]): PageHeader {
   }
   if (first === "add") {
     return {
-      title: "Add something",
+      title: workspace === "clinician" ? "Upload or record information" : "Record an update",
       subtitle:
         "A photo of a prescription, a letter, a test result, a note, or a voice recording. You don't need to say what it is — that is worked out afterwards.",
     };

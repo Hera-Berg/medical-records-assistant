@@ -1,9 +1,11 @@
+// Clinician views use session-protected aliases of the shared record APIs.
+const careNativedocumentsFetch = (input, init) => fetch((!init?.method || init.method === 'GET') && typeof input === 'string' && input.startsWith('/api/') && window.location.pathname.startsWith('/clinician/') ? input.replace('/api/', '/api/clinician/') : input, init);
 // Native text editions share the existing document typography. All stored text is escaped.
 (() => {
   const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const date = value => /^\d{4}-\d{2}-\d{2}$/.test(value||'') ? new Intl.DateTimeFormat('en-AU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T12:00:00Z')) : 'Not recorded';
   const known = value => value === null || value === undefined || value === '' ? 'Not recorded' : esc(value);
-  async function read(url, signal) {const r=await fetch(url,{signal,cache:'no-store'});if(!r.ok)throw Error('This record could not be opened. Please try again.');return r.json();}
+  async function read(url, signal) {const r=await careNativedocumentsFetch(url,{signal,cache:'no-store'});if(!r.ok)throw Error('This record could not be opened. Please try again.');return r.json();}
   function release(doc) {
     if(doc.contribution) return `Added by ${esc(doc.contribution.name)} · ${esc(doc.contribution.role)} · ${date(doc.contribution.date)}`;
     const r=doc.release;

@@ -1,36 +1,7 @@
 @import "tailwindcss";
 
-/*
- * A medical record, not a dashboard — read by someone who is not technical.
- *
- * The look is calm and roomy, laid out like the assistants people already know:
- * a white page with one readable column down the middle, and a quiet grey menu
- * down the left that folds away behind a button. One deep green accent, plain
- * English on every label. What it is not is decorated. The constraints below
- * all have a reason and none of them is taste.
- *
- * TWO WEIGHTS, THREE SIZES. Regular and semibold; body, section heading, page
- * title. Density comes from tight leading and small margins, never from small
- * text — this is read at arm's length in bad clinic lighting, and hierarchy
- * bought by shrinking things is hierarchy that disappears first. The page title
- * is the only size added for the redesign, and it is a size *up*: nothing on
- * this page is smaller than it was.
- *
- * COLOUR CARRIES NO MEANING ALONE. Every evidence tier, conflict and staleness
- * state has a word as well as a hue, and the words are the ones a patient would
- * use — "Prescription", not "RX". The two readers who must both succeed are a
- * colour-blind user and a sheet of paper: the consultation summary is designed
- * to be printed and handed to a clinician, so anything encoded only in hue is
- * gone exactly when it matters most.
- *
- * NO ANIMATION. Nothing may delay reading.
- *
- * NO SHADOWS, NO GRADIENTS. Panels are separated by a rule and a change of
- * ground, which is what a printer can reproduce. Softness comes from space and
- * corner radius, both of which survive being printed in black and white.
- *
- * SYSTEM FONTS ONLY. A webfont is a network call, and this record makes none.
- */
+/* Shared clinical design foundation. System fonts only; status always has a label.
+ * Use these tokens and components for new screens rather than page-level palettes. */
 
 @theme {
   --font-sans:
@@ -42,28 +13,28 @@
 
   --text-base: 0.9375rem; /* 15px */
   --text-base--line-height: 1.45;
-  --text-lg: 1.1875rem; /* 19px — section headings */
+  --text-lg: 1.0625rem; /* 17px — section headings */
   --text-lg--line-height: 1.25;
-  --text-xl: 1.5rem; /* 24px — the page title, and nothing else */
+  --text-xl: 1.625rem; /* 26px — page titles */
   --text-xl--line-height: 1.2;
 
-  --color-ink: #14181a;
-  --color-muted: #5c6360;
+  --color-ink: #202c33;
+  --color-muted: #56636b;
   --color-paper: #ffffff;
-  --color-ground: #ffffff;
-  --color-shade: #f0f1ed;
-  --color-rule: #e0e2dc;
-  --color-rule-strong: #b6bab2;
-  --color-link: #14458c;
+  --color-ground: #f3eff9; /* soft lavender application background */
+  --color-shade: #eef1f3;
+  --color-rule: #dde3e7;
+  --color-rule-strong: #a7b2ba;
+  --color-link: #63439b;
 
   /* One accent, used for the app's own furniture — never to mark a fact. */
-  --color-accent: #14523c;
-  --color-accent-soft: #e7efea;
+  --color-accent: #63439b;
+  --color-accent-soft: #f0ebf7;
   /* The menu down the left: a pale ground and the page's own ink, so opening
      it adds a place to go rather than a second, darker application. */
-  --color-nav: #f4f5f2;
-  --color-nav-hover: #e9ebe6;
-  --color-nav-active: #dfe4dd;
+  --color-nav: #ffffff;
+  --color-nav-hover: #f0f4f5;
+  --color-nav-active: #f0ebf7;
 
   /* Still used by the document viewer, which sits on a dark ground. */
   --color-sidebar: #0f231b;
@@ -122,6 +93,7 @@ a:focus-visible,
 button:focus-visible,
 summary:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--color-accent);
@@ -139,7 +111,7 @@ textarea:focus-visible,
 .panel {
   background: var(--color-paper);
   border: 1px solid var(--color-rule);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-panel);
   padding: 1rem 1.25rem 1.25rem;
 }
 
@@ -153,14 +125,14 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   border: 1px solid;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 0.05rem 0.55rem;
   white-space: nowrap;
 }
 
 .btn {
   border: 1px solid var(--color-rule-strong);
-  border-radius: 0.625rem;
+  border-radius: var(--radius-control);
   background: var(--color-paper);
   color: var(--color-ink);
   padding: 0.35rem 0.85rem;
@@ -223,7 +195,7 @@ textarea:focus-visible,
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: 0;
   background: transparent;
   color: var(--color-ink);
@@ -388,22 +360,135 @@ tbody tr:last-child td {
   }
 }
 
-/* The demo switch is presentation only, with the same paper and rule as the overview. */
-.demo-workspace-switch {
-  display: flex;
-  flex-direction: column;
-  gap: .2rem;
-  color: var(--color-muted);
+
+/* Shared tokens and shell geometry; never conditional on the page element. */
+:root {
+  --sidebar-width: 232px;
+  --header-height: 64px;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --page-title-size: 1.625rem;
+  --section-title-size: 1.0625rem;
+  --metadata-size: .8125rem;
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
 }
-.demo-workspace-switch select {
-  max-width: 100%;
-  padding: .35rem .5rem;
-  border: 1px solid var(--color-rule);
-  border-radius: .65rem;
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font: inherit;
+.app-shell { display: flex; align-items: stretch; min-height: 100vh; }
+.app-shell[data-workspace="patient-carer"] { font-size: 1rem; }
+.app-sidebar { display: flex; flex-direction: column; height: 100%; width: var(--sidebar-width); background: var(--color-nav); color: var(--color-ink); font-size: .875rem; }
+.app-brand { display: flex; align-items: center; gap: var(--space-2); min-height: var(--header-height); padding: 0 var(--space-4); border-bottom: 1px solid var(--color-rule); }
+.app-brand-name { flex: 1; min-width: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -.015em; }
+.app-brand-mark { display: inline-flex; color: var(--color-accent); }
+.app-navigation { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-2); }
+.nav-group-label { color: var(--color-muted); font-size: .75rem; font-weight: 600; padding: var(--space-2); }
+.nav-group-divider { margin-top: var(--space-4); }
+.nav-link { border-left: 2px solid transparent; display: flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: .5rem .625rem; border-radius: var(--radius-control); color: var(--color-ink); text-decoration: none; line-height: 1.35; }
+.nav-link:hover { background: var(--color-nav-hover); }
+.nav-link.is-active { border-left-color: var(--color-accent); background: var(--color-nav-active); color: var(--color-accent); font-weight: 600; }
+.nav-label { min-width: 0; overflow-wrap: anywhere; }
+.nav-count { margin-left: auto; }
+.sidebar-caption { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-rule); }
+.app-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: var(--space-4); min-height: var(--header-height); padding: .5rem var(--space-6); background: var(--color-paper); border-bottom: 1px solid var(--color-rule); }
+.app-heading { display: flex; align-items: center; flex: 1; gap: var(--space-3); min-width: 0; }
+.page-title { font-size: var(--page-title-size); font-weight: 600; line-height: 1.2; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.app-header .page-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.demo-workspace-switch { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; color: var(--color-muted); font-size: .75rem; line-height: 1.2; }
+.demo-workspace-switch select { max-width: 100%; height: 30px; border: 1px solid var(--color-rule-strong); border-radius: var(--radius-control); background: var(--color-paper); color: var(--color-ink); padding: .25rem .5rem; font-family: inherit; font-size: .8125rem; }
+.switch-caption { display: flex; flex-wrap: wrap; align-items: center; gap: 2px .5rem; }
+.switch-caption > span { white-space: nowrap; }
+.switch-demo-indicator { display: none; color: var(--color-muted); }
+.header-action { display: inline-flex; align-items: center; justify-content: center; gap: .375rem; flex-shrink: 0; font-size: .875rem; text-decoration: none; min-height: 36px; }
+.app-content { display: flex; flex: 1; flex-direction: column; width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--space-6); }
+.app-content-narrow { max-width: 48rem; }
+
+/* Reusable content primitives. Status variants require an accompanying text label. */
+.surface { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); padding: var(--space-4); }
+.section-heading { font-size: var(--section-title-size); font-weight: 600; line-height: 1.35; }
+.supporting-text { color: var(--color-muted); }
+.metadata { font-size: var(--metadata-size); line-height: 1.5; color: var(--color-muted); }
+.badge { display: inline-flex; align-items: center; gap: .25rem; white-space: nowrap; padding: .125rem .4375rem; border: 1px solid var(--color-rule); border-radius: 4px; background: var(--color-shade); color: var(--color-muted); font-size: .75rem; font-weight: 500; line-height: 1.4; }
+.badge-warning { color: var(--color-warn); background: var(--color-warn-soft); border-color: currentColor; }
+.badge-error { color: var(--color-alarm); background: var(--color-alarm-soft); border-color: currentColor; }
+.data-list { margin: 0; }
+.data-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr); align-items: baseline; gap: var(--space-3); padding: .625rem 0; border-bottom: 1px solid var(--color-rule); }
+.data-row:last-child { border-bottom: 0; }
+.data-row dt { color: var(--color-muted); }
+.data-row dd { min-width: 0; margin: 0; }
+.source-link { color: var(--color-link); text-decoration: underline; text-underline-offset: 3px; font-size: .875rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); border-bottom: 1px solid var(--color-rule); }
+.tab { padding: .625rem .875rem; border-bottom: 2px solid transparent; color: var(--color-muted); background: transparent; text-decoration: none; font: inherit; }
+.tab[aria-selected="true"], .tab[aria-current="page"] { color: var(--color-accent); border-bottom-color: var(--color-accent); font-weight: 600; }
+.advanced-settings { margin-top: var(--space-6); }
+.advanced-settings > summary { cursor: pointer; }
+.advanced-settings[open] > summary { margin-bottom: var(--space-4); }
+.storage-path { display: block; overflow-wrap: anywhere; font-size: .8125rem; }
+.placeholder { min-height: 96px; }
+@media (max-width: 1100px) {
+  .app-header .demo-indicator { display: none; }
+  .switch-demo-indicator { display: inline; }
 }
-@media (max-width: 640px) {
-  .demo-workspace-switch { order: 1; width: 100%; }
+@media (max-width: 760px) {
+  .app-header { flex-wrap: wrap; gap: var(--space-2); padding: .625rem var(--space-4); }
+  .app-heading { flex-basis: calc(100% - 48px); }
+  .app-header .page-title { font-size: 1.5rem; }
+  .demo-workspace-switch { flex: 1; min-width: 0; }
+  .demo-workspace-switch select { width: 100%; height: 36px; }
+  .header-action { min-height: 40px; align-self: end; }
+  .app-content { padding: var(--space-4); }
+  .data-row { grid-template-columns: 1fr; gap: var(--space-1); }
+  .nav-link { min-height: 44px; }
+}
+
+/* Care-team cards share the application surfaces, type scale and neutral metadata. */
+.care-team-page > section + section { margin-top: var(--space-6); }
+.care-team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--space-3); list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.care-team-card { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; padding: var(--space-4); }
+.care-team-portrait { flex: 0 0 88px; margin: 0; }
+.care-team-frame { width: 88px; height: 104px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-shade); color: var(--color-muted); font-size: 1.125rem; font-weight: 600; }
+.care-team-frame img { width: 100%; height: 100%; object-fit: cover; }
+.care-team-portrait figcaption { font-size: .6875rem; color: var(--color-muted); text-align: center; margin-top: var(--space-1); }
+.care-team-details { min-width: 0; overflow-wrap: anywhere; }
+.care-team-details h3 { font-size: 1rem; line-height: 1.35; font-weight: 600; }
+.care-team-role { margin-top: var(--space-1); font-size: .9375rem; }
+.care-team-practice, .care-team-location { margin-top: var(--space-2); font-size: .875rem; line-height: 1.4; color: var(--color-muted); }
+.care-team-location { margin-top: var(--space-1); }
+.care-team-disclosure { margin-top: var(--space-6); }
+
+/* Authenticated clinician shell and compact source-led review. */
+.clinician-login { width: 100%; max-width: 420px; margin: var(--space-6) auto; }
+.clinician-login form { display: grid; gap: var(--space-4); margin: var(--space-4) 0; }
+.clinician-login label { display: grid; gap: var(--space-2); }
+.clinician-login .btn { justify-self: start; }
+.login-error { color: var(--color-alarm); }
+.clinician-account { display: flex; align-items: center; gap: var(--space-3); font-size: .8125rem; }
+.clinician-account > div > span:first-child { font-weight: 600; }
+.clinician-account .metadata { font-size: .75rem; }
+.dashboard-line { display: block; }
+.clinician-greeting { font-size: 1.0625rem; font-weight: 600; margin-bottom: var(--space-4); }
+.review-dashboard .data-row { grid-template-columns: minmax(180px,1fr) minmax(0,3fr); }
+.review-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); margin-top: var(--space-6); }
+.comparison-form { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-2); }
+.comparison-form label { display: grid; gap: var(--space-1); font-size: .8125rem; color: var(--color-muted); }
+.summary-provenance { margin-top: var(--space-2); }
+.dashboard-section { margin-top: var(--space-4); }
+.dashboard-section > .metadata { margin-top: var(--space-3); }
+.dashboard-rows { list-style: none; padding: 0; margin: var(--space-3) 0 0; }
+.dashboard-rows > li { border-top: 1px solid var(--color-rule); padding: var(--space-3) 0; }
+.dashboard-rows h4 { font-weight: 600; }
+.dashboard-rows p { margin-top: var(--space-1); }
+.source-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); margin-top: var(--space-2); }
+.dashboard-secondary { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-6); font-size: .875rem; }
+@media (min-width: 761px) and (max-width: 1250px) {
+  .app-header:has(.clinician-account) { flex-wrap: wrap; }
+  .app-header:has(.clinician-account) .app-heading { flex-basis: 45%; }
+}
+@media (max-width: 760px) {
+  .clinician-account { flex: 1 1 100%; justify-content: space-between; }
+  .app-header:has(.clinician-account) .header-action { display: none; }
+  .review-heading { align-items: start; flex-direction: column; }
+  .review-dashboard .data-row { grid-template-columns: 1fr; }
+  .source-row { flex-direction: column; gap: var(--space-1); }
 }

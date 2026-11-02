@@ -12,7 +12,7 @@ export function useWorkspace(path: string): Workspace {
       return "patient-carer";
     }
   });
-  const workspace = path === "/clinician" || path === "/clinician/"
+  const workspace = path === "/clinician" || path.startsWith("/clinician/")
     ? "clinician"
     : path === "/" || path === "/overview" || path === "/overview/"
       ? "patient-carer"

@@ -49,15 +49,18 @@ export function Link({
   navigate,
   children,
   className,
+  ariaCurrent,
 }: {
   to: string;
   navigate: (to: string) => void;
   children: React.ReactNode;
   className?: string;
+  ariaCurrent?: "page";
 }) {
   return (
     <a
       href={to}
+      aria-current={ariaCurrent}
       className={className}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;

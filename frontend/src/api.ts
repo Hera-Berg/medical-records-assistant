@@ -13,6 +13,8 @@
 
 import type {
   DoctorNotes,
+  CareTeamProfile,
+  ClinicianDashboardData,
   ArtifactMeta,
   AskResponse,
   CaptureResponse,
@@ -34,6 +36,8 @@ import type {
   WikiIndex,
 } from "./types";
 
+import { clinicianCsrf } from "./clinicianAuth";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -45,6 +49,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if ((!init?.method || init.method === "GET") && window.location.pathname.startsWith("/clinician") && /^\/api\/(wiki|timeline|profile|documents|artifact|artifacts|medications|prescriptions|calendar)(\/|$|\?)/.test(path)) {
+    path = path.replace("/api/", "/api/clinician/");
+  }
+  if (path.startsWith("/api/doctor-notes") && init?.method && clinicianCsrf()) {
+    init = { ...init, headers: {...init.headers, "X-Clinician-CSRF": clinicianCsrf()!} };
+  }
   let response: Response;
   try {
     response = await fetch(path, {
@@ -55,6 +65,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // The server is not answering at all. Distinct from a server that answered
     // with a problem, and the interface says so differently.
     throw new ApiError("the local server is not responding", 0);
+  }
+  if (response.status === 401 && (path.startsWith("/api/clinician/") || path.startsWith("/api/doctor-notes"))) {
+    window.dispatchEvent(new Event("clinician-session-expired"));
   }
   if (!response.ok) {
     throw new ApiError(await detailOf(response), response.status);
@@ -95,6 +108,8 @@ export const setupApi = {
 };
 
 export const api = {
+  clinicianDashboard: (comparison: string) => request<ClinicianDashboardData>(`/api/clinician/dashboard${comparison ? `?comparison_date=${encodeURIComponent(comparison)}` : ""}`),
+  profile: () => request<CareTeamProfile>("/api/profile"),
   welcomeDone: () => post<{ welcome: boolean }>("/api/welcome/done", {}),
   health: () => request<Health>("/api/health"),
   wiki: () => request<WikiIndex>("/api/wiki"),

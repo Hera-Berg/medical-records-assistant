@@ -1,3 +1,5 @@
+// Clinician views use session-protected aliases of the shared record APIs.
+const carePatientprofileFetch = (input, init) => fetch((!init?.method || init.method === 'GET') && typeof input === 'string' && input.startsWith('/api/') && window.location.pathname.startsWith('/clinician/') ? input.replace('/api/', '/api/clinician/') : input, init);
 // Patient details are fetched from the vault; no patient data is stored in the browser.
 const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -12,7 +14,7 @@ function initials(name) {
   return name.trim().split(/\s+/).filter(Boolean).slice(0,2).map(word => Array.from(word)[0]).join('').toUpperCase() || 'P';
 }
 async function requestProfile(init) {
-  const response = await fetch('/api/profile', {cache:'no-store', ...init, headers:{accept:'application/json', ...init?.headers}});
+  const response = await carePatientprofileFetch('/api/profile', {cache:'no-store', ...init, headers:{accept:'application/json', ...init?.headers}});
   if (!response.ok) {
     let message = 'Could not load the patient profile. Please try again.';
     try { const body = await response.json(); if (typeof body.detail === 'string') message = body.detail; } catch {}
@@ -80,13 +82,15 @@ class PatientProfile extends HTMLElement {
   };
   fieldRows(section) {
     const values = this.data.values;
-    const entries = section.fields.filter(field => values[field.key]);
-    if (!entries.length) return '<p class="profile-empty">No details added yet.</p>';
+    const team = section.id === 'care' && this.data.care_team?.length;
+    const entries = section.fields.filter(field => values[field.key] && !(team && /^(gp_|pharmacy)/.test(field.key)));
+    if (!entries.length) return team ? '' : '<p class="profile-empty">No details added yet.</p>';
     return `<dl class="profile-details">${entries.map(field => `<div><dt>${escapeText(field.label)}</dt><dd>${escapeText(['date','month'].includes(field.type) ? dateLabel(values[field.key]) : values[field.key])}</dd></div>`).join('')}</dl>`;
   }
   section(section) {
     return `<section class="profile-section" aria-labelledby="profile-${section.id}">
       <div class="profile-section-heading"><h2 id="profile-${section.id}">${escapeText(section.title)}</h2><button class="profile-text-button" data-action="edit" data-section="${section.id}" aria-label="Edit ${escapeText(section.title)}">Edit</button></div>
+      ${section.id === 'care' ? `<dl class="data-list">${(this.data.care_team || []).map(member => `<div class="data-row" data-team-member="${escapeText(member.id)}"><dt>${escapeText(member.role)}</dt><dd><strong>${escapeText(member.name)}</strong>${member.organisation ? `<div>${escapeText(member.organisation)}</div>` : ''}${member.location ? `<div class="metadata">${escapeText(member.location)}</div>` : ''}</dd></div>`).join('')}</dl>` : ''}
       ${this.fieldRows(section)}
     </section>`;
   }
@@ -120,6 +124,13 @@ class PatientProfile extends HTMLElement {
       <p class="profile-footer">${updated_at ? 'Profile updated ' + escapeText(dateLabel(updated_at.slice(0,10))) + '. ' : 'Start with Edit profile to add your details. '}Clinical entries link to their sources.</p>
       <dialog class="profile-dialog" aria-labelledby="profile-editor-heading"></dialog>`;
     this.dialog = this.querySelector('dialog');
+    // The care-team navigation reuses this profile and its existing editor.
+    if (this.dataset.focusSection === 'care') {
+      const target = this.querySelector('#profile-care');
+      target?.setAttribute('tabindex', '-1');
+      target?.focus({preventScroll:true});
+      target?.scrollIntoView({block:'center'});
+    }
   }
   edit(sectionId) {
     this.editRevision = this.data.revision;

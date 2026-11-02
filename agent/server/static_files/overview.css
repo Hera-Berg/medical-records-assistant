@@ -1,37 +1,7 @@
-/* System fonts and local SVGs only. The reference's palette follows both themes. */
-@media screen {
-  :root:has(health-overview, .clinician-home):not([data-theme="dark"]) {
-    --color-ink: #142735;
-    --color-muted: #536471;
-    --color-ground: #fdfefd;
-    --color-paper: #ffffff;
-    --color-rule: #dfe7e8;
-    --color-rule-strong: #adbfc1;
-    --color-accent: #006674;
-    --color-accent-soft: #e6efeb;
-    --color-link: #006674;
-    --color-nav: #f5f8f6;
-    --color-nav-hover: #eaf0ec;
-    --color-nav-active: #e5eeea;
-  }
-  :root:has(health-overview, .clinician-home)[data-theme="dark"] {
-    --color-accent: #91dad7;
-    --color-accent-soft: #203d3b;
-    --color-link: #91dad7;
-    --color-nav: #121b1c;
-    --color-nav-hover: #233234;
-    --color-nav-active: #28403f;
-  }
-}
-.health-brand { padding-top: 1.6rem; padding-bottom: 1.5rem; }
-.health-brand-name { font-family: Georgia, "Times New Roman", serif; font-size: 1.7rem; letter-spacing: -.04em; }
-.health-brand-mark { background: #006674; border-radius: .65rem .2rem .65rem .65rem; }
-#menu nav > div > a { padding-top: .7rem; padding-bottom: .7rem; }
-#menu nav a > span:first-child svg { width: 21px; height: 21px; }
-body:has(health-overview) #menu nav a[href="/"], body:has(.clinician-home) #menu nav a[href="/clinician"] { color: var(--color-accent); }
-:is(health-overview, .clinician-home) { display: block; padding: .5rem 0 0; --ov-serif: Georgia, "Times New Roman", serif; }
+/* Patient overview content only. The shell and palette live in shared styles. */
+health-overview { display: block; padding: .5rem 0 0; --ov-serif: var(--font-sans); }
 .ov-topline { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.ov-eyebrow { font-weight: 600; letter-spacing: .13em; color: var(--color-muted); margin: 0; }
+.ov-eyebrow { font-weight: 600; letter-spacing: .06em; color: var(--color-muted); margin: 0; }
 .ov-profile-switch { display: inline-flex; align-items: center; gap: .9rem; color: var(--color-ink); text-decoration: none; border: 1px solid var(--color-rule); border-radius: .65rem; padding: .4rem .65rem .4rem .8rem; flex-shrink: 0; }
 .ov-profile-switch:hover { background: var(--color-shade); }
 .ov-profile-switch > span:first-child { color: var(--color-muted); }
@@ -39,29 +9,22 @@ body:has(health-overview) #menu nav a[href="/"], body:has(.clinician-home) #menu
 .ov-avatar { display: grid; place-items: center; height: 2.1rem; width: 2.1rem; background: var(--color-accent-soft); color: var(--color-accent); border-radius: 50%; font-weight: 600; }
 .ov-avatar svg { width: 20px; height: 20px; }
 .ov-welcome { margin: .1rem 0 1.6rem; }
-.ov-welcome h2 { font-family: var(--ov-serif); font-size: clamp(2rem, 3.8vw, 3.6rem); line-height: 1.15; letter-spacing: -.045em; font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.ov-welcome h2 { font-family: var(--ov-serif); font-size: var(--page-title-size); line-height: 1.15; letter-spacing: -.02em; font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
 .ov-welcome > p { margin-top: .55rem; font-size: 1.35rem; color: var(--color-muted); }
-.ov-appointment { display: flex; align-items: center; gap: 1.25rem; padding: 1.4rem 1.5rem; background: var(--color-accent-soft); border: 1px solid var(--color-rule); border-radius: .8rem; margin-bottom: 1.25rem; }
+.ov-appointment { display: flex; align-items: center; gap: 1.25rem; padding: 1rem 1.25rem; background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); margin-bottom: 1.25rem; }
 .ov-appointment > div { flex: 1; }
-.ov-appointment h3, .ov-panel h3 { font-family: var(--ov-serif); font-size: 1.4rem; line-height: 1.25; letter-spacing: -.025em; font-weight: 600; }
+.ov-appointment h3, .ov-panel h3 { font-family: var(--ov-serif); font-size: var(--section-title-size); line-height: 1.25; letter-spacing: -.025em; font-weight: 600; }
 .ov-appointment p { margin-top: .4rem; }
-.ov-icon-circle { display: grid; place-items: center; width: 3.6rem; height: 3.6rem; border-radius: 50%; flex-shrink: 0; color: var(--color-accent); }
-.ov-icon-circle svg { width: 29px; height: 29px; }
-.ov-mint { background: #dcecdf; color: #145955; }
-.ov-blue { background: #e0f3fa; color: #006674; }
-.ov-sand { background: #faedd7; color: #655532; }
-:root[data-theme="dark"] .ov-mint { background: #2b4438; color: #ace1c0; }
-:root[data-theme="dark"] .ov-blue { background: #223e48; color: #a3dce9; }
-:root[data-theme="dark"] .ov-sand { background: #423b2a; color: #ebd5a5; }
-.ov-primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 1.2rem; padding: .9rem 1.2rem; background: #006674; border: 1px solid #006674; border-radius: .65rem; color: #fff; text-decoration: none; font-weight: 600; white-space: nowrap; }
-.ov-primary-link:hover { background: #00525d; }
-:root[data-theme="dark"] .ov-primary-link { background: #91dad7; border-color: #91dad7; color: #123131; }
-:root[data-theme="dark"] .ov-primary-link:hover { background: #b2e6e3; }
+.ov-icon-circle { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: var(--radius-control); flex-shrink: 0; color: var(--color-accent); }
+.ov-icon-circle svg { width: 21px; height: 21px; }
+.ov-mint, .ov-blue, .ov-sand { background: transparent; color: var(--color-muted); }
+.ov-primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 1.2rem; padding: .65rem .9rem; background: var(--color-accent); border: 1px solid var(--color-accent); border-radius: var(--radius-control); color: var(--color-paper); text-decoration: none; font-weight: 600; white-space: nowrap; }
+.ov-primary-link:hover { background: color-mix(in srgb, var(--color-accent) 90%, black); }
 .ov-link { display: inline-flex; gap: .8rem; align-items: baseline; color: var(--color-accent); text-decoration: none; font-weight: 600; }
 .ov-link:hover, .ov-event h4 a:hover { text-decoration: underline; text-underline-offset: .2em; }
 .ov-link > span, .ov-primary-link > span { font-family: system-ui,sans-serif; font-size: 1.5rem; line-height: 1; }
 .ov-main-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
-.ov-panel { min-width: 0; padding: 1.25rem 1.4rem; background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: .8rem; }
+.ov-panel { min-width: 0; padding: 1.25rem 1.4rem; background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); }
 .ov-panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; }
 .ov-panel-heading > .ov-link { flex-shrink: 0; }
 .ov-timeline-panel > .ov-panel-heading { border-bottom: 1px solid var(--color-rule); }
@@ -133,7 +96,7 @@ body:has(health-overview) #menu nav a[href="/"], body:has(.clinician-home) #menu
   health-overview { padding-top: .75rem; }
   .ov-topline { align-items: flex-start; flex-wrap: wrap; gap: .6rem; margin-bottom: .75rem; }
   .ov-profile-switch { padding: .25rem .5rem; }
-  .ov-welcome h2 { font-size: 2.2rem; }
+  .ov-welcome h2 { font-size: var(--page-title-size); }
   .ov-welcome > p { font-size: 1.15rem; }
   .ov-appointment { padding: 1rem; gap: .85rem; }
   .ov-appointment > .ov-icon-circle { width: 2.8rem; height: 2.8rem; }

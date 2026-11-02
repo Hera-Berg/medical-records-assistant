@@ -27,15 +27,20 @@
 import { createElement, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { PageHeader } from "../App";
-import type { ReadsOn, Settings as SettingsData, SyncOption } from "../types";
+import type { ReadsOn, Settings as SettingsData, SyncOption, Health } from "../types";
 import { EndpointSettings } from "./EndpointSettings";
+import { AdvancedRecordDetails } from "./AdvancedRecordDetails";
 import { ReaderSettings } from "./ReaderSettings";
 
 export function Settings({
+  health,
+  navigate,
   version,
   onChanged,
   setHeader,
 }: {
+  health: Health | null;
+  navigate: (to: string) => void;
   version: number;
   onChanged: () => void;
   setHeader: (header: PageHeader) => void;
@@ -265,6 +270,9 @@ export function Settings({
         </div>
       ) : null}
 
+      <details className="advanced-settings surface">
+        <summary className="section-heading">Advanced settings</summary>
+        <AdvancedRecordDetails health={health} root={settings.vault.root} navigate={navigate} />
       <h2 className="mt-8 border-t border-[color:var(--color-rule)] pt-6 text-lg font-semibold">
         Your settings file
       </h2>
@@ -303,6 +311,7 @@ export function Settings({
           <span className="text-[color:var(--color-alarm)]">{rebuilding}</span>
         ) : null}
       </p>
+      </details>
     </section>
   );
 }

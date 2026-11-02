@@ -1,3 +1,5 @@
+// Clinician views use session-protected aliases of the shared record APIs.
+const careDocumentsFetch = (input, init) => fetch((!init?.method || init.method === 'GET') && typeof input === 'string' && input.startsWith('/api/') && window.location.pathname.startsWith('/clinician/') ? input.replace('/api/', '/api/clinician/') : input, init);
 // Illustrative correspondence is a bundled example library, never vault data.
 (() => {
   const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -9,7 +11,7 @@
   };
   const documentIcon = '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v5h5M9 12h6M9 16h6"/></svg>';
   async function read(url,signal) {
-    const response=await fetch(url,{signal,cache:'no-store',headers:{accept:'application/json'}});
+    const response=await careDocumentsFetch(url,{signal,cache:'no-store',headers:{accept:'application/json'}});
     if(!response.ok) throw Error('Documents could not be loaded. Restart the app if you have just updated it, then try again.');
     return response.json();
   }
