@@ -12,6 +12,7 @@
  */
 
 import type {
+  CalendarEvent, Prescription,
   SharedCare, AppointmentSlot, PatientBooking, PortalDocument, SubmittedNote,
   DoctorNotes, ProgressNotes,
   CareTeamProfile,
@@ -124,6 +125,10 @@ export const api = {
   profile: () => request<CareTeamProfile>("/api/profile"),
   welcomeDone: () => post<{ welcome: boolean }>("/api/welcome/done", {}),
   health: () => request<Health>("/api/health"),
+  /** Appointments and dates, as the calendar shows them. Read-only here. */
+  calendar: () => request<{ today: string; timezone: string; events: CalendarEvent[] }>("/api/calendar"),
+  /** Prescription records with their expiry worked out on the server. */
+  prescriptions: () => request<{ prescriptions: Prescription[] }>("/api/prescriptions"),
   wiki: () => request<WikiIndex>("/api/wiki"),
   entity: (id: string) => request<EntityDetail>(`/api/wiki/${encodeURIComponent(id)}`),
   artifactMeta: (short: string) =>
@@ -179,7 +184,7 @@ export const api = {
    */
   capture: (
     files: File[],
-    source: "upload" | "paste" | "drop" | "recorder",
+    source: "upload" | "paste" | "drop" | "recorder" | "chat",
     capturedTs?: string | null,
     note?: string,
     metadata?: Record<string,string>,

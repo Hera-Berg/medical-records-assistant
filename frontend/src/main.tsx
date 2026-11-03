@@ -5,6 +5,7 @@ import { setupApi } from "./api";
 import { Setup } from "./components/Setup";
 import { rememberInstallation } from "./installation";
 import "./styles.css";
+import "./patient.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("no #root element in the page");

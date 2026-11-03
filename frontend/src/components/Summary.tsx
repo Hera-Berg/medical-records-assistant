@@ -293,7 +293,7 @@ function OneSheet({
 
 /* --------------------------------------------------------------- the sheet */
 
-function SheetView({
+export function SheetView({
   sheet,
   tappable,
   navigate,

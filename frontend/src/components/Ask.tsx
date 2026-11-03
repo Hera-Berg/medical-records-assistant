@@ -1,92 +1,114 @@
 /**
- * Ask your record: questions about what is in the folder, answered from it.
+ * Ask: a conversation about the record, answered only from the record — and a
+ * place to hand it new documents.
  *
- * **Not a chat.** The label on the rail says "Ask your record" and not "Chat",
- * and that is load-bearing rather than cosmetic: "chat" promises advice, so the
- * first thing anyone types into it is "should I be worried about this" — which
- * this app refuses, correctly, producing a bad first experience created
- * entirely by the word above the box. "Ask your record" sets the frame, and the
- * refusal becomes the rare case instead of the opening one.
+ * **Still not advice.** The label says "Ask", the opening line says what it
+ * will not do, and interpretation is refused at the question by the server's
+ * classifier, before anything is retrieved. A label that promises advice
+ * manufactures its own refusals.
  *
- * So there is no assistant here, no typing indicator, no avatar and no "how can
- * I help". There is a question, an answer, and under every sentence of that
- * answer the document it came from.
+ * **Every sentence carries its source, visibly**, under the sentence, opening
+ * the document itself. A sentence the server could not attribute never arrives.
  *
- * **But it is laid out like the assistants people already know**, because that
- * shape is the least daunting thing a first screen can be: a greeting and a box
- * in the middle of an empty page, a few example questions under it, your own
- * question in a bubble on the right and the answer beneath it, and the box
- * staying at the bottom of the window. The shape is borrowed; the promise is
- * not — the words around it still say what it will not do.
+ * **No limit on the conversation.** It runs until the person starts again. The
+ * server keeps the prompt within budget by dropping the oldest turns first; the
+ * browser sends the words of every answered turn and nothing else.
  *
- * **Every sentence carries its source, visibly.** Not a footnote marker to
- * chase — the source sits under the sentence, named by what it is
- * ("Photograph", "Lab result"), and opens the document itself. A sentence the
- * server could not attribute never arrives here at all; it is dropped before
- * the answer is sent.
+ * **Files go into the record the ordinary way.** Dropping, pasting or attaching
+ * a photo or PDF here captures it exactly as Add does — stored first, then read
+ * — and the conversation follows it: "saved", "being read", then whatever is
+ * waiting for a yes or no, as the same review items the Check screen shows, with
+ * the same actions and the same server checks. The model writes nothing.
  *
- * **What was found is shown even when nothing was written.** The box being
- * asleep, or an answer that could not be traced, both leave the deterministic
- * half of the work intact — which is most of the value and all of the
- * citations. The screen shows those entries rather than an error.
+ * **A typed message is kept only if the person says so.** Questions are never
+ * stored. Each message offers "Add to my record", which saves the words as a
+ * plain-text note in the folder; the note is then read like a voice note, as
+ * the person's own report.
  *
- * **The conversation remembers three questions, then starts again.** Enough for
- * "what did Dr Nguyen recommend?" then "when was that?", which is how people
- * actually ask. The server does the remembering; this sends the words back and
- * is told how many turns are left.
- *
- * **Nothing here is kept.** The thread lives in this component's state and in
- * no other place — not in the folder, not in localStorage, not in the log.
- * Reloading the page is what clearing the history consists of, and a question
- * is not an event.
+ * **The conversation itself is not kept.** It lives in this component's state
+ * and nowhere else — not in the folder, not in localStorage, not in the log.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useClinicianLanguage, AudienceText } from "../recordLanguage";
-import { api, ApiError } from "../api";
-import type { AskResponse, FoundEntry } from "../types";
+import { api, ApiError, artifactUrl } from "../api";
+import type { AskResponse, ArtifactMeta, FoundEntry, InboxItem } from "../types";
 import { Link } from "../router";
 import { Cite, TierMark } from "./marks";
+import { ProposalCard } from "./Review";
+import { ClipIcon, SendIcon } from "./icons";
 
 /** Questions that show what this is for, in the shapes it actually handles. */
 const EXAMPLES = [
-  "What medications am I taking?",
+  "What medicines am I taking?",
   "What allergies do I have?",
   "What changed in the last three months?",
   "What did my last letter from a specialist say?",
 ];
 
-interface Exchange {
+/** How often a document handed over here is asked about while it is read. */
+const READ_POLL_MS = 3000;
+/** How long the conversation keeps asking before it says where to look instead. */
+const READ_GIVE_UP_MS = 10 * 60 * 1000;
+const TERMINAL_JOBS = ["unreadable", "needs-attention", "blocked-auth"];
+
+const ACCEPT = "image/*,application/pdf,text/plain";
+
+interface Question {
+  kind: "question";
+  id: number;
   question: string;
   answer: AskResponse | null;
-  /** Set while this one is still being answered. */
   pending: boolean;
   error?: string;
+  /** Set once the words have been added to the record as a note. */
+  kept?: Kept;
 }
+
+interface Kept {
+  state: "saving" | "saved" | "failed";
+  short?: string;
+  error?: string;
+}
+
+interface Handed {
+  kind: "file";
+  id: number;
+  name: string;
+  mime: string;
+  state: "saving" | "saved" | "duplicate" | "failed";
+  short?: string;
+  error?: string;
+}
+
+type Turn = Question | Handed;
+
+let nextId = 1;
 
 export function Ask({
   navigate,
   onBoxState,
+  onChanged,
   documents,
 }: {
   navigate: (to: string) => void;
   /** How many documents the record holds, or null before the first health answer. */
   documents: number | null;
-  /** Called when an answer reports something about the inference box.
-   *
-   *  The rail polls every few seconds, so without this it can sit saying
-   *  "Ready to read new files" above a panel saying the password was rejected —
-   *  one screen contradicting itself, which is worse than either sentence alone.
-   *  Nothing in the record changed; this only asks the shell to re-read health. */
+  /** Called when an answer reports something about the inference box, so the
+   *  shell re-reads health rather than contradicting this screen. */
   onBoxState: () => void;
+  /** Called when something was added to the record or decided. */
+  onChanged: () => void;
 }) {
   const clinician = useClinicianLanguage();
   const [question, setQuestion] = useState("");
-  const [thread, setThread] = useState<Exchange[]>([]);
+  const [thread, setThread] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const box = useRef<HTMLTextAreaElement | null>(null);
-  const latest = useRef<HTMLElement | null>(null);
-  const [asked, setAsked] = useState(0);
+  const picker = useRef<HTMLInputElement | null>(null);
+  const latest = useRef<HTMLLIElement | null>(null);
+  const [moved, setMoved] = useState(0);
 
   useEffect(() => {
     box.current?.focus();
@@ -100,19 +122,17 @@ export function Ask({
     field.style.height = `${Math.min(field.scrollHeight, 180)}px`;
   }, [question]);
 
-  // Brought into view once, when the person asks — their own action, so the
-  // page moves because they moved it. Never while an answer is being read:
-  // moving the page under someone who is reading is the same class of thing
-  // as the animation this interface does without.
+  // Brought into view when the person adds something — their own action, so
+  // the page moves because they moved it. Never while an answer is being read.
   useEffect(() => {
-    if (asked > 0) latest.current?.scrollIntoView({ block: "start" });
-  }, [asked]);
+    if (moved > 0) latest.current?.scrollIntoView({ block: "start" });
+  }, [moved]);
 
-  // From the last exchange that *counted*. A refused question is not part of
-  // the conversation — it is not sent back as history — so counting it here
-  // would show a number that never moves and implies one was spent.
-  const turnsLeft = lastCounted(thread)?.answer?.turns_left ?? null;
-  const exhausted = turnsLeft === 0;
+  const update = useCallback((id: number, change: Partial<Question> | Partial<Handed>) => {
+    setThread((current) =>
+      current.map((turn) => (turn.id === id ? ({ ...turn, ...change } as Turn) : turn)),
+    );
+  }, []);
 
   const send = useCallback(
     (text: string) => {
@@ -120,41 +140,123 @@ export function Ask({
       if (!asked || busy) return;
       setBusy(true);
       setQuestion("");
-      setThread((current) => [...current, { question: asked, answer: null, pending: true }]);
-      setAsked((n) => n + 1);
+      const id = nextId++;
+      setThread((current) => [...current, { kind: "question", id, question: asked, answer: null, pending: true }]);
+      setMoved((n) => n + 1);
 
       // Only exchanges that produced something are carried forward: a refused
-      // question is not part of the conversation's subject, and sending it back
-      // would have the next question inherit from a question nothing answered.
+      // question is not part of the conversation's subject.
       const history = thread
-        .filter((item) => item.answer && item.answer.state !== "refused")
-        .map((item) => ({
-          question: item.question,
-          answer: (item.answer?.sentences ?? []).map((s) => s.text).join(" "),
+        .filter((turn): turn is Question => turn.kind === "question")
+        .filter((turn) => turn.answer && turn.answer.state !== "refused")
+        .map((turn) => ({
+          question: turn.question,
+          answer: (turn.answer?.sentences ?? []).map((s) => s.text).join(" "),
         }));
 
       api
         .ask(asked, history)
         .then((answer) => {
-          setThread((current) =>
-            replaceLast(current, { question: asked, answer, pending: false }),
-          );
+          update(id, { answer, pending: false });
           if (answer.box) onBoxState();
         })
-        .catch((exc: ApiError) =>
-          setThread((current) =>
-            replaceLast(current, {
-              question: asked,
-              answer: null,
-              pending: false,
-              error: exc.message,
-            }),
-          ),
-        )
+        .catch((exc: ApiError) => update(id, { answer: null, pending: false, error: exc.message }))
         .finally(() => setBusy(false));
     },
-    [busy, thread, onBoxState],
+    [busy, thread, onBoxState, update],
   );
+
+  /** Hand files to the record. Stored first; read later; followed here. */
+  const handOver = useCallback(
+    (files: File[]) => {
+      const usable = files.filter((file) => file.size > 0);
+      if (usable.length === 0) return;
+      setMoved((n) => n + 1);
+      for (const file of usable) {
+        const id = nextId++;
+        setThread((current) => [
+          ...current,
+          { kind: "file", id, name: file.name || "Pasted image", mime: file.type, state: "saving" },
+        ]);
+        api
+          .capture([file], "chat")
+          .then((response) => {
+            const result = response.results[0];
+            if (!result || result.status === "failed" || !result.short) {
+              update(id, { state: "failed", error: result?.error ?? "The record did not accept this file." });
+              return;
+            }
+            update(id, { state: result.status === "reseen" ? "duplicate" : "saved", short: result.short });
+            onChanged();
+          })
+          .catch((exc: Error) => update(id, { state: "failed", error: exc.message }));
+      }
+    },
+    [onChanged, update],
+  );
+
+  const keep = useCallback(
+    (turn: Question) => {
+      update(turn.id, { kept: { state: "saving" } });
+      const note = new File([turn.question], "note.txt", { type: "text/plain" });
+      api
+        .capture([note], "chat")
+        .then((response) => {
+          const result = response.results[0];
+          if (!result || result.status === "failed" || !result.short) {
+            update(turn.id, { kept: { state: "failed", error: result?.error ?? "It was not saved." } });
+            return;
+          }
+          update(turn.id, { kept: { state: "saved", short: result.short } });
+          onChanged();
+        })
+        .catch((exc: Error) => update(turn.id, { kept: { state: "failed", error: exc.message } }));
+    },
+    [onChanged, update],
+  );
+
+  // Dropping anywhere on this screen, and pasting a picture into it.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (event: DragEvent) => Boolean(event.dataTransfer?.types.includes("Files"));
+    const onEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      depth += 1;
+      setDragging(true);
+    };
+    const onOver = (event: DragEvent) => {
+      if (hasFiles(event)) event.preventDefault();
+    };
+    const onLeave = () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!event.dataTransfer?.files.length) return;
+      event.preventDefault();
+      depth = 0;
+      setDragging(false);
+      handOver(Array.from(event.dataTransfer.files));
+    };
+    const onPaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) return;
+      event.preventDefault();
+      handOver(files);
+    };
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, [handOver]);
 
   const empty = thread.length === 0;
   const clear = () => {
@@ -164,39 +266,38 @@ export function Ask({
   };
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="ask">
+      {dragging ? (
+        <div className="ask-drop" aria-hidden="true">
+          <p>Drop to add it to your record. It is saved first, then read.</p>
+        </div>
+      ) : null}
+
+      <h1 className={empty ? "pt-h1 ask-title" : "sr-only"}>
+        {clinician ? "Ask the patient record" : "Ask your record"}
+      </h1>
+
       {empty ? (
-        <div className="flex flex-1 flex-col justify-center py-8">
-          <h2 className="text-center text-xl font-semibold">
-            {clinician ? "What would you like to find in Jane’s record?" : "What would you like to find in your record?"}
-          </h2>
-          {/* What it will not do, said before anyone types rather than after
-              they are refused — in one sentence, not a paragraph. */}
-          <p className="mx-auto mt-2 max-w-xl text-center text-[color:var(--color-muted)]">
-            <AudienceText patient="Answers come only from your own documents, and each line shows which one. It won't tell you what something means or what to do — that's one for your doctor." clinician="Answers use only Jane’s source documents, with a source link for each line. This search does not provide clinical interpretation or treatment advice." />
+        <div className="ask-empty">
+          <p className="ask-lede">
+            <AudienceText
+              patient="Ask about your medicines, letters and results, or drop in a photo or PDF to add it. Answers come only from your own documents, and each line shows which one. It won't tell you what something means or what to do — that's one for your doctor."
+              clinician="Answers use only Jane’s source documents, with a source link for each line. This search does not provide clinical interpretation or treatment advice."
+            />
           </p>
 
           {documents === 0 ? (
-            <p className="mx-auto mt-4 max-w-xl rounded-xl bg-[color:var(--color-accent-soft)] px-4 py-3 text-center">
-              Your record is empty so far, so there is nothing to ask about yet.{" "}
-              <Link to="/add" navigate={navigate}>
-                Add your first document
-              </Link>{" "}
-              — a photo of a prescription or a letter is a good start.
+            <p className="ask-note">
+              Your record is empty so far. Drop a photo of a prescription or a letter here to start.
             </p>
           ) : null}
 
-          <div className="mt-6">{composer()}</div>
+          <div className="ask-composer-start">{composer()}</div>
 
-          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+          <ul className="ask-examples" aria-label="Example questions">
             {EXAMPLES.map((example) => (
               <li key={example}>
-                <button
-                  type="button"
-                  className="btn h-full w-full rounded-xl px-4 py-2.5 text-left"
-                  onClick={() => send(example)}
-                  disabled={busy}
-                >
+                <button type="button" className="pt-chip-btn" onClick={() => send(example)} disabled={busy}>
                   {example}
                 </button>
               </li>
@@ -204,140 +305,402 @@ export function Ask({
           </ul>
         </div>
       ) : (
-        <>
-          <div className="flex flex-1 flex-col gap-8 pt-4 pb-6">
-            {thread.map((item, index) => (
-              <Exchanged
-                key={`${index}-${item.question}`}
-                exchange={item}
-                navigate={navigate}
-                anchor={index === thread.length - 1 ? latest : undefined}
-              />
-            ))}
-          </div>
-          {/* Stays at the bottom of the window, the way the box does in every
-              assistant people already use. */}
-          <div className="sticky bottom-0 bg-[color:var(--color-paper)] pt-2 pb-4">
-            {composer()}
-          </div>
-        </>
+        <ol className="ask-thread" role="log" aria-label="Conversation" aria-live="polite">
+          {thread.map((turn, index) => (
+            <li
+              key={turn.id}
+              ref={index === thread.length - 1 ? latest : undefined}
+              className="ask-turn"
+            >
+              {turn.kind === "question" ? (
+                <Exchanged turn={turn} navigate={navigate} onKeep={() => keep(turn)} onChanged={onChanged} />
+              ) : (
+                <HandedOver turn={turn} navigate={navigate} onChanged={onChanged} />
+              )}
+            </li>
+          ))}
+        </ol>
       )}
+
+      {empty ? null : <div className="ask-composer-wrap">{composer()}</div>}
     </div>
   );
 
   function composer() {
     return (
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          send(question);
-        }}
-      >
-        <label className="sr-only" htmlFor="ask-question">
-          {clinician ? "Ask the patient record" : "Ask your record"}
-        </label>
-        <div className="composer flex items-end gap-2">
-          <textarea
-            id="ask-question"
-            ref={box}
-            rows={1}
-            value={question}
-            disabled={exhausted}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              // Enter asks; shift-Enter is a new line. A question is one
-              // sentence, so the common case should not need a second key.
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                send(question);
-              }
-            }}
-            className="min-h-[2.25rem] flex-1 resize-none self-center border-0 bg-transparent py-1.5 outline-none focus-visible:outline-none"
-            placeholder={
-              exhausted ? "Start again to ask something new" : clinician ? "Search Jane’s medications, letters and results…" : "Ask about your medications, letters, results…"
-            }
-          />
-          <button
-            type="submit"
-            className="icon-btn icon-btn-primary"
-            disabled={busy || exhausted || !question.trim()}
-            aria-label={busy ? clinician ? "Searching the patient record" : "Reading your record" : "Ask"}
-            title={
-              busy
-                ? clinician ? "Searching the patient record for the last question" : "Still reading your record for the last question"
-                : exhausted
-                  ? "Start again to ask something new"
-                  : !question.trim()
-                    ? "Type a question first"
-                    : "Ask"
-            }
-          >
-            <Arrow />
-          </button>
-        </div>
-        <p className="mt-2 flex flex-wrap items-baseline justify-center gap-x-3 text-center text-[color:var(--color-muted)]">
-          <span>
-            {busy
-              ? "Reading your record…"
-              : exhausted
-                ? "That is three questions in this conversation. Start again to ask about something else."
-                : turnsLeft !== null
-                  ? `${turnsLeft} more ${turnsLeft === 1 ? "question" : "questions"} before this conversation starts again.`
-                  : "Nothing you ask is saved, here or in your folder."}
-          </span>
-          {thread.length > 0 ? (
-            <button type="button" className="underline" onClick={clear}>
-              Start again
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            send(question);
+          }}
+        >
+          <label className="sr-only" htmlFor="ask-question">
+            {clinician ? "Ask the patient record" : "Ask your record"}
+          </label>
+          <div className="composer ask-composer">
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => picker.current?.click()}
+              aria-label="Add a photo or document"
+              title="Add a photo or document (or drop one anywhere here)"
+            >
+              <ClipIcon />
             </button>
-          ) : null}
-        </p>
-      </form>
+            <textarea
+              id="ask-question"
+              ref={box}
+              rows={1}
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter asks; shift-Enter is a new line.
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  send(question);
+                }
+              }}
+              className="ask-input"
+              placeholder={clinician ? "Search Jane’s medications, letters and results…" : "Ask about your record, or drop in a photo…"}
+            />
+            <button
+              type="submit"
+              className="icon-btn icon-btn-primary"
+              disabled={busy || !question.trim()}
+              aria-label={busy ? "Still answering the last question" : "Send"}
+              title={busy ? "Still answering the last question" : !question.trim() ? "Type a question first" : "Send"}
+            >
+              <SendIcon size={18} />
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              accept={ACCEPT}
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(event) => {
+                handOver(Array.from(event.target.files ?? []));
+                event.target.value = "";
+              }}
+            />
+          </div>
+          <p className="ask-under">
+            <span>
+              {busy
+                ? "Reading your record…"
+                : "Questions are not saved. Files you add, and messages you choose to add, go into your record."}
+            </span>
+            {thread.length > 0 ? (
+              <button type="button" className="pt-link-btn" onClick={clear}>
+                Start a new conversation
+              </button>
+            ) : null}
+          </p>
+        </form>
     );
   }
 }
 
-/** An arrow pointing up: "send", as every assistant draws it. */
-function Arrow() {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/* --------------------------------------------------------------- one exchange */
+/* --------------------------------------------------------------- one question */
 
 function Exchanged({
-  exchange,
+  turn,
   navigate,
-  anchor,
+  onKeep,
+  onChanged,
 }: {
-  exchange: Exchange;
+  turn: Question;
   navigate: (to: string) => void;
-  anchor?: React.RefObject<HTMLElement | null>;
+  onKeep: () => void;
+  onChanged: () => void;
 }) {
-  const { question, answer, pending, error } = exchange;
+  const { question, answer, pending, error, kept } = turn;
   return (
-    <article ref={anchor} className="scroll-mt-16">
-      <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-[color:var(--color-shade)] px-4 py-2 whitespace-pre-wrap">
-        <span className="sr-only">You asked: </span>
-        {question}
-      </p>
+    <article className="ask-exchange">
+      <div className="ask-mine">
+        <p className="ask-bubble">
+          <span className="sr-only">You: </span>
+          {question}
+        </p>
+        <KeepControl kept={kept} onKeep={onKeep} navigate={navigate} />
+      </div>
 
       {pending ? (
-        <p className="mt-1 text-[color:var(--color-muted)]"><AudienceText patient={"Reading your record…"} clinician={"Reading the patient record…"} /></p>
-      ) : null}
-
-      {error ? (
-        <p className="mt-1 rounded-lg bg-[color:var(--color-alarm-soft)] px-3 py-2 text-[color:var(--color-alarm)]">
-          {error}
+        <p className="pt-muted" role="status">
+          <AudienceText patient="Reading your record…" clinician="Reading the patient record…" />
         </p>
       ) : null}
 
+      {error ? <p className="pt-alert">{error}</p> : null}
+
       {answer ? <Answered answer={answer} navigate={navigate} /> : null}
+
+      {kept?.state === "saved" && kept.short ? (
+        <Following short={kept.short} navigate={navigate} onChanged={onChanged} what="note" />
+      ) : null}
     </article>
   );
 }
+
+/** "Add to my record", and what became of it. Never automatic. */
+function KeepControl({
+  kept,
+  onKeep,
+  navigate,
+}: {
+  kept: Kept | undefined;
+  onKeep: () => void;
+  navigate: (to: string) => void;
+}) {
+  if (!kept) {
+    return (
+      <button type="button" className="pt-link-btn ask-keep" onClick={onKeep}>
+        Add to my record<span className="sr-only">: save these words as a note</span>
+      </button>
+    );
+  }
+  if (kept.state === "saving") return <span className="pt-muted ask-keep">Saving…</span>;
+  if (kept.state === "failed")
+    return (
+      <span className="pt-alert-text ask-keep">
+        Not saved: {sentence(kept.error)}{" "}
+        <button type="button" className="pt-link-btn" onClick={onKeep}>
+          Try again
+        </button>
+      </span>
+    );
+  return (
+    <span className="pt-muted ask-keep">
+      Added to your record as a note.{" "}
+      {kept.short ? (
+        <Link to={`/artifact/${kept.short}`} navigate={navigate}>
+          See it
+        </Link>
+      ) : null}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------ one file handed */
+
+function HandedOver({
+  turn,
+  navigate,
+  onChanged,
+}: {
+  turn: Handed;
+  navigate: (to: string) => void;
+  onChanged: () => void;
+}) {
+  const image = turn.mime.startsWith("image/") && turn.short;
+  return (
+    <article className="ask-exchange">
+      <div className="ask-mine">
+        <div className="ask-file">
+          {image ? <img src={artifactUrl(turn.short!)} alt="" /> : <span className="ask-file-kind">{fileKind(turn.mime)}</span>}
+          <span className="ask-file-name">
+            <span className="sr-only">You added: </span>
+            {turn.name}
+          </span>
+        </div>
+      </div>
+      {turn.state === "saving" ? (
+        <p className="pt-muted" role="status">Saving it to your record…</p>
+      ) : turn.state === "failed" ? (
+        <p className="pt-alert">Not saved: {sentence(turn.error)} Nothing was added. You can try again, or use Add.</p>
+      ) : (
+        <>
+          <p>
+            {turn.state === "duplicate"
+              ? "This was already in your record, so it was not stored twice."
+              : "Saved to your record."}{" "}
+            {turn.short ? (
+              <Link to={`/artifact/${turn.short}`} navigate={navigate}>
+                Open it
+              </Link>
+            ) : null}
+          </p>
+          {turn.short ? <Following short={turn.short} navigate={navigate} onChanged={onChanged} what="document" /> : null}
+        </>
+      )}
+    </article>
+  );
+}
+
+/** A server's sentence, ending in a full stop whatever it arrived with. */
+function sentence(text: string | undefined): string {
+  const words = (text ?? "").trim();
+  if (!words) return "the record did not accept it.";
+  return /[.!?]$/.test(words) ? words : `${words}.`;
+}
+
+function fileKind(mime: string): string {
+  if (mime === "application/pdf") return "PDF";
+  if (mime.startsWith("text/")) return "Text";
+  if (mime.startsWith("audio/")) return "Audio";
+  return "File";
+}
+
+/**
+ * What happens to something after it is stored: read, then whatever needs a
+ * person, as review cards. The sentences come from the server — the same ones
+ * the document's own page shows — so this screen never words a reading itself.
+ */
+function Following({
+  short,
+  navigate,
+  onChanged,
+  what,
+}: {
+  short: string;
+  navigate: (to: string) => void;
+  onChanged: () => void;
+  what: "document" | "note";
+}) {
+  const [meta, setMeta] = useState<ArtifactMeta | null>(null);
+  const [items, setItems] = useState<InboxItem[] | null>(null);
+  const [thisDevice, setThisDevice] = useState<string | null>(null);
+  const [gaveUp, setGaveUp] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reviewClosed, setReviewClosed] = useState(false);
+
+  const loadItems = useCallback(() => {
+    api
+      .review()
+      .then((queue) => {
+        setThisDevice(queue.this_device ?? null);
+        setItems(itemsFor(queue.tiers, short));
+      })
+      .catch(() => {
+        // The review list may belong to the clinician workspace in a managed
+        // demonstration; the document's own page still says what was read.
+        setReviewClosed(true);
+        setItems([]);
+      });
+  }, [short]);
+
+  useEffect(() => {
+    let live = true;
+    const began = Date.now();
+    let timer = 0;
+    const poll = () => {
+      api
+        .artifactMeta(short)
+        .then((result) => {
+          if (!live) return;
+          setMeta(result);
+          const settled = readingDone(result);
+          if (settled) {
+            window.clearInterval(timer);
+            loadItems();
+            onChanged();
+          } else if (Date.now() - began > READ_GIVE_UP_MS) {
+            window.clearInterval(timer);
+            setGaveUp(true);
+          }
+        })
+        .catch(() => undefined);
+    };
+    timer = window.setInterval(poll, READ_POLL_MS);
+    poll();
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [short, loadItems, onChanged]);
+
+  const decide = useCallback(
+    async (item: InboxItem, action: string, body: Record<string, unknown> = {}) => {
+      setBusy(item.id);
+      setError(null);
+      try {
+        const queue = await api.decide(item.id, { action, ...body });
+        setItems(itemsFor(queue.tiers, short));
+        setNotice(queue.decided?.message ?? null);
+        setCorrecting(null);
+        onChanged();
+      } catch (exc) {
+        setError(exc instanceof ApiError ? exc.message : String(exc));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [short, onChanged],
+  );
+
+  if (!meta) return <p className="pt-muted">Checking where it has got to…</p>;
+
+  const finished = readingDone(meta);
+
+  return (
+    <div className="ask-following">
+      <p>
+        {gaveUp
+          ? `Still waiting to be read. It is safe in your record; this conversation has stopped checking, and the ${what === "note" ? "note" : "document"}'s own page will show what was read.`
+          : meta.reading.text}
+      </p>
+
+      {finished && items && items.length > 0 ? (
+        <div className="ask-cards">
+          <p className="pt-label-strong">
+            {items.length === 1 ? "One thing needs your yes or no" : `${items.length} things need your yes or no`}
+          </p>
+          {notice ? <p className="pt-ok" role="status">{notice}</p> : null}
+          {error ? (
+            <p className="pt-alert" role="alert">
+              <strong>That did not happen.</strong> {error}
+            </p>
+          ) : null}
+          {items.map((item) => (
+            <ProposalCard
+              key={item.id}
+              item={item}
+              busy={busy === item.id}
+              correcting={correcting === item.id}
+              onCorrect={() => setCorrecting(item.id)}
+              onCancelCorrect={() => setCorrecting(null)}
+              decide={decide}
+              navigate={navigate}
+              thisDevice={thisDevice}
+            />
+          ))}
+        </div>
+      ) : finished && items && items.length === 0 && notice ? (
+        <p className="pt-ok" role="status">{notice} Nothing else from this is waiting for you.</p>
+      ) : finished && reviewClosed ? (
+        <p className="pt-muted">Anything that needs checking is with your care team's review.</p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Whether the reader has had its turn. Not the record's "finished", which also
+ * waits for the person — the cards below are how the person gets their turn.
+ */
+function readingDone(meta: ArtifactMeta): boolean {
+  if (["read", "nothing-found", "unreadable"].includes(meta.reading.state)) return true;
+  return meta.job !== null && TERMINAL_JOBS.includes(meta.job.state);
+}
+
+/** The queue's items that came from this one artefact. */
+function itemsFor(tiers: { high: InboxItem[]; medium: InboxItem[]; low: InboxItem[] }, short: string): InboxItem[] {
+  const all = [...(tiers.high ?? []), ...(tiers.medium ?? []), ...(tiers.low ?? [])];
+  return all.filter(
+    (item) =>
+      item.unread?.artifact === short ||
+      item.proposed?.artifact === short ||
+      (item.citations ?? []).some((citation) => citation.artifact === short) ||
+      (item.readings ?? []).some((reading) => reading.artifact === short),
+  );
+}
+
+/* -------------------------------------------------------------- an answer */
 
 function Answered({
   answer,
@@ -516,16 +879,3 @@ function Found({
   );
 }
 
-/* -------------------------------------------------------------------- helpers */
-
-function lastCounted(items: Exchange[]): Exchange | undefined {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.answer && item.answer.state !== "refused") return item;
-  }
-  return undefined;
-}
-
-function replaceLast(items: Exchange[], value: Exchange): Exchange[] {
-  return [...items.slice(0, -1), value];
-}

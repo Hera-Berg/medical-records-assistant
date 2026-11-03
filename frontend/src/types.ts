@@ -1022,3 +1022,37 @@ export interface ComparisonPeriod {
 
 export interface ProgressNote {id:string;author:string;role:string;username?:string;written:string;text:string;saved_at:string;original_saved_at?:string;imported:boolean;}
 export interface ProgressNotes {notes:ProgressNote[];legacy_locked_count:number;protection:string;}
+
+/* ------------------------------------------------------ calendar and scripts */
+
+/** One calendar entry. Bookings, birthdays and expiry dates share this shape. */
+export interface CalendarEvent {
+  id: string;
+  date: string;
+  time: string | null;
+  title: string;
+  kind: string;
+  status?: string;
+  professional?: string;
+  location?: string;
+  description?: string;
+  source_url?: string;
+  fictional?: boolean;
+  editable?: boolean;
+}
+
+/** A prescription record. Only the fields the patient screens read are typed. */
+export interface Prescription {
+  id: string;
+  medicine: string;
+  medicine_id: string | null;
+  prescriber: string | null;
+  prescribed_date: string | null;
+  original_directions: string | null;
+  plain_directions: string | null;
+  treatment_status: string;
+  source: string | null;
+  source_url: string | null;
+  expiry: { state: string; label: string; days: number | null };
+  repeat_label: string;
+}

@@ -163,11 +163,16 @@ export function useCapture(onCaptured: () => void) {
  * appears while a file is actually over the window — it is a state change, not
  * an animation, and it disappears the instant the drag ends.
  */
-export function useWindowCapture(enqueue: (files: File[], source: Source) => void) {
+export function useWindowCapture(enqueue: (files: File[], source: Source) => void, enabled = true) {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
 
   useEffect(() => {
+    // Off where a screen takes drops itself (Ask follows what it is handed).
+    if (!enabled) {
+      setDragging(false);
+      return;
+    }
     const onDragEnter = (event: DragEvent) => {
       if (!event.dataTransfer?.types.includes("Files")) return;
       depth.current += 1;
@@ -209,7 +214,7 @@ export function useWindowCapture(enqueue: (files: File[], source: Source) => voi
       window.removeEventListener("drop", onDrop);
       window.removeEventListener("paste", onPaste);
     };
-  }, [enqueue]);
+  }, [enqueue, enabled]);
 
   return dragging;
 }
@@ -228,16 +233,21 @@ export function CapturePanel({
   capture,
   onCaptured,
   navigate,
+  mode,
 }: {
   capture: ReturnType<typeof useCapture>;
   onCaptured: () => void;
   navigate: (to: string) => void;
+  /** Opened from the Add sheet: start on the recorder, or in the note field. */
+  mode?: "voice" | "note";
 }) {
   const [text, setText] = useState("");
   const [author,setAuthor]=useState("");
   const [role,setRole]=useState("");
   const [date,setDate]=useState("");
-  const [voice,setVoice]=useState(false);
+  const [voice,setVoice]=useState(mode === "voice");
+  const noteField = useRef<HTMLTextAreaElement>(null);
+  useEffect(()=>{ if (mode === "note") noteField.current?.focus(); setVoice(mode === "voice"); },[mode]);
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
   useEffect(()=>{capture.setMetadata({author,role,observation_date:date});return()=>capture.setMetadata({});},[author,role,date]);
@@ -277,7 +287,7 @@ export function CapturePanel({
         <button type="button" className="btn" aria-expanded={voice} onClick={()=>setVoice(!voice)}>Record a voice note</button>
       </div>
       {voice?<div className="update-recorder"><Recorder onRecorded={capture.enqueueBlob} pending={capture.pending}/>{recordings.map(result=><Transcribing key={result.short} short={result.short!} navigate={navigate}/>)}</div>:null}
-      <label className="update-text">Or write it down<textarea aria-label="Your update" className="field" rows={6} value={text} onChange={e=>{setText(e.target.value);setSaved(false);}} placeholder="For example: Jane has felt nauseous since Friday and has been eating less than usual."/></label>
+      <label className="update-text">Or write it down<textarea ref={noteField} aria-label="Your update" className="field" rows={6} value={text} onChange={e=>{setText(e.target.value);setSaved(false);}} placeholder="For example: Jane has felt nauseous since Friday and has been eating less than usual."/></label>
       <label className="update-date">When did this happen? (optional)<input className="field" type="date" max={sydneyToday()} value={date} onChange={e=>setDate(e.target.value)}/></label>
       <button type="button" className="btn btn-primary" disabled={!text.trim()||saving} onClick={submitNote}>{saving?'Saving…':'Save update'}</button>
       {noteError?<p role="alert" className="login-error">{noteError}</p>:null}
