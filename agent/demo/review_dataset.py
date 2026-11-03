@@ -4,7 +4,7 @@ import json
 import shutil
 from dataclasses import replace
 from datetime import datetime, timezone
-from .. import profile, care_team, ingest, projection
+from .. import profile, care_team, ingest, projection, files
 from ..events import envelope
 from ..vault import Vault, scaffold
 from ..demo_metadata import SCENARIO
@@ -66,9 +66,9 @@ def populate(root, values, team, sealed=()):
     if root.exists() and any(root.iterdir()):raise ValueError('Population requires a new empty staging directory.')
     scaffold(root)
     from . import demo_config
-    (root/'config.toml').write_text(demo_config())
+    files.write_text((root/'config.toml'),demo_config())
     vault=Vault.open(root)
-    (root/'DEMO-DATA.md').write_text('# Fictional Jane review demonstration\nAll sources are newly authored fictional demo material, not recovered historical originals.\n')
+    files.write_text((root/'DEMO-DATA.md'),'# Fictional Jane review demonstration\nAll sources are newly authored fictional demo material, not recovered historical originals.\n')
     vault.append(envelope.new('note.recorded',vault.identity.id,payload={'review_dataset':VERSION,'fictional':True}))
     values=dict(values);values['date_of_birth']='1935-11-01'
     values['important_notes']='Fictional demonstration. Atrial fibrillation, hypertension and knee osteoarthritis. Current directions are in the 28 August 2026 chart. Recent reports have not yet been clinically reviewed. No symptom cause is inferred.'
@@ -119,7 +119,7 @@ def populate(root, values, team, sealed=()):
         e=claim(vault.identity.id,'problem:'+name.lower().replace(' ','-'),'name',name,artifact=refs['cardio-diagnosis'] if name=='Atrial fibrillation' else refs['baseline'],ts=envelope.now_ts(),subject_name=name)
         e=replace(e,provenance={'model':'authored-fictional-demo','model_rev':'no-model-run','prompt_hash':'not-applicable','artifact':e.provenance['artifact']})
         vault.append(e);vault.append(confirm(vault.identity.id,e.id))
-    (root/'DATASET-MANIFEST.json').write_text(json.dumps({'fictional':True,'version':VERSION,'sources':manifest},indent=2)+'\n')
+    files.write_text((root/'DATASET-MANIFEST.json'),json.dumps({'fictional':True,'version':VERSION,'sources':manifest},indent=2)+'\n')
     projection.rebuild(vault)
     return vault
 

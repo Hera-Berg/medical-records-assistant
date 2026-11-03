@@ -12,7 +12,7 @@ import secrets
 from pathlib import Path
 from datetime import date
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from . import device,sealed
+from . import device,files,sealed
 from .clinician_auth import vault_id
 from .events import envelope
 
@@ -32,11 +32,11 @@ def machine_key(state,create=False):
         path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         body={'version':1,'id':secrets.token_hex(16),'key':base64.b64encode(os.urandom(32)).decode()}
         try:
-            descriptor=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
-            with os.fdopen(descriptor,'w') as file:json.dump(body,file)
+            descriptor=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|files.O_BINARY,0o600)
+            with os.fdopen(descriptor,'wb') as file:file.write(json.dumps(body).encode('utf-8'))
         except FileExistsError:pass
     try:
-        data=json.loads(path.read_text());key=base64.b64decode(data['key'],validate=True)
+        data=json.loads(path.read_text(encoding='utf-8'));key=base64.b64decode(data['key'],validate=True)
     except (ValueError,KeyError,TypeError):raise ValueError('The progress-note encryption key could not be read. Restore the matching note-key backup.') from None
     if len(key)!=32:raise ValueError('The progress-note encryption key is invalid. Existing notes have not been changed.')
     return data['id'],key

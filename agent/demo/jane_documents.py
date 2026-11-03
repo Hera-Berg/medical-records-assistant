@@ -106,11 +106,11 @@ def native_document(item):
         if day=='2026-09-24':
             # Preserve the entire earlier released narrative, including the recorded
             # examination/ECG mention, rather than replace it with a shorter summary.
-            library=json.loads((Path(__file__).parents[1]/'server/static_files/document-examples.json').read_text())
+            library=json.loads((Path(__file__).parents[1]/'server/static_files/document-examples.json').read_text(encoding='utf-8'))
             old=next(d for d in library['documents'] if d['id']=='cardiology-2026-09-24')
             doc['sections'][3:3]=old['sections']
     if day=='2026-10-08':
-        library=json.loads((Path(__file__).parents[1]/'server/static_files/document-examples.json').read_text())
+        library=json.loads((Path(__file__).parents[1]/'server/static_files/document-examples.json').read_text(encoding='utf-8'))
         old=next(d for d in library['documents'] if d['id']=='blood-panel-2026-10-08')
         doc.update(title=old['title'], sections=old['sections'], results=old['results'], type=old['category'])
         # Preserve the recorded release identity independently of author/recipient.

@@ -4,11 +4,12 @@ import copy
 import hashlib
 import json
 from pathlib import Path
-import subprocess
 import unittest
 from datetime import datetime,timezone
 from unittest.mock import patch
 
+from tests import js_runtime
+from tests.clinician_session import sign_in
 from tests import test_jane_demo as base
 from agent.demo.jane import seed,PROFILE
 from agent.demo_metadata import entries
@@ -21,9 +22,13 @@ class CalendarProgressTests(unittest.TestCase):
     setUp=base.JaneDemoTests.setUp
     get=base.JaneDemoTests.get
 
+    def signed_in(self):
+        """Progress notes are only reachable from a signed-in clinician session."""
+        sign_in(self.app,self.client)
+
     def decrypt(self,password='pass'):
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        snapshot=self.app.state.record.snapshot()
+        self.signed_in()
         comp=next(c for c in self.get('/api/doctor-notes').json()['compartments'] if c['id']==progress.COMPARTMENT['compartment'])
         key=hashlib.pbkdf2_hmac('sha256',password.encode(),base64.b64decode(comp['kdf']['salt']),comp['kdf']['iterations'],32)
         cipher=AESGCM(key)
@@ -96,6 +101,7 @@ class CalendarProgressTests(unittest.TestCase):
         self.assertNotIn(private,summary.text)
 
     def test_rerun_keeps_existing_ciphertexts_and_user_entries(self):
+        self.signed_in()
         before=self.get('/api/doctor-notes').json()
         # A different existing compartment is retained without opening it.
         old=copy.deepcopy(progress.COMPARTMENT)
@@ -144,39 +150,59 @@ class CalendarProgressTests(unittest.TestCase):
 
     def test_served_progress_screen_is_short_and_expands_note_rows(self):
         import re
-        index=self.get('/progress-notes').text
-        bundle=re.search(r'src="(/assets/[^\"]+\.js)"',index).group(1)
+        self.signed_in()
+        bundle=js_runtime.bundle_path(self.get('/progress-notes').text)
         code=self.get(bundle).text
-        def function(signature):
-            start=code.index(signature)
-            end=code.index('function ',start+len(signature))
-            return code[start:end]
-        unlock=function('function gr({data:e,onOpened:t})')
-        opened=function('function _r({data:e,opened:t,onSaved:n,onLock:r})')
-        jsc=Path('/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc')
-        if not jsc.exists(): self.skipTest('JavaScriptCore unavailable')
-        prelude="""const b={jsx:(type,props,key)=>({type,props,key}),jsxs:(type,props,key)=>({type,props,key})};
-let idx=0;let notesMode=false;
-const shown=[{event_id:'one',ts:'2026-10-23',content:{author:'Morgan Bell · Registered nurse',written:'2026-10-19',text:'Private example'}},{event_id:'two',ts:'2026-10-23',content:{author:'Dr James Smith · Facility GP',written:'2026-10-15',text:'Private GP example'}}];
-const l={useState:x=>[notesMode&&idx++===0?shown:typeof x==='function'?x():x,()=>{}],useRef:()=>({}),useEffect:()=>{}};
-const cr=async(c,p)=>({id:c.id});const vr=()=> '2026-10-23';const A=x=>x;const ue=x=>x;const j='empty';
+        # Found by its props and its own words, never by minified name: a
+        # rebuild renames every identifier.
+        candidates=[js_runtime.function_source(code,m.start()) for m in re.finditer(r'function [\w$]+\(\{version:[\w$]+\}\)',code)]
+        found=[c for c in candidates if 'Available to signed-in clinicians only' in c]
+        self.assertEqual(len(found),1,'one progress-notes component')
+        screen=found[0]
+        name=re.match(r'function ([\w$]+)',screen).group(1)
+        if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
+        # Every name the component borrows from the rest of the bundle (React,
+        # the JSX runtime, the API and date helpers) resolves to one stand-in:
+        # hooks and JSX build a plain tree, and any helper returns its argument.
+        own=['assert','state','print','console','JSON','Promise','Object','Array',
+             'Error','String','Number','Symbol','Math','Date','undefined','globalThis',name]
+        prelude="""const state={data:null,idx:0};
 const assert=(v,m)=>{if(!v)throw Error(m);};
+const helper=(...args)=>args[0];
+Object.assign(helper,{
+  jsx:(type,props,key)=>({type,props,key}),jsxs:(type,props,key)=>({type,props,key}),
+  createElement:(type,props,...children)=>({type,props:{...props,children}}),
+  useState:x=>[state.idx++===0?state.data:typeof x==='function'?x():x,()=>{}],
+  useRef:x=>({current:x}),useEffect:()=>{},useCallback:f=>f,useMemo:f=>f(),
+  randomUUID:()=>'request',
+});
+const own=new Set("""+json.dumps(own)+""");
+const borrowed=new Proxy({},{has:(t,k)=>typeof k==='string'&&!own.has(k),get:()=>helper});
+with(borrowed){
 """
         checks="""
-const locked=gr({data:{notes:[],compartments:[]},onOpened:()=>{}});
-const text=JSON.stringify(locked);assert(text.includes('Password protected. Please enter your password.'),'short alert');assert(!text.includes('Anyone who can open'),'no long intro');
-notesMode=true;idx=0;const opened=_r({data:{notes:[]},opened:{compartment:{id:'x'}},onSaved:()=>{},onLock:()=>{}});
-const output=JSON.stringify(opened);assert((output.match(/\"type\":\"details\"/g)||[]).length===3,'add form and both notes collapse');assert(output.includes('Morgan Bell')&&output.includes('Dr James Smith'),'facility authors');(async()=>{let result;const form=gr({data:{notes:[],compartments:[{id:'first'},{id:'second'}]},onOpened:x=>{result=x;}});await form.props.onSubmit({preventDefault(){}});assert(Object.keys(result.keys).length===2,'same password opens all matching compartments');print('Progress UI rendering passed');})().catch(e=>{print(e.stack);throw e;});
+const render=data=>{state.data=data;state.idx=0;return JSON.stringify("""+name+"""({version:1}));};
+const loading=render(null);assert(loading.includes('Loading progress notes'),'loading state');
+const notes=[{id:'one',author:'Morgan Bell',role:'Registered nurse',written:'2026-10-19',text:'Private example',saved_at:'2026-10-23T00:00:00Z'},
+             {id:'two',author:'Dr James Smith',role:'Facility GP',written:'2026-10-15',text:'Private GP example',saved_at:'2026-10-23T00:00:00Z'}];
+const opened=render({notes,legacy_locked_count:0});
+assert(opened.includes('Available to signed-in clinicians only.'),'short intro');
+assert((opened.match(/"type":"details"/g)||[]).length===3,'add form and both notes collapse');
+assert(opened.includes('Morgan Bell')&&opened.includes('Dr James Smith'),'facility authors');
+assert(!opened.includes('Import older encrypted notes'),'no import offer without older notes');
+const older=render({notes,legacy_locked_count:2});
+assert(older.includes('Import older encrypted notes'),'older notes can be imported');
+print('Progress UI rendering passed');
+}
 """
-        path=self.temp/'progress-test.js';path.write_text(prelude+unlock+opened+checks)
-        result=subprocess.run([str(jsc),str(path)],capture_output=True,text=True,timeout=15)
+        result=js_runtime.run(prelude+screen+checks,self.temp,'progress-test.js',timeout=15)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('Progress UI rendering passed',result.stdout)
 
     def test_calendar_ui_months_leap_year_events_and_served_routes(self):
         for path in ('/calendar','/progress-notes','/doctor-notes','/calendar.js','/calendar.css'):
             self.get(path)
-        jsc=Path('/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc')
-        if not jsc.exists(): self.skipTest('JavaScript runtime unavailable')
+        if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
         source=(base.ROOT/'frontend/public/calendar.js').read_text()
         data=self.get('/api/calendar').json()
         script='''let Widget;globalThis.HTMLElement=class{};globalThis.customElements={define(n,c){Widget=c;}};
@@ -187,6 +213,6 @@ view.month='2024-02';view.selected=null;view.render();assert(view.innerHTML.incl
 view.move(1);assert(view.month==='2024-03','next');view.move(-1);assert(view.month==='2024-02','previous');
 view.month='2026-12';view.move(1);assert(view.month==='2027-01','year boundary');
 assert(!view.row({id:'x',date:'2026-11-01',title:'<script>bad()</script>',kind:'event'}).includes('<script>'),'escaped text');print('Calendar UI passed');'''
-        path=self.temp/'calendar-test.js';path.write_text(script)
-        response=subprocess.run([str(jsc),str(path)],capture_output=True,text=True,timeout=15)
+        response=js_runtime.run(script,self.temp,'calendar-test.js',timeout=15)
         self.assertEqual(response.returncode,0,response.stdout+response.stderr)
+        self.assertIn('Calendar UI passed',response.stdout)

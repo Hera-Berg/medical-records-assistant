@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 
+import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -21,11 +22,18 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from agent import projection, sealed
 from agent.events import log
 
+from .clinician_session import sign_in
 from .conftest import claim, confirm, ingested, note, on_day
 
 PASSPHRASE = "correct horse battery staple"
 ITERATIONS = sealed.MIN_ITERATIONS
 NOTE = {"author": "Dr Nguyen", "written": "2026-10-07", "text": "Discussed sleep. Review in 3 months."}
+
+
+@pytest.fixture(autouse=True)
+def _signed_in(app, client):
+    """Progress notes are only reachable from a signed-in clinician session."""
+    sign_in(app, client)
 
 
 def _b64(raw: bytes) -> str:

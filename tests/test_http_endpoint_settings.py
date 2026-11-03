@@ -172,29 +172,27 @@ def test_a_vault_with_no_endpoint_says_so_and_offers_the_defaults(client):
     assert endpoint["problem"] is None
 
 
-def test_the_sentence_in_front_of_the_fields_is_one_sentence(client):
-    """Not a sign-up, a machine they already own — said once and said short.
+def test_the_sentence_in_front_of_the_fields_says_what_openai_means(client):
+    """Said short, in front of the fields, before anything is typed.
 
-    Three paragraphs stood here. A wall of reassurance in front of the first
-    input is read by nobody, least of all the person who needs reassuring, so
-    what remains is the two things that have to be established before anything
-    is typed.
+    The OpenAI option is the one place content leaves the person's own machines,
+    and MODELS.md requires Settings to say so where the choice is made.
     """
     endpoint = client.get("/api/settings").json()["endpoint"]
-    explanation = endpoint["explanation"]
+    explanation = endpoint["explanation"].lower()
 
-    assert explanation.count(".") == 1, explanation
-    assert "a computer you own" in explanation.lower()
-    assert "nothing leaves your own network" in explanation.lower()
+    assert "private model server" in explanation
+    assert "https://api.openai.com/v1" in explanation
+    assert "sent to openai" in explanation
 
 
 def test_the_rest_of_the_explanation_is_kept_one_tap_away(client):
     """Folded, not cut. The reader who wants it can still have all of it."""
     about = client.get("/api/settings").json()["endpoint"]["about"].lower()
 
-    assert "refuses to start if you point it at one" in about
-    # The sentence that stops a sleeping box reading as a broken record.
-    assert "nothing breaks" in about
+    assert "private servers remain supported" in about
+    assert "does not mean local processing" in about
+    assert "openai credentials are separate" in about
 
 
 def test_the_key_field_says_where_a_key_was_found_and_never_what_it_is(client):
@@ -442,7 +440,7 @@ def test_a_public_address_is_refused_in_its_own_words(client, vault, monkeypatch
     assert body["outcome"] == "failed"
     assert body["status"] == "That address is not on your own network."
     assert "outside private address space" in body["detail"]
-    assert "fork the project" in body["detail"]
+    assert "https://api.openai.com/v1" in body["detail"], "names the only exception"
     assert (vault.root / CONFIG_FILENAME).read_bytes() == before
 
 
@@ -497,13 +495,12 @@ def test_a_box_that_throws_pictures_away_gets_its_own_sentence(client, monkeypat
     body = connect(client, model=MODEL).json()
 
     assert body["outcome"] == "failed"
-    assert body["status"] == "That computer cannot read words out of a picture."
+    assert body["status"] == "The image-reading test did not pass."
     assert body["saved"] is False, "a blind box is not a working one"
     steps = _steps(body)
     assert steps["grammar"] == "ok", "it answers text perfectly, which is the trap"
     assert steps["vision"] == "failed"
-    assert "mlx_lm.server" in body["detail"]
-    assert "mmproj" in body["detail"]
+    assert "supports image input" in body["detail"]
 
 
 def test_a_box_that_ignores_the_schema_is_a_grammar_failure_not_a_vision_one(

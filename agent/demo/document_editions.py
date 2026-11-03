@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 from datetime import datetime,timezone
-from .. import ingest
+from .. import ingest, files
 from ..events import envelope
 from ..vault import Vault
 from ..demo_metadata import entries
@@ -91,21 +91,21 @@ def upgrade(root,export=None,only=None,force=False):
         editions.append(dict(id=p['demo_item_id'],title=d['title'],artifact=result.short,previous_artifact=previous,prepared_at=stamp,
             event_date=d['event_date'],document_date=d['document_date'],received_date=d.get('received_date'),new_encounter=d['new_encounter'],new_fictional_details=d['additions'],
             editorial_note=d.get('editorial_note'),pages=max(b[0] for b in boxes),export_path=path,facility=d['organisation']))
-    manifest=vault.root/'DATASET-MANIFEST.json';m=json.loads(manifest.read_text()) if manifest.exists() else {'fictional':True}
+    manifest=vault.root/'DATASET-MANIFEST.json';m=json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {'fictional':True}
     m.setdefault('facility_document_editions',[]).append({'version':FORMAT,'archive':str(archive),'prepared_at':stamp,'facilities':{k:vars(v) for k,v in templates.FACILITIES.items()},'editions':editions,
         'administrative_details_added':'Fictional facility contacts, patient identifier and laboratory accession/specimen presentation; no real provider/registration numbers.'})
     for edition in editions:
         row=next((r for r in m.get('sources',[]) if r['id']==edition['id']),None)
         if row:
             row.setdefault('retained_original_artifacts',[]).append(row['artifact']);row.update(artifact=edition['artifact'],purpose=edition['title'],event_date=edition['event_date'],document_date=edition['document_date'],received_date=edition['received_date'],uploaded_at=stamp)
-    manifest.write_text(json.dumps(m,indent=2)+'\n')
+    files.write_text(manifest,json.dumps(m,indent=2)+'\n')
     if export:
         Path(export).mkdir(parents=True,exist_ok=True)
         export_manifest=Path(export)/'edition-manifest.json'
-        combined=json.loads(export_manifest.read_text()) if export_manifest.exists() else m['facility_document_editions'][-1].copy()
+        combined=json.loads(export_manifest.read_text(encoding='utf-8')) if export_manifest.exists() else m['facility_document_editions'][-1].copy()
         existing={edition['id']:edition for edition in combined.get('editions',[])};existing.update({edition['id']:edition for edition in editions})
         combined['editions']=list(existing.values());combined.setdefault('archives',[]).append(str(archive))
-        export_manifest.write_text(json.dumps(combined,indent=2)+'\n')
+        files.write_text(export_manifest,json.dumps(combined,indent=2)+'\n')
     return {'archive':str(archive),'editions':editions}
 
 if __name__=='__main__':

@@ -4,14 +4,14 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import shutil
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from tests import js_runtime
 from agent import config, device
 from agent.demo.authoring import ingested
 from agent.server.routes.documents import router
@@ -80,9 +80,7 @@ class DocumentsTests(unittest.TestCase):
         self.assertTrue(all(doc['results'] for doc in panels))
 
     def test_document_ui_filters_previews_and_keeps_real_metadata_honest(self):
-        jsc=Path('/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc')
-        runtime=shutil.which('node') or (str(jsc) if jsc.is_file() else None)
-        if not runtime:self.skipTest('JavaScript runtime required')
+        if not js_runtime.runtime():self.skipTest('JavaScript runtime required')
         data=(ROOT/'frontend/public/document-examples.json').read_text()
         source=(ROOT/'frontend/public/documents.js').read_text()
         prelude='''let Widget;globalThis.HTMLElement=class {};globalThis.customElements={define(name,ctor){Widget=ctor;}};
@@ -111,14 +109,15 @@ view.renderResults();assert(results.innerHTML.includes('No uploads yet'),'honest
 view.uploads=null;view.renderResults();assert(results.innerHTML.includes('could not be loaded')&&!results.innerHTML.includes('No uploads yet'),'failure is not an empty record');
 output('Documents UI checks passed');
 '''
-        result=subprocess.run([runtime,'-e',prelude+'const samples='+data+';'+source+checks],capture_output=True,text=True,timeout=15)
+        with tempfile.TemporaryDirectory() as directory:
+            result=js_runtime.run(prelude+'const samples='+data+';'+source+checks,Path(directory))
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('Documents UI checks passed',result.stdout)
 
     def test_shipped_document_assets_match_sources(self):
         for name in ('documents.js','documents.css','document-examples.json'):
             self.assertEqual((ROOT/'frontend/public'/name).read_bytes(),(ROOT/'agent/server/static_files'/name).read_bytes())
-        bundle=next((ROOT/'agent/server/static_files/assets').glob('*.js')).read_text()
+        bundle=js_runtime.shipped_bundle()
         self.assertIn('to:`/documents`,label:`Documents`',bundle)
         # Minifier variable names and routing expressions are not public contracts.
         # Actual patient/clinician navigation is verified by the browser workflow check.

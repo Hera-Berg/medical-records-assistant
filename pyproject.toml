@@ -27,6 +27,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "cryptography>=43",
     "faster-whisper>=1.1",
+    # Windows ships no timezone database, so zoneinfo needs one from PyPI there.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

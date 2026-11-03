@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 from ..vault import Vault
 from ..server.state import RecordState
 from ..events import envelope
-from .. import ingest,record_identity
+from .. import ingest, record_identity, files
 from ..demo_metadata import history as source_history
 from ..document_titles import title
 from . import document_templates as templates
@@ -54,9 +54,9 @@ def migrate(root,export=None):
     update={'version':VERSION,'from':'Example Gardens','to':'Sydney Aged Care','artifact_map':aliases,'artifact_pages':page_counts,'archive':str(archive),'prepared_at':stamp,'administrative_only':True}
     vault.append(envelope.new('note.recorded',vault.identity.id,ts=stamp,payload={record_identity.FIELD:update}))
     manifest=vault.root/'DATASET-MANIFEST.json'
-    body=json.loads(manifest.read_text()) if manifest.exists() else {'fictional':True}
+    body=json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {'fictional':True}
     body=record_identity.rename(body);body['facility_identity_update']={'version':VERSION,'facility':'Sydney Aged Care','prepared_at':stamp,'archive':str(archive),'documents':changes}
-    manifest.write_text(json.dumps(body,indent=2)+'\n')
+    files.write_text(manifest,json.dumps(body,indent=2)+'\n')
     if export:
         from .document_editions import export_document
         active=state.snapshot();current={e.payload['demo_item_id']:e.payload for e in __import__('agent.demo_metadata',fromlist=['entries']).entries(active.events,active.artifacts).values()}

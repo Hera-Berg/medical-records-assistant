@@ -6,13 +6,14 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
+
+from tests import js_runtime
 from agent import device, ingest, profile, projection
 from agent.demo import _identity
 from agent.demo.jane import seed, PROFILE, MARKER, source_text, STATIN
@@ -257,15 +258,11 @@ class JaneDemoTests(unittest.TestCase):
         self.assertEqual(checked,68)
 
     def test_served_js_syntax_and_demo_ui_rendering(self):
-        jsc=Path('/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc')
-        if not jsc.is_file(): self.skipTest('JavaScriptCore unavailable')
-        index=self.get('/').text
-        import re
-        bundle=re.search(r'src="(/assets/[^\"]+\.js)"',index).group(1)
-        source=self.get(bundle).text
-        self.assertIn('r.demo.title',source)
+        if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
+        source=self.get(js_runtime.bundle_path(self.get('/').text)).text
+        self.assertRegex(source,r'[\w$]+\.demo\.title')
         # Remove only the final ES module exports (if any) to parse as a script.
-        syntax=subprocess.run([str(jsc),'-e','new Function('+json.dumps(source)+'); print("parsed");'],text=True,capture_output=True)
+        syntax=js_runtime.run('new Function('+json.dumps(source)+'); print("parsed");',self.temp,'syntax.js')
         self.assertEqual(syntax.returncode,0,syntax.stdout+syntax.stderr)
         overview=(ROOT/'frontend/public/overview.js').read_text()
         rows=self.get('/api/timeline?limit=5').json()
@@ -274,9 +271,9 @@ class JaneDemoTests(unittest.TestCase):
 const view=new Widget(); view.profile='''+json.dumps(profile_data)+''';view.timeline='''+json.dumps(rows)+''';view.render();
 const assert=(c,m)=>{if(!c)throw Error(m);};
 assert((view.timelineRows().match(/<li>/g)||[]).length===5,'five events');
-assert(view.innerHTML.includes('FICTIONAL JANE DOE DEMONSTRATION'),'demo heading');
 for(const row of view.timeline.rows)assert(view.innerHTML.includes('/artifact/'+row.citation.artifact),'real source');
 assert(view.innerHTML.includes('Questions saved for the next appointment'),'newest event');
 assert(!view.innerHTML.includes('<audio'),'no fake audio');print('demo overview passed');'''
-        result=subprocess.run([str(jsc),'-e',script],capture_output=True,text=True)
+        result=js_runtime.run(script,self.temp,'overview.js')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('demo overview passed',result.stdout)

@@ -86,7 +86,9 @@ class OpenAISettingsRouteTests(unittest.TestCase):
         js=self.client.get(asset)
         self.assertEqual(js.status_code,200)
         self.assertIn('Use OpenAI API',js.text)
-        self.assertIn('g.setEndpointKey(C,i)',js.text)
+        # The key is stored with the address it is for, so an OpenAI key goes to
+        # its own account. Matched by shape: minified names change every build.
+        self.assertRegex(js.text,r'[\w$]+\.setEndpointKey\([\w$]+,[\w$]+\)')
 
     def test_store_rejects_embedded_credentials(self):
         with patch.object(credentials,'store') as store:

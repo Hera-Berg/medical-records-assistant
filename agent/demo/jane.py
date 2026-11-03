@@ -28,8 +28,9 @@ Only patient-visible summaries are included; no private clinician notes are used
 Voice-note sources are authored transcripts only: there are no audio recordings.
 Collection, procedure and report-receipt notes are labelled where full reports
 or numerical results are unavailable. This record needs no model download.
-Re-running `health-agent demo --jane` on this folder fills missing seeded items;
-it does not overwrite profile edits, source files, settings or user-added notes.
+Creating the Jane Doe demonstration again in this folder fills in missing seeded
+items; it does not overwrite profile edits, source files, settings or user-added
+notes.
 '''
 
 PROFILE = {
@@ -104,7 +105,7 @@ def source_text(item):
         # Reuse only matching documents. The original bundled examples are untouched.
         import json
         library = Path(__file__).parents[1] / 'server/static_files/document-examples.json'
-        docs = json.loads(library.read_text())['documents']
+        docs = json.loads(library.read_text(encoding='utf-8'))['documents']
         doc_id = 'cardiology-2026-09-24' if item['date'] == '2026-09-24' else 'blood-panel-2026-10-08'
         doc = next(d for d in docs if d['id'] == doc_id)
         lines += ['', 'MATCHING ORIGINAL EXAMPLE CONTENT (fictional copy)']
@@ -135,7 +136,7 @@ def seed(root, as_of=None, endpoint_from=None):
     root = Path(root).expanduser().resolve()
     marker = root / MARKER_FILENAME
     existing = root.exists() and any(root.iterdir()) if root.is_dir() else root.exists()
-    if existing and (not marker.is_file() or marker.read_text() != MARKER):
+    if existing and (not marker.is_file() or marker.read_text(encoding='utf-8') != MARKER):
         raise HealthAgentError('Jane demo population requires an empty folder or this exact Jane scenario. Existing ordinary records and other demos are never merged.')
     if endpoint_from:
         raise HealthAgentError('The preloaded Jane scenario needs no endpoint. Configure inference separately in Settings if wanted.')

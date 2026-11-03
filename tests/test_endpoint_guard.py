@@ -70,15 +70,31 @@ def test_public_addresses_are_refused(address):
 
 
 def test_endpoint_guard_rejects_public_host():
-    """A commercial API base URL is a startup failure, not a warning."""
-    guarded = endpoint_mod.parse("https://api.openai.com/v1")
+    """A commercial API base URL is a startup failure, not a warning.
+
+    The canonical OpenAI address is the one explicit exception (MODELS.md,
+    "Optional OpenAI API"); every other public host is still refused.
+    """
+    guarded = endpoint_mod.parse("https://api.example-inference.com/v1")
     with pytest.raises(EndpointNotPrivate) as raised:
         guarded.verify(_resolver("162.159.140.245"))
 
     message = str(raised.value)
     assert "outside private address space" in message
     assert "162.159.140.245" in message, "says which address, so it can be checked"
-    assert "fork the project" in message, "and that this is not a setting to change"
+    assert "https://api.openai.com/v1" in message, "and names the only exception"
+
+
+def test_the_openai_exception_does_not_reach_private_addresses():
+    """The exception is for OpenAI's public service, not whatever the name resolves to.
+
+    A hijacked resolver pointing api.openai.com at a machine on the LAN must not
+    be sent the OpenAI key.
+    """
+    guarded = endpoint_mod.parse("https://api.openai.com/v1")
+    assert guarded.verify(_resolver("162.159.140.245")) == ("162.159.140.245",)
+    with pytest.raises(EndpointNotPrivate):
+        guarded.verify(_resolver("192.168.1.20"))
 
 
 def test_the_guard_runs_again_on_a_host_that_re_resolves_publicly():

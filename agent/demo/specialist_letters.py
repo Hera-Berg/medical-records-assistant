@@ -4,7 +4,7 @@ import json
 import textwrap
 from pathlib import Path
 from datetime import datetime
-from .. import ingest, care_team, profile
+from .. import ingest, care_team, profile, files
 from ..events import envelope
 from ..vault import Vault
 from ..demo_metadata import entries, SCENARIO
@@ -60,14 +60,14 @@ def upgrade(root):
         vault.append(envelope.new('note.recorded',vault.identity.id,ts=stamp,payload=p))
         additions.append(dict(id=item['id'],artifact=result.short,previous_artifact=previous,event_date=date,document_date=date,received_date=date,prepared_at=stamp,fictional=True,purpose=item['title']))
     if additions:
-        manifest=vault.root/'DATASET-MANIFEST.json';data=json.loads(manifest.read_text()) if manifest.exists() else {'fictional':True}
+        manifest=vault.root/'DATASET-MANIFEST.json';data=json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {'fictional':True}
         data.setdefault('specialist_letter_editions',[]).extend(additions)
         for item in additions:
             row=next((r for r in data.setdefault('sources',[]) if r['id']==item['id']),None)
             if row:
                 row.setdefault('retained_original_artifacts',[]).append(row['artifact']);row.update({k:v for k,v in item.items() if k!='previous_artifact'})
             else:data['sources'].append(item)
-        manifest.write_text(json.dumps(data,indent=2)+'\n')
+        files.write_text(manifest,json.dumps(data,indent=2)+'\n')
     return additions
 
 if __name__=='__main__':

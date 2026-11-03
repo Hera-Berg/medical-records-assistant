@@ -3,7 +3,7 @@ import copy
 import json
 from pathlib import Path
 from datetime import datetime, timezone
-from .. import ingest
+from .. import ingest, files
 from ..events import envelope
 from ..demo_metadata import entries, SCENARIO
 from ..server.state import RecordState
@@ -93,14 +93,14 @@ def upgrade(root):
         if id=='critical-sodium':p['native_document']['sections']=[{'heading':'Laboratory alert','text':p['laboratory_flag']}]
         vault.append(envelope.new('note.recorded',vault.identity.id,ts=stamp,payload=p));added.append(dict(id=id,previous_artifact=previous,artifact=result.short,edition_prepared_at=stamp,additional_results='Newly authored fictional panel values; original recorded values preserved.'))
     if added:
-        manifest=vault.root/'DATASET-MANIFEST.json';data=json.loads(manifest.read_text()) if manifest.exists() else {'fictional':True}
+        manifest=vault.root/'DATASET-MANIFEST.json';data=json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {'fictional':True}
         data.setdefault('pathology_editions',[]).extend(added)
         for row in data.get('sources',[]):
             edition=next((edition for edition in added if edition['id']==row['id']),None)
             if edition:
                 row.setdefault('retained_original_artifacts',[]).append(row['artifact'])
                 row.update(artifact=edition['artifact'],ordered_panel=TITLES[row['id']],uploaded_at=edition['edition_prepared_at'],purpose=TITLES[row['id']])
-        manifest.write_text(json.dumps(data,indent=2)+'\n')
+        files.write_text(manifest,json.dumps(data,indent=2)+'\n')
     return added
 
 if __name__=='__main__':

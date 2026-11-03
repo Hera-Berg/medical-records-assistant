@@ -162,7 +162,7 @@ def test_running_out_of_room_is_not_reported_as_a_bad_answer():
     answer = ask("what dose of perindopril am I on", box)
 
     assert answer.state == render.CUT_OFF
-    assert "stopped before it was finished" in answer.message
+    assert "reached its response limit before finishing" in answer.message
     assert answer.state != render.UNREADABLE
 
 

@@ -65,7 +65,7 @@ def _no_real_keychain(monkeypatch):
     """
     from agent.llm import credentials as credentials_mod
 
-    monkeypatch.setattr(credentials_mod, "_from_keychain", lambda: None)
+    monkeypatch.setattr(credentials_mod, "_from_keychain", lambda account=None: None)
 
 
 @pytest.fixture(autouse=True)

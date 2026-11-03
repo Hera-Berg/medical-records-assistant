@@ -3,9 +3,9 @@ import copy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-import subprocess
 import unittest
 
+from tests import js_runtime
 from tests import test_jane_demo as base
 from agent.demo.jane import seed
 from agent.demo_metadata import entries
@@ -148,8 +148,7 @@ class NativeDocumentTests(unittest.TestCase):
         rx=self.get('/api/prescriptions').json()['prescriptions']
         docs=self.get('/api/documents').json()['documents']
         meta=[self.get('/api/artifact/'+d['id']+'/meta').json() for d in docs]
-        jsc=Path('/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc')
-        if not jsc.exists(): self.skipTest('JavaScript runtime unavailable')
+        if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
         for name in ('native-documents.js','native-documents.css'):
             self.assertEqual(self.get('/'+name).content,(base.ROOT/'frontend/public'/name).read_bytes())
         script='globalThis.HTMLElement=class{};globalThis.customElements={define(){}};\n'+(base.ROOT/'frontend/public/native-documents.js').read_text()
@@ -161,6 +160,6 @@ assert(card.includes('31 October 2026')&&card.includes('No repeats remaining'),'
 const unsafe=JSON.parse(JSON.stringify(docs[0]));unsafe.native.title='<script>attack()</script>';unsafe.native.sections=[{heading:'<img onerror=x>',text:'<script>attack()</script>'}];
 const html=healthDocumentRendering.documentPage(unsafe);assert(!html.includes('<script>')&&!html.includes('<img'),'safe stored text');
 const unknown=healthDocumentRendering.prescription({medicine:'Unknown',expiry:{state:'unknown',label:'Expiry not recorded'}});assert(unknown.includes('Not recorded'),'unknown stays unknown');print('Native document rendering checks passed');'''
-        path=self.temp/'native-test.js';path.write_text(script)
-        run=subprocess.run([str(jsc),str(path)],capture_output=True,text=True,timeout=20)
+        run=js_runtime.run(script,self.temp,'native-test.js',timeout=20)
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertIn('Native document rendering checks passed',run.stdout)

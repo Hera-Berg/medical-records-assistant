@@ -59,6 +59,9 @@ def test_anything_reachable_from_another_machine_is_refused(host):
 def test_a_public_inference_endpoint_stops_the_app_from_being_built(vault_root, identity):
     """Paste a commercial API base URL in and nothing starts.
 
+    The canonical OpenAI address is the one explicit exception (MODELS.md,
+    "Optional OpenAI API"); any other commercial API is still a refusal.
+
     The privacy premise of the project would otherwise evaporate with no visible
     change in behaviour, which is exactly why this is a refusal rather than a
     warning buried in settings.
@@ -71,8 +74,8 @@ def test_a_public_inference_endpoint_stops_the_app_from_being_built(vault_root, 
         "port = 7777\n"
         'locale = "en"\n'
         "\n[models.vlm]\n"
-        'base_url = "https://api.openai.com/v1"\n'
-        'model = "gpt-4o"\n',
+        'base_url = "https://api.example-inference.com/v1"\n'
+        'model = "some-model"\n',
         encoding="utf-8",
     )
     with pytest.raises(EndpointNotPrivate):

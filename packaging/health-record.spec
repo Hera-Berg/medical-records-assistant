@@ -44,6 +44,10 @@ if sys.platform == "darwin":
     hiddenimports += ["pystray._darwin"]
 elif sys.platform == "win32":
     hiddenimports += ["pystray._win32"]
+    # zoneinfo reads tzdata's files as package resources: Windows has no
+    # system timezone database for it to fall back to.
+    hiddenimports += collect_submodules("tzdata")
+    datas += collect_data_files("tzdata")
 else:
     hiddenimports += ["pystray._appindicator", "pystray._gtk", "pystray._xorg"]
 

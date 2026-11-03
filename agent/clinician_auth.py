@@ -13,7 +13,7 @@ from pathlib import Path
 import secrets
 import threading
 import time
-from . import device
+from . import device, files
 
 ITERATIONS = 600_000
 COOKIE = 'care_clinician_session'
@@ -58,9 +58,9 @@ def provision(root):
             'password':{'algorithm':'pbkdf2-sha256', 'iterations':ITERATIONS,
                         'salt':salt, 'hash':password_hash(password, salt)}}
         credentials[username] = password
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, 'w') as handle:
-        json.dump({'version':1, 'accounts':accounts}, handle, indent=2)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | files.O_BINARY, 0o600)
+    with os.fdopen(descriptor, 'wb') as handle:
+        handle.write(json.dumps({'version':1, 'accounts':accounts}, indent=2).encode('utf-8'))
     return credentials
 
 
@@ -72,7 +72,7 @@ class AuthStore:
         self.sessions = {}
         self.failures = {}
         path = store_path(root)
-        self.accounts = json.loads(path.read_text())['accounts'] if path.exists() else {}
+        self.accounts = json.loads(path.read_text(encoding='utf-8'))['accounts'] if path.exists() else {}
         self.dummy_salt = secrets.token_hex(16)
         self.dummy_hash = password_hash(secrets.token_urlsafe(32), self.dummy_salt)
 

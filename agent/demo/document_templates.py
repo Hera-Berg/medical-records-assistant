@@ -2,6 +2,9 @@
 from dataclasses import dataclass
 from datetime import date
 import re
+
+from ..projection.dates import MONTH_NAMES
+
 try:
     from pdfminer.fontmetrics import FONT_METRICS
 except ImportError:
@@ -55,8 +58,10 @@ def wrap(text,font,size,space):
     return lines
 
 def human(value):
-    try:return date.fromisoformat(value[:10]).strftime('%-d %B %Y')
+    # Never strftime: %-d does not exist on Windows and %B follows the locale.
+    try:day=date.fromisoformat(value[:10])
     except (ValueError,TypeError):return 'Not supplied'
+    return f'{day.day} {MONTH_NAMES[day.month-1]} {day.year}'
 
 class PDF:
     fonts=['Helvetica','Helvetica-Bold','Times-Roman','Times-Bold','Times-Italic','Courier']

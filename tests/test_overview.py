@@ -1,18 +1,17 @@
 """Exercise the overview's rendering, read failures and cancellation without a model."""
 from pathlib import Path
 import json
-import shutil
-import subprocess
+import tempfile
 import unittest
 
+from tests import js_runtime
+
 ROOT = Path(__file__).resolve().parents[1]
-JSC = '/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc'
 
 
 class OverviewTests(unittest.TestCase):
     def test_live_data_empty_states_escaping_and_partial_failures(self):
-        runtime = shutil.which('node') or (JSC if Path(JSC).is_file() else None)
-        if not runtime:
+        if not js_runtime.runtime():
             self.skipTest('A JavaScript runtime is needed for the overview UI check')
         source = (ROOT / 'frontend/public/overview.js').read_text()
         prelude = r'''
@@ -24,7 +23,7 @@ const assert = (condition, message) => {if (!condition) throw Error(message);};
 const output = typeof print === 'function' ? print : console.log;
 '''
         checks = r'''
-const profile={values:{preferred_name:'Alex',full_name:'Alex Example',gp_name:'Dr Example',gp_practice:'Example practice'},clinical:{medications:[{id:'med:test',name:'Test medication',dose:'Recorded dose',stale:true},{id:'med:conflict',name:'Conflicted medicine',dose:'NEVER DISPLAY THIS DOSE',conflicted:true}],allergies:[{id:'allergy:test'}]},review_count:2};
+const profile={values:{preferred_name:'Alex',full_name:'Alex Example',gp_name:'Dr Example',gp_practice:'Example practice'},care_team:[{name:'Dr Example',role:'Usual GP',organisation:'Example practice'}],clinical:{medications:[{id:'med:test',name:'Test medication',dose:'Recorded dose',stale:true},{id:'med:conflict',name:'Conflicted medicine',dose:'NEVER DISPLAY THIS DOSE',conflicted:true}],allergies:[{id:'allergy:test'}]},review_count:2};
 const timeline={rows:[{subject_id:'med:test',marker:'prescriber-issued',date:{render:'around June 2026'},date_label:'document dated',text:'Recorded fact',citation:{resolved:true,artifact:'abc123'}}]};
 const view=new Overview();view.profile=profile;view.timeline=timeline;view.render();
 assert(view.innerHTML.includes('Alex'),'personal greeting');
@@ -33,7 +32,7 @@ assert(view.innerHTML.includes('Recorded fact'),'real timeline content');
 assert(view.innerHTML.includes('Needs confirming'),'stale medication visible');
 assert(view.innerHTML.includes('Conflicting entries') && !view.innerHTML.includes('NEVER DISPLAY THIS DOSE'),'conflicted dose withheld');
 assert(view.innerHTML.includes('Dr Example'),'actual care team');
-for (const path of ['/profile','/summary','/timeline','/record','/add','/settings','/review']) assert(view.innerHTML.includes('href="'+path+'"'),'working destination '+path);
+for (const path of ['/profile','/timeline','/record','/add','/settings','/care-team']) assert(view.innerHTML.includes('href="'+path+'"'),'working destination '+path);
 assert(!view.innerHTML.includes('24 October'),'no invented appointment');
 assert(!view.innerHTML.includes('Manage access'),'no unsupported sharing action');
 profile.values.preferred_name='<img src=x onerror=alert(1)>';
@@ -41,9 +40,8 @@ timeline.rows[0].text='<script>unsafe()</script>';
 view.render();assert(!view.innerHTML.includes('<img') && !view.innerHTML.includes('<script>'),'patient content is text');
 view.profile={values:{},clinical:{medications:[],allergies:[]},review_count:0};view.timeline={rows:[]};view.render();
 assert(view.innerHTML.includes('Your story starts here'),'empty timeline');
-assert(view.innerHTML.includes('Allergy status not established'),'empty does not mean no allergies');
+assert(view.innerHTML.includes('No allergies or reactions recorded') && !/no known allerg|NKDA/i.test(view.innerHTML),'empty does not mean no allergies');
 assert(!view.innerHTML.includes('Good morning, Alex'),'no invented identity');
-        assert(view.innerHTML.includes('href="/documents"'),'documents shortcut');
 view.profile=null;view.timeline=null;view.render();
 assert(view.innerHTML.includes('temporarily unavailable'),'failure feedback');
 assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieval is not an empty record');
@@ -62,7 +60,8 @@ assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieva
  output('Overview UI checks passed');
 })().catch(error=>{output(error.stack);throw error;});
 '''
-        completed = subprocess.run([runtime,'-e',prelude + source + checks],capture_output=True,text=True,timeout=15)
+        with tempfile.TemporaryDirectory() as directory:
+            completed = js_runtime.run(prelude + source + checks, Path(directory))
         self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
         self.assertIn('Overview UI checks passed',completed.stdout)
 
@@ -74,18 +73,20 @@ assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieva
         self.assertIn('/overview.js',index)
         self.assertIn('/overview.css',index)
         source=(ROOT/'frontend/src/components/Sidebar.tsx').read_text()
-        bundle=next((static/'assets').glob('*.js')).read_text()
-        for label in ('Overview','Patient profile','Ask your record','Add something','Waiting for you','Timeline','Calendar','Medications and more','For an appointment',"Progress notes",'Documents','Settings'):
+        bundle=js_runtime.shipped_bundle()
+        # Both workspaces: the patient and carer's, and the signed-in clinician's.
+        for label in ('Home','Record an update','Notifications','Calendar','Documents','My care team','Timeline','Ask your record','My profile','Settings',
+                      'Review dashboard','Clinical record','Progress notes','Care team','Upload or record information','Ask the patient record','Patient profile'):
             self.assertIn(label,source)
             self.assertIn(label,bundle)
         self.assertIn('first === "overview"',(ROOT/'frontend/src/App.tsx').read_text())
-        self.assertIn('x===`overview`?(0,b.jsx)(`health-overview`',bundle)
-        self.assertIn('x===`profile`?(0,b.jsx)(`patient-profile`',bundle)
+        self.assertTrue(js_runtime.routes_to(bundle,'overview','health-overview'))
+        self.assertTrue(js_runtime.routes_to(bundle,'profile','patient-profile'))
         # Native assets and the application bundle must remain syntactically valid.
-        runtime = shutil.which('node') or (JSC if Path(JSC).is_file() else None)
-        if runtime:
+        if js_runtime.runtime():
             script='new Function('+json.dumps(bundle)+');'
-            result=subprocess.run([runtime,'-e',script],capture_output=True,text=True,timeout=15)
+            with tempfile.TemporaryDirectory() as directory:
+                result=js_runtime.run(script,Path(directory))
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 

@@ -292,7 +292,7 @@ def test_probe_checks_that_the_schema_is_actually_applied(monkeypatch, configure
         ),
         (
             _grammar_answer(content="Let me think about what the user", finish="length"),
-            "still answering at 64 tokens for a one-field object",
+            "reached its output limit before finishing",
         ),
     ],
     ids=["prose", "wrong-shape", "never-stopped"],
