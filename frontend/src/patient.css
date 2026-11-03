@@ -17,10 +17,15 @@
 
 /* ------------------------------------------------------------------ frame */
 
-.pt-shell {
+/* On :root, because Ask and the review cards are shared with the clinician
+   workspace and use these too. */
+:root {
   --pt-column: 44rem;
   --pt-radius: 14px;
   --pt-tap: 44px;
+}
+
+.pt-shell {
   min-height: 100vh;
   background: var(--color-paper);
   color: var(--color-ink);
@@ -30,6 +35,9 @@
 
 .skip-link {
   position: absolute;
+  min-height: var(--pt-tap, 44px);
+  display: inline-flex;
+  align-items: center;
   left: 0.75rem;
   top: -4rem;
   z-index: 100;
@@ -576,7 +584,8 @@
 }
 .pt-details > summary {
   display: list-item;
-  padding: 0.6rem 0;
+  min-height: var(--pt-tap);
+  padding: 0.65rem 0;
   color: var(--color-link);
   cursor: pointer;
 }
@@ -1051,4 +1060,51 @@
 .pt-shell .pt-page > [role="alert"],
 .pt-shell .pt-page > [role="status"]:not(.pt-ok) {
   font-size: 0.9375rem;
+}
+
+.pt-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--pt-tap);
+}
+
+/*
+ * The screens this workspace shares with the clinician workspace (History,
+ * Appointments, Documents, Profile, Settings) keep their own markup. Inside this
+ * workspace their controls get the same 44px targets and nothing smaller than
+ * 13px, so simpler never means harder to hit or to read.
+ */
+.pt-shell .btn,
+.pt-shell .profile-edit-button,
+.pt-shell .profile-text-button,
+.pt-shell .timeline-filters button,
+.pt-shell .timeline-load,
+.pt-shell select.field,
+.pt-shell .cal-toolbar .btn {
+  min-height: var(--pt-tap);
+}
+.pt-shell .profile-text-button {
+  min-width: var(--pt-tap);
+}
+.pt-shell summary {
+  min-height: var(--pt-tap);
+  padding-block: 0.6rem;
+}
+.pt-shell .calendar-day span,
+.pt-shell .metadata,
+.pt-shell .timeline-event-type,
+.pt-shell .timeline-event-date span,
+.pt-shell .docs-category {
+  font-size: max(0.8125rem, 1em * 0.85);
+}
+
+.pt-shell .timeline-source,
+.pt-shell .text-button,
+.pt-check-doc a {
+  min-height: var(--pt-tap);
+}
+.pt-shell .timeline-source,
+.pt-shell .text-button {
+  display: inline-flex;
+  align-items: center;
 }

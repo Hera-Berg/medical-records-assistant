@@ -51,8 +51,8 @@ export function More({ health, navigate }: { health: Health | null; navigate: (t
     <div className="pt-page">
       <h1 className="pt-h1">More</h1>
       {groups.map((group) => (
-        <section key={group.title} className="pt-section" aria-labelledby={`more-${group.title}`}>
-          <h2 id={`more-${group.title}`} className="pt-h2">{group.title}</h2>
+        <section key={group.title} className="pt-section" aria-labelledby={`more-${slug(group.title)}`}>
+          <h2 id={`more-${slug(group.title)}`} className="pt-h2">{group.title}</h2>
           <ul className="pt-rows">
             {group.entries.map((entry) => (
               <li key={entry.to} className={entry.phoneOnly ? "pt-phone-only" : undefined}>
@@ -91,4 +91,8 @@ export function More({ health, navigate }: { health: Health | null; navigate: (t
       </section>
     </div>
   );
+}
+
+function slug(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }

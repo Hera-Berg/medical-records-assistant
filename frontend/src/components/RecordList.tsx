@@ -106,7 +106,7 @@ export function RecordList({
       <div className="pt-title-row">
         <h1 className="pt-h1">{text.title}</h1>
         {current.length > 0 ? (
-          <button type="button" className="pt-btn-quiet pt-btn-small no-print" onClick={() => window.print()}>
+          <button type="button" className="pt-btn-quiet no-print" onClick={() => window.print()}>
             <PrintIcon size={16} />
             Print<span className="sr-only"> this list</span>
           </button>

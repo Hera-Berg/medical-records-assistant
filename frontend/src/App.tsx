@@ -301,9 +301,14 @@ export function App() {
     if (first === "ask") return <>{notice}{screen}</>;
     if (first === "add") {
       const mode = new URLSearchParams(window.location.search);
+      const titled = mode.has("voice")
+        ? { title: "Say it out loud", subtitle: "Speak as you would to a nurse. It is typed up on this computer and kept with the recording." }
+        : mode.has("note")
+          ? { title: "Write a note", subtitle: "" }
+          : header;
       return (
         <>
-          <PatientTitle header={header} />
+          <PatientTitle header={titled} />
           {notice}
           <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} mode={mode.has("voice") ? "voice" : mode.has("note") ? "note" : undefined} />
           <SubmittedUpdates version={version} onChanged={refresh} />
@@ -319,6 +324,8 @@ export function App() {
         </>
       );
     }
+    // These draw their own heading; a second one would give the page two h1s.
+    if (first === "documents") return <>{notice}{screen}</>;
     return (
       <>
         <PatientTitle header={header} />

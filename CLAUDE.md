@@ -878,6 +878,17 @@ medical record, not a dashboard. No gradients, no cards-with-shadows, no data-vi
 progress rings. Dense, typographic, high-contrast, readable at arm's length in bad clinic lighting.
 System font stack — no webfonts, since we make no network calls.
 
+**Two workspaces, two densities** (the owner's direction, 2026-11-03). The clinician workspace is a
+professional's desk: dense and detailed, with a sidebar holding every view. The patient and carer
+workspace is simple: a top bar with Home, Medicines, History, Appointments, Ask and More, one Add
+button, a tab bar on a phone, and one readable column. Review there is one item at a time — "Is
+this right? Yes / Fix it / No" — over the same items, actions and server checks as the list, and a
+stop is still its own button. Every detailed view stays reachable, under More or "More about this
+entry"; simpler means folded, never removed. Both share the CareMind name and mark, the palette, and
+the rules above. In the patient and carer workspace, targets are at least 44px, text is never below
+13px, there is a skip link and visible focus, and every state is a word. `src/patient.css` holds
+it, scoped under `.pt-shell`.
+
 ## Build order
 
 Do not start a phase before the previous one's tests pass.

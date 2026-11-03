@@ -46,6 +46,14 @@ const EXAMPLES = [
   "What did my last letter from a specialist say?",
 ];
 
+/** The same shapes, asked by someone else about the patient. */
+const CLINICIAN_EXAMPLES = [
+  "What medications is Jane taking?",
+  "What allergies are recorded?",
+  "What changed in the last three months?",
+  "What did the last specialist letter say?",
+];
+
 /** How often a document handed over here is asked about while it is read. */
 const READ_POLL_MS = 3000;
 /** How long the conversation keeps asking before it says where to look instead. */
@@ -273,9 +281,12 @@ export function Ask({
         </div>
       ) : null}
 
-      <h1 className={empty ? "pt-h1 ask-title" : "sr-only"}>
-        {clinician ? "Ask the patient record" : "Ask your record"}
-      </h1>
+      {/* The clinician workspace's shell already carries the page's h1. */}
+      {clinician ? (
+        empty ? <h2 className="pt-h1 ask-title">What would you like to find in Jane’s record?</h2> : null
+      ) : (
+        <h1 className={empty ? "pt-h1 ask-title" : "sr-only"}>Ask your record</h1>
+      )}
 
       {empty ? (
         <div className="ask-empty">
@@ -295,7 +306,7 @@ export function Ask({
           <div className="ask-composer-start">{composer()}</div>
 
           <ul className="ask-examples" aria-label="Example questions">
-            {EXAMPLES.map((example) => (
+            {(clinician ? CLINICIAN_EXAMPLES : EXAMPLES).map((example) => (
               <li key={example}>
                 <button type="button" className="pt-chip-btn" onClick={() => send(example)} disabled={busy}>
                   {example}
@@ -390,7 +401,9 @@ export function Ask({
             <span>
               {busy
                 ? "Reading your record…"
-                : "Questions are not saved. Files you add, and messages you choose to add, go into your record."}
+                : clinician
+                  ? "Questions are not saved. Files you add, and messages you choose to add, go into the patient record."
+                  : "Questions are not saved. Files you add, and messages you choose to add, go into your record."}
             </span>
             {thread.length > 0 ? (
               <button type="button" className="pt-link-btn" onClick={clear}>

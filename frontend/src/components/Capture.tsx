@@ -274,13 +274,47 @@ export function CapturePanel({
     } finally {setSaving(false);}
   };
 
+  const reporter = (
+    <div className="update-reporter">
+      <label>Who is adding this update?<input className="field" value={author} maxLength={120} onChange={e=>setAuthor(e.target.value)} placeholder="Your name, e.g. Emily Doe"/></label>
+      <label>Relationship or role<input className="field" value={role} maxLength={120} onChange={e=>setRole(e.target.value)} placeholder="e.g. Daughter, patient, registered nurse"/></label>
+    </div>
+  );
+
+  // Opened from the Add sheet: the one thing that was chosen comes first, and
+  // who is adding it is optional and folded beneath.
+  if (mode) {
+    return (
+      <section className="update-form update-focused no-print">
+        {mode === "voice" ? (
+          <div className="update-recorder"><Recorder onRecorded={capture.enqueueBlob} pending={capture.pending}/>{recordings.map(result=><Transcribing key={result.short} short={result.short!} navigate={navigate}/>)}</div>
+        ) : (
+          <>
+            <label className="update-text">What would you like to note?<textarea ref={noteField} className="field" rows={6} value={text} onChange={e=>{setText(e.target.value);setSaved(false);}} placeholder="For example: I have felt dizzy in the mornings since Friday."/></label>
+            <label className="update-date">When did this happen? (optional)<input className="field" type="date" max={sydneyToday()} value={date} onChange={e=>setDate(e.target.value)}/></label>
+          </>
+        )}
+        <details className="pt-details">
+          <summary>Adding this for someone else? (optional)</summary>
+          {reporter}
+        </details>
+        {mode === "note" ? (
+          <>
+            <button type="button" className="pt-btn pt-wide" disabled={!text.trim()||saving} onClick={submitNote}>{saving?'Saving…':'Save the note'}</button>
+            {!text.trim() && !saving ? <p className="metadata">Type something first.</p> : null}
+            {noteError?<p role="alert" className="login-error">{noteError}</p>:null}
+            {saved?<p role="status" className="pt-ok">Saved to your record. It is on History now.</p>:null}
+          </>
+        ) : null}
+        <CaptureStatus capture={capture} />
+      </section>
+    );
+  }
+
   return (
     <section className="update-form no-print">
       <p className="update-intro">Add a document or tell the care team what has changed.</p>
-      <div className="update-reporter">
-        <label>Who is adding this update?<input className="field" value={author} maxLength={120} onChange={e=>setAuthor(e.target.value)} placeholder="Your name, e.g. Emily Doe"/></label>
-        <label>Relationship or role<input className="field" value={role} maxLength={120} onChange={e=>setRole(e.target.value)} placeholder="e.g. Daughter, patient, registered nurse"/></label>
-      </div>
+      {reporter}
       <div className="update-methods">
         <div><input ref={fileInput} type="file" multiple accept="image/*,application/pdf,audio/*,video/*,text/plain" className="hidden" onChange={event=>{capture.enqueue(Array.from(event.target.files??[]),"upload");event.target.value="";}}/>
         <button type="button" className="btn" onClick={()=>fileInput.current?.click()}>Upload a document</button><p className="metadata">PDF or photo · you can also drop a file here</p></div>

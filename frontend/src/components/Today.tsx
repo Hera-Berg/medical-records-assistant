@@ -129,7 +129,7 @@ export function Today({
       <section aria-labelledby="recent-heading" className="pt-section">
         <div className="pt-section-head">
           <h2 id="recent-heading" className="pt-h2">Recent</h2>
-          <Link to="/timeline" navigate={navigate}>See all history</Link>
+          <Link to="/timeline" navigate={navigate} className="pt-link">See all history</Link>
         </div>
         {recent.state === "loading" ? (
           <p className="pt-muted" role="status">Loading…</p>
