@@ -76,6 +76,7 @@ import { RecordList, kindForPath } from "./components/RecordList";
 import { EntitySimple } from "./components/EntitySimple";
 import { More } from "./components/More";
 import { Prepare } from "./components/Prepare";
+import { Back, backFor } from "./components/Back";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
@@ -266,7 +267,16 @@ export function App() {
           {dragging ? <DropOverlay /> : null}
           <PatientShell first={first} health={health} capture={capture} navigate={navigate}>
             <Boundary key="patient" resetKey={route.path}>
+              <PatientBack first={first} navigate={navigate} />
               {patientScreen()}
+              {/* App-wide notices — the reader not set up, the app not answering,
+                  a note about the record's filing — below the page, not above
+                  it. Home places its own. */}
+              {!first || first === "overview" ? null : (
+                <section aria-label="About this app" className="pt-app-notices">
+                  <Attention health={health} error={healthError} navigate={navigate} quietEndpoint quietReview />
+                </section>
+              )}
             </Boundary>
           </PatientShell>
         </ClinicianComparisonProvider>
@@ -293,12 +303,12 @@ export function App() {
     );
     const listKind = kindForPath(first);
     if (home) return <Today health={health} navigate={navigate} version={version} notice={notice} />;
-    if (listKind) return <>{notice}<RecordList kind={listKind} navigate={navigate} version={version} /></>;
-    if (first === "record" && tail) return <>{notice}<EntitySimple id={decodeURIComponent(tail)} navigate={navigate} version={version} /></>;
+    if (listKind) return <><RecordList kind={listKind} navigate={navigate} version={version} /></>;
+    if (first === "record" && tail) return <><EntitySimple id={decodeURIComponent(tail)} navigate={navigate} version={version} /></>;
     if (first === "more") return <More health={health} navigate={navigate} />;
     if (first === "prepare") return <Prepare navigate={navigate} version={version} onChanged={refresh} />;
-    if (first === "review") return <>{notice}<Review version={version} onChanged={refresh} navigate={navigate} oneAtATime /></>;
-    if (first === "ask") return <>{notice}{screen}</>;
+    if (first === "review") return <><Review version={version} onChanged={refresh} navigate={navigate} oneAtATime /></>;
+    if (first === "ask") return <>{screen}</>;
     if (first === "add") {
       const mode = new URLSearchParams(window.location.search);
       const titled = mode.has("voice")
@@ -309,7 +319,6 @@ export function App() {
       return (
         <>
           <PatientTitle header={titled} />
-          {notice}
           <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} mode={mode.has("voice") ? "voice" : mode.has("note") ? "note" : undefined} />
           <SubmittedUpdates version={version} onChanged={refresh} />
         </>
@@ -319,17 +328,15 @@ export function App() {
       return (
         <>
           <PatientTitle header={header} />
-          {notice}
           <ClinicalTimeline key={workspace} navigate={navigate} version={version} clinician={false} />
         </>
       );
     }
     // These draw their own heading; a second one would give the page two h1s.
-    if (first === "documents") return <>{notice}{screen}</>;
+    if (first === "documents") return <>{screen}</>;
     return (
       <>
         <PatientTitle header={header} />
-        {notice}
         {screen}
       </>
     );
@@ -480,6 +487,21 @@ export function App() {
     </div>
     </ClinicianComparisonProvider>
     </ClinicianLanguage.Provider>
+  );
+}
+
+/** The way back to a page's parent, above its heading. */
+function PatientBack({ first, navigate }: { first: string | undefined; navigate: (to: string) => void }) {
+  const back = backFor(first);
+  if (!back) return null;
+  return (
+    <Back
+      to={back.to}
+      label={back.label}
+      previous={back.previous}
+      navigate={navigate}
+      className={back.phoneOnly ? "pt-phone-only" : ""}
+    />
   );
 }
 

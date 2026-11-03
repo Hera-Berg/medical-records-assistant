@@ -56,6 +56,25 @@ export function Today({
     <div className="pt-page">
       <h1 className="pt-h1">Today</h1>
 
+      {looks.length > 0 ? (
+        <section aria-labelledby="look-heading" className="pt-section">
+          <h2 id="look-heading" className="sr-only">Needs a look</h2>
+          <ul className="pt-notices">
+            {looks.map((look) => (
+              <li key={look.key}>
+                <Link to={look.to} navigate={navigate} className="pt-notice">
+                  <span>
+                    <span className="pt-notice-lead">Needs a look: </span>
+                    {look.text}
+                  </span>
+                  <ChevronRight />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-labelledby="next-heading" className="pt-card pt-next">
         {calendar.state === "loading" ? (
           <p className="pt-muted" role="status">Looking for your next appointment…</p>
@@ -92,27 +111,6 @@ export function Today({
           </>
         )}
       </section>
-
-      {notice}
-
-      {looks.length > 0 ? (
-        <section aria-labelledby="look-heading" className="pt-section">
-          <h2 id="look-heading" className="sr-only">Needs a look</h2>
-          <ul className="pt-notices">
-            {looks.map((look) => (
-              <li key={look.key}>
-                <Link to={look.to} navigate={navigate} className="pt-notice">
-                  <span>
-                    <span className="pt-notice-lead">Needs a look: </span>
-                    {look.text}
-                  </span>
-                  <ChevronRight />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <section aria-labelledby="record-heading" className="pt-section">
         <h2 id="record-heading" className="sr-only">Your record</h2>
@@ -155,6 +153,12 @@ export function Today({
             ))}
           </ul>
         )}
+      </section>
+
+      {/* About the app rather than the person — the reader not set up, the
+          app not answering. Kept, but below the record, not above it. */}
+      <section aria-label="About this app" className="pt-app-notices">
+        {notice}
       </section>
     </div>
   );

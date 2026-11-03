@@ -103,6 +103,7 @@ export function RecordList({
 
   return (
     <div className="pt-page">
+      <Sections current={kind} wiki={wiki} navigate={navigate} />
       <div className="pt-title-row">
         <h1 className="pt-h1">{text.title}</h1>
         {current.length > 0 ? (
@@ -145,6 +146,56 @@ export function RecordList({
         </details>
       ) : null}
     </div>
+  );
+}
+
+const SECTIONS: { kind: ListKind; label: string }[] = [
+  { kind: "med", label: "Medicines" },
+  { kind: "allergy", label: "Allergies" },
+  { kind: "problem", label: "Conditions" },
+  { kind: "symptom", label: "Symptoms" },
+];
+
+/**
+ * The four lists side by side, so allergies and conditions are one tap from
+ * medicines rather than somewhere under More. Each says how many it holds.
+ */
+function Sections({
+  current,
+  wiki,
+  navigate,
+}: {
+  current: ListKind;
+  wiki: WikiIndex | null;
+  navigate: (to: string) => void;
+}) {
+  return (
+    <nav className="pt-sections no-print" aria-label="Parts of your record">
+      <ul>
+        {SECTIONS.map((section) => {
+          const rows = (wiki?.kinds[section.kind] ?? []).filter((row) => !row.is_stub && !row.merged_into);
+          const count = section.kind === "med" ? rows.filter((row) => row.status !== "stopped").length : rows.length;
+          return (
+            <li key={section.kind}>
+              <Link
+                to={pathForKind(section.kind)}
+                navigate={navigate}
+                ariaCurrent={section.kind === current ? "page" : undefined}
+                className="pt-section-link"
+              >
+                {section.label}
+                {wiki ? (
+                  <span className="pt-section-count">
+                    <span aria-hidden="true">{count}</span>
+                    <span className="sr-only">, {count} recorded</span>
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 

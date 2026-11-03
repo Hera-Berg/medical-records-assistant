@@ -18,11 +18,25 @@ function current(): Route {
   return { path, segments: path.split("/").filter(Boolean) };
 }
 
+/**
+ * How many in-app steps can be undone with the browser's own Back. Counted
+ * here rather than read from `history.length`, which also counts pages from
+ * before this app was opened — a Back link must never leave the record.
+ */
+let depth = 0;
+
+export function canGoBack(): boolean {
+  return depth > 0;
+}
+
 export function useRoute(): [Route, (to: string) => void] {
   const [route, setRoute] = useState<Route>(current);
 
   useEffect(() => {
-    const onPop = () => setRoute(current());
+    const onPop = () => {
+      depth = Math.max(0, depth - 1);
+      setRoute(current());
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -30,6 +44,7 @@ export function useRoute(): [Route, (to: string) => void] {
   const navigate = useCallback((to: string) => {
     if (to === window.location.pathname + window.location.search + window.location.hash) return;
     window.history.pushState(null, "", to);
+    depth += 1;
     setRoute(current());
     window.scrollTo(0, 0);
   }, []);
