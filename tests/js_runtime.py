@@ -34,7 +34,8 @@ def run(script: str, directory: Path, name: str = "check.js", timeout: int = 30)
     path = Path(directory) / name
     path.write_text(PRELUDE + script, encoding="utf-8")
     return subprocess.run(
-        [runtime(), str(path)], capture_output=True, text=True, timeout=timeout
+        [runtime(), str(path)], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=timeout
     )
 
 

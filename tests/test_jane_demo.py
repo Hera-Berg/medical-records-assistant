@@ -132,7 +132,7 @@ class JaneDemoTests(unittest.TestCase):
         upload = ingest.ingest_bytes(self.vault,b'User uploaded original - retain me',
                     ingest.CaptureContext(original_filename='my-added-note.txt'))
         config = self.root/'config.toml'
-        config.write_text(config.read_text(encoding="utf-8")+'\n# User setting kept\n')
+        config.write_text(config.read_text(encoding="utf-8")+'\n# User setting kept\n',encoding="utf-8")
         before = self.vault.read().events
         original_bytes = (self.root/upload.rel).read_bytes()
         self.assertEqual(seed(self.root).events,0)
