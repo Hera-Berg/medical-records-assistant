@@ -750,14 +750,14 @@ tbody tr:last-child td {
 .timeline-filters {display:flex;flex-wrap:wrap;gap:8px;}
 .timeline-range {flex-shrink:0;}
 .timeline-count {margin-bottom:18px;}
-.timeline-month > h2 {padding:8px 16px;background:color-mix(in srgb,var(--color-accent) 10%,var(--color-paper));border-radius:5px;}
+.timeline-month > h2 {padding:8px 16px;background:color-mix(in srgb,var(--color-accent) 10%,white);border-radius:5px;}
 .timeline-month ol {list-style:none;margin:0;padding:0;}
 .clinical-timeline-row {display:grid;grid-template-columns:180px minmax(0,1fr);}
 .timeline-event-date {padding:20px 18px 20px 12px;font-weight:600;}
 .timeline-event-date .metadata {display:block;font-weight:400;margin-top:5px;font-size:12px;}
 .timeline-event-content {position:relative;padding:18px 24px;border-left:1px solid color-mix(in srgb,var(--color-accent) 35%,white);min-width:0;}
 .timeline-event-content::before {content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:var(--color-accent);left:-4px;top:27px;}
-.timeline-event-type {display:inline-block;font-size:12px;font-weight:600;color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 8%,var(--color-paper));padding:2px 7px;border-radius:3px;margin-bottom:4px;}
+.timeline-event-type {display:inline-block;font-size:12px;font-weight:600;color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 8%,white);padding:2px 7px;border-radius:3px;margin-bottom:4px;}
 .timeline-event-content h3 {font-size:16px;font-weight:600;margin:0;line-height:1.45;}
 .timeline-event-content h3 span {font-weight:400;}
 .timeline-document-title,.timeline-excerpt {margin:5px 0;line-height:1.5;}

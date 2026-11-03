@@ -229,7 +229,7 @@ function Gear() {
   );
 }
 
-export function Mark() {
+function Mark() {
   return (
     <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
       {[0,72,144,216,288].map(angle=><path key={angle} d="M16 15C9 10 10 3 16 2C22 3 23 10 16 15Z" transform={`rotate(${angle} 16 16)`} fill="currentColor" fillOpacity=".09" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>)}

@@ -70,13 +70,6 @@ import { SubmittedUpdates } from "./components/SubmittedUpdates";
 import { SharedCare, Notifications } from "./components/SharedCare";
 import { ClinicianHome } from "./components/ClinicianHome";
 import { useWorkspace } from "./workspace";
-import { PatientShell } from "./components/PatientShell";
-import { Today } from "./components/Today";
-import { RecordList, kindForPath } from "./components/RecordList";
-import { EntitySimple } from "./components/EntitySimple";
-import { More } from "./components/More";
-import { Prepare } from "./components/Prepare";
-import { Back, backFor } from "./components/Back";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
@@ -122,6 +115,7 @@ export function App() {
 
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
   const capture = useCapture(refresh);
+  const dragging = useWindowCapture(capture.enqueue);
   const [wide, menuOpen, setMenuOpen] = useMenu();
 
   // On a phone the menu lies over the page, so choosing somewhere closes it.
@@ -163,9 +157,6 @@ export function App() {
   const segments = route.segments[0] === "clinician" && route.segments.length > 1 ? route.segments.slice(1) : route.segments;
   const [first, second, ...rest] = segments;
   const tail = [second, ...rest].filter(Boolean).join("/");
-  // Ask takes drops itself, so it can follow what it was handed.
-  const dragging = useWindowCapture(capture.enqueue, first !== "ask");
-  const patientShell = workspace === "patient-carer" && !signingIn && !needsClinician;
 
   let screen: React.ReactNode;
   if ((needsClinician && !checked) || (session && workspace === "clinician" && clinicianPath(route.path) !== route.path)) {
@@ -193,7 +184,6 @@ export function App() {
       <Ask
         navigate={navigate}
         onBoxState={refresh}
-        onChanged={refresh}
         documents={health?.record.artifacts ?? null}
       />
     );
@@ -259,88 +249,6 @@ export function App() {
   }
 
   const asking = first === "ask";
-
-  if (patientShell) {
-    return (
-      <ClinicianLanguage.Provider value={false}>
-        <ClinicianComparisonProvider key="patient">
-          {dragging ? <DropOverlay /> : null}
-          <PatientShell first={first} health={health} capture={capture} navigate={navigate}>
-            <Boundary key="patient" resetKey={route.path}>
-              <PatientBack first={first} navigate={navigate} />
-              {patientScreen()}
-              {/* App-wide notices — the reader not set up, the app not answering,
-                  a note about the record's filing — below the page, not above
-                  it. Home places its own. */}
-              {!first || first === "overview" ? null : (
-                <section aria-label="About this app" className="pt-app-notices">
-                  <Attention health={health} error={healthError} navigate={navigate} quietEndpoint quietReview />
-                </section>
-              )}
-            </Boundary>
-          </PatientShell>
-        </ClinicianComparisonProvider>
-      </ClinicianLanguage.Provider>
-    );
-  }
-
-  /**
-   * The patient and carer workspace's screens. Several are the clinician
-   * workspace's own components; the ones that were too much for someone at home
-   * have simpler versions (Home, the lists, one entry, Check, Get ready), with
-   * the full detail kept one tap away inside them.
-   */
-  function patientScreen(): React.ReactNode {
-    const home = !first || first === "overview";
-    const notice = (
-      <Attention
-        health={health}
-        error={healthError}
-        navigate={navigate}
-        quietEndpoint={!home}
-        quietReview
-      />
-    );
-    const listKind = kindForPath(first);
-    if (home) return <Today health={health} navigate={navigate} version={version} notice={notice} />;
-    if (listKind) return <><RecordList kind={listKind} navigate={navigate} version={version} /></>;
-    if (first === "record" && tail) return <><EntitySimple id={decodeURIComponent(tail)} navigate={navigate} version={version} /></>;
-    if (first === "more") return <More health={health} navigate={navigate} />;
-    if (first === "prepare") return <Prepare navigate={navigate} version={version} onChanged={refresh} />;
-    if (first === "review") return <><Review version={version} onChanged={refresh} navigate={navigate} oneAtATime /></>;
-    if (first === "ask") return <>{screen}</>;
-    if (first === "add") {
-      const mode = new URLSearchParams(window.location.search);
-      const titled = mode.has("voice")
-        ? { title: "Say it out loud", subtitle: "Speak as you would to a nurse. It is typed up on this computer and kept with the recording." }
-        : mode.has("note")
-          ? { title: "Write a note", subtitle: "" }
-          : header;
-      return (
-        <>
-          <PatientTitle header={titled} />
-          <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} mode={mode.has("voice") ? "voice" : mode.has("note") ? "note" : undefined} />
-          <SubmittedUpdates version={version} onChanged={refresh} />
-        </>
-      );
-    }
-    if (first === "timeline") {
-      return (
-        <>
-          <PatientTitle header={header} />
-          <ClinicalTimeline key={workspace} navigate={navigate} version={version} clinician={false} />
-        </>
-      );
-    }
-    // These draw their own heading; a second one would give the page two h1s.
-    if (first === "documents") return <>{screen}</>;
-    return (
-      <>
-        <PatientTitle header={header} />
-        {screen}
-      </>
-    );
-  }
 
   return (
     <ClinicianLanguage.Provider value={workspace === "clinician" && Boolean(session)}>
@@ -490,34 +398,6 @@ export function App() {
   );
 }
 
-/** The way back to a page's parent, above its heading. */
-function PatientBack({ first, navigate }: { first: string | undefined; navigate: (to: string) => void }) {
-  const back = backFor(first);
-  if (!back) return null;
-  return (
-    <Back
-      to={back.to}
-      label={back.label}
-      previous={back.previous}
-      navigate={navigate}
-      className={back.phoneOnly ? "pt-phone-only" : ""}
-    />
-  );
-}
-
-/** The page's own heading, for patient screens that do not draw one themselves. */
-function PatientTitle({ header }: { header: PageHeader }) {
-  return (
-    <div className="pt-page-head">
-      <div className="pt-title-row">
-        <h1 className="pt-h1">{header.title}</h1>
-        {header.badge}
-      </div>
-      {header.subtitle && header.subtitle !== "Reading…" ? <p className="pt-muted pt-intro">{header.subtitle}</p> : null}
-    </div>
-  );
-}
-
 /**
  * Whether the menu is open, and whether the screen is wide enough for it to sit
  * beside the page.
@@ -569,19 +449,16 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
   if (!first || first === "overview") {
     return { title: "Home", subtitle: "" };
   }
-  if (first === "care-team") return { title: "Care team", subtitle: "" };
+  if (first === "care-team") return { title: workspace === "clinician" ? "Care team" : "My care team", subtitle: "" };
   if (first === "observation") return { title: "Original typed observation", subtitle: "" };
   if (first === "profile") {
     return { title: workspace === "clinician" ? "Patient profile" : "My profile", subtitle: "" };
   }
-  if (first === "notifications") return {title: workspace === "clinician" ? "Notifications" : "Messages", subtitle:""};
+  if (first === "notifications") return {title:"Notifications",subtitle:""};
   if (first === "documents") {
     return { title: "Documents", subtitle: "" };
   }
-  if (first === "calendar") return workspace === "clinician" ? { title: "Calendar", subtitle: "Appointments and important dates." } : { title: "Appointments", subtitle: "" };
-  if (first === "timeline" && workspace !== "clinician") {
-    return { title: "History", subtitle: "Everything added to your record, newest first. Open any entry to see the original." };
-  }
+  if (first === "calendar") return { title: "Calendar", subtitle: "Appointments and important dates." };
   if (first === "timeline") {
     return {
       title: "Timeline",
@@ -646,7 +523,7 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
   }
   if (first === "add") {
     return {
-      title: workspace === "clinician" ? "Upload or record information" : "Add to your record",
+      title: workspace === "clinician" ? "Upload or record information" : "Record an update",
       subtitle:
         "",
     };
