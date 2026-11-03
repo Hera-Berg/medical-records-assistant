@@ -26,6 +26,12 @@
     --color-tier-inf: #ffb4ad;
     --color-tier-file: #c4cbd0;
   }
+  /* Evidence-tier chips set a light ground inline for the printed page. On a
+     dark screen that ground left light text on a light chip; derive it from
+     the chip's own colour instead. */
+  :root[data-theme="dark"] .chip[style] {
+    background: color-mix(in srgb, currentColor 16%, var(--color-paper)) !important;
+  }
 }
 health-appearance { display: block; margin-bottom: 2rem; }
 .appearance-settings { border: 0; padding: 0 0 1.5rem; border-bottom: 1px solid var(--color-rule); }
