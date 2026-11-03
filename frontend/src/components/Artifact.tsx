@@ -11,6 +11,7 @@
  * of files.
  */
 
+import { isDemoRecord } from "../record";
 import { createElement, useEffect, useState } from "react";
 import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api, artifactUrl } from "../api";
@@ -87,8 +88,8 @@ export function Artifact({
       {meta.demo ? (
         <section className="mt-2">
           <h3>{meta.demo.title}</h3>
-          <p>{meta.demo.event_date} · {meta.demo.author} · Fictional demonstration data</p>
-          <p>Patient-visible authored source; not live AI extraction or clinician verification.</p>
+          <p>{meta.demo.event_date} · {meta.demo.author}{isDemoRecord() ? null : " · Fictional demonstration data"}</p>
+          <p>{isDemoRecord() ? "Patient-visible source document." : "Patient-visible authored source; not live AI extraction or clinician verification."}</p>
           <p><a href={`/api/artifact/${meta.demo.original_wording_artifact}`}>Open original text / transcript wording</a></p>
           {meta.demo.related.map(source => <p key={source.artifact}><a href={`/artifact/${source.artifact}`}>Related source: {source.title}</a></p>)}
         </section>

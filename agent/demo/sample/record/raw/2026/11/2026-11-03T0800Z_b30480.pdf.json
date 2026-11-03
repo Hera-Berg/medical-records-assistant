@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_b30480.pdf",
+  "artifact_ts": null,
+  "bytes": 4217,
+  "capture": {
+    "note": null,
+    "original_filename": "Cardiology assessment: atrial fibrillation.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2T770CMHNWMRJ1PY1PE",
+  "hash": "b30480f6d542d279ca32f2d28603e2c76e175ed942e15257df4f249be5347bc6",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:10Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "b30480"
+}

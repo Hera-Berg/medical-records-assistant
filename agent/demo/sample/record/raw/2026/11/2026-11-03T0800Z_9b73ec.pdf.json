@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_9b73ec.pdf",
+  "artifact_ts": null,
+  "bytes": 10755,
+  "capture": {
+    "note": null,
+    "original_filename": "Telephone case consultation: dizziness and recent results.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2VX3Y3BDET524QPT6EB",
+  "hash": "9b73ec6b942412b71404374e055984dffb5f49c5e5d8b51c3a0983499896dc92",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:40Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "9b73ec"
+}

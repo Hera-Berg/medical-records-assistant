@@ -1,0 +1,173 @@
+{
+  "version": "jane-review-v2",
+  "sources": [
+    {
+      "id": "baseline",
+      "artifact": "04ae62",
+      "event_date": "2024-11-01",
+      "document_date": "2024-11-01",
+      "received_date": "2024-11-01",
+      "title": "Baseline health and usual function"
+    },
+    {
+      "id": "nurse-history",
+      "artifact": "17c320",
+      "event_date": "2024-12-05",
+      "document_date": "2024-12-05",
+      "received_date": "2024-12-05",
+      "title": "Morgan Bell - Nursing note"
+    },
+    {
+      "id": "bennett-consult",
+      "artifact": "08ab18",
+      "event_date": "2025-03-26",
+      "document_date": "2025-03-26",
+      "received_date": "2025-03-26",
+      "title": "Dr Olivia Bennett - GP note"
+    },
+    {
+      "id": "cardio-diagnosis",
+      "artifact": "b30480",
+      "event_date": "2025-05-02",
+      "document_date": "2025-05-02",
+      "received_date": "2025-05-02",
+      "title": "Cardiology assessment: atrial fibrillation"
+    },
+    {
+      "id": "gp-af",
+      "artifact": "e7c5e7",
+      "event_date": "2025-05-06",
+      "document_date": "2025-05-06",
+      "received_date": "2025-05-06",
+      "title": "GP prescription record for atrial fibrillation"
+    },
+    {
+      "id": "previous-pathology",
+      "artifact": "30522f",
+      "event_date": "2026-04-14",
+      "document_date": "2026-04-14",
+      "received_date": "2026-04-14",
+      "title": "Full blood examination and biochemistry"
+    },
+    {
+      "id": "med-chart",
+      "artifact": "4ebb29",
+      "event_date": "2026-08-28",
+      "document_date": "2026-08-28",
+      "received_date": "2026-08-28",
+      "title": "Medication chart"
+    },
+    {
+      "id": "smith-consult",
+      "artifact": "f97125",
+      "event_date": "2026-10-21",
+      "document_date": "2026-10-21",
+      "received_date": "2026-10-21",
+      "title": "Dr James Smith - GP note"
+    },
+    {
+      "id": "med-question",
+      "artifact": "8ebd29",
+      "event_date": "2026-10-22",
+      "document_date": "2026-10-22",
+      "received_date": "2026-10-22",
+      "title": "Jane asks which heart tablet changed"
+    },
+    {
+      "id": "patient-dizzy",
+      "artifact": "e01b24",
+      "event_date": "2026-10-23",
+      "document_date": "2026-10-23",
+      "received_date": "2026-10-23",
+      "title": "Jane reports persistent dizziness"
+    },
+    {
+      "id": "carer-walk",
+      "artifact": "8eda85",
+      "event_date": "2026-10-24",
+      "document_date": "2026-10-24",
+      "received_date": "2026-10-24",
+      "title": "Walking support requested"
+    },
+    {
+      "id": "staff-walk",
+      "artifact": "f6397c",
+      "event_date": "2026-10-25",
+      "document_date": "2026-10-25",
+      "received_date": "2026-10-25",
+      "title": "Walking support requested"
+    },
+    {
+      "id": "meals",
+      "artifact": "b2d7ca",
+      "event_date": "2026-10-26",
+      "document_date": "2026-10-26",
+      "received_date": "2026-10-26",
+      "title": "Jane reports fewer communal breakfasts"
+    },
+    {
+      "id": "low-haemoglobin",
+      "artifact": "0e5a8c",
+      "event_date": "2026-10-27",
+      "document_date": "2026-10-28",
+      "received_date": "2026-10-28",
+      "title": "Full blood examination"
+    },
+    {
+      "id": "critical-sodium",
+      "artifact": "f41891",
+      "event_date": "2026-10-29",
+      "document_date": "2026-10-30",
+      "received_date": "2026-10-30",
+      "title": "Electrolyte panel"
+    },
+    {
+      "id": "stable-renal",
+      "artifact": "8bf9af",
+      "event_date": "2026-10-29",
+      "document_date": "2026-10-30",
+      "received_date": "2026-10-31",
+      "title": "Renal function panel"
+    },
+    {
+      "id": "nurse-clinical",
+      "artifact": "2dbc67",
+      "event_date": "2026-10-31",
+      "document_date": "2026-10-31",
+      "received_date": "2026-10-31",
+      "title": "Morgan Bell - Nursing note"
+    },
+    {
+      "id": "audiology-correspondence",
+      "artifact": "ab7f3c",
+      "event_date": "2026-11-03",
+      "document_date": "2026-11-03",
+      "received_date": "2026-11-03",
+      "title": "Hearing-aid service check"
+    },
+    {
+      "id": "cardio-recommendation",
+      "artifact": "9b73ec",
+      "event_date": "2026-11-03",
+      "document_date": "2026-11-03",
+      "received_date": "2026-11-03",
+      "title": "Telephone case consultation: dizziness and recent results"
+    },
+    {
+      "id": "physio",
+      "artifact": "ad3173",
+      "event_date": "2026-11-03",
+      "document_date": "2026-11-03",
+      "received_date": "2026-11-03",
+      "title": "Bedside functional review"
+    },
+    {
+      "id": "podiatry-correspondence",
+      "artifact": "cd6030",
+      "event_date": "2026-11-03",
+      "document_date": "2026-11-03",
+      "received_date": "2026-11-03",
+      "title": "Outreach podiatry review"
+    }
+  ]
+}

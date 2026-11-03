@@ -70,6 +70,7 @@ import { SubmittedUpdates } from "./components/SubmittedUpdates";
 import { SharedCare, Notifications } from "./components/SharedCare";
 import { ClinicianHome } from "./components/ClinicianHome";
 import { useWorkspace } from "./workspace";
+import { demoAvailable, isDemoRecord, switchRecord } from "./record";
 
 /** How often the sidebar and banners refresh. The route is cheap and opens no socket. */
 const HEALTH_INTERVAL_MS = 5000;
@@ -119,6 +120,28 @@ export function App() {
   const [wide, menuOpen, setMenuOpen] = useMenu();
 
   // On a phone the menu lies over the page, so choosing somewhere closes it.
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  // A change of record reloads the page, so the new record is pinned before
+  // anything is fetched from it. A change of workspace within a record does not.
+  const chooseWorkspace = async (value: string) => {
+    const demo = value.startsWith("demo-");
+    const clinician = value.endsWith("clinician");
+    // Within one record only the screen changes, except that "Demo clinician"
+    // always arrives signed in as the demo record's GP.
+    if (demo === isDemoRecord() && !(demo && clinician && !session)) {
+      go(clinician ? "/clinician" : "/overview");
+      return;
+    }
+    setSwitching(true);
+    setSwitchError(null);
+    try {
+      window.location.assign(await switchRecord(demo ? "demo" : "own", clinician ? "clinician" : "patient"));
+    } catch (error) {
+      setSwitchError((error as Error).message);
+      setSwitching(false);
+    }
+  };
   const go = useCallback(
     (to: string) => {
       if (!wide) setMenuOpen(false);
@@ -330,7 +353,7 @@ export function App() {
             {asking ? null : header.badge}
             {/* A label, not a banner: whoever opened a demonstration knows it
                 is one, but a printed page or a screenshot must still say so. */}
-            {health?.vault.demo ? (
+            {health?.vault.demo && !isDemoRecord() ? (
               <span
                 className="badge demo-indicator"
                 title="Everything in this record was invented so the screens have something to show."
@@ -346,16 +369,22 @@ export function App() {
           </div> : null}
           {signOutError ? <p role="alert">{signOutError}</p> : null}
           <label className="workspace-switch">
-            <span className="switch-caption"><span>Workspace</span>{health?.vault.demo ? <span className="switch-demo-indicator">Fictional demo</span> : null}</span>
+            <span className="switch-caption"><span>Workspace</span>{health?.vault.demo && !isDemoRecord() ? <span className="switch-demo-indicator">Fictional demo</span> : null}</span>
             <select
-              value={workspace}
-              title="Demonstration only. Does not sign you in or unlock clinical notes."
-              onChange={(event) => go(event.target.value === "clinician" ? "/clinician" : "/overview")}
+              value={(isDemoRecord() ? "demo-" : "") + workspace}
+              disabled={switching}
+              title="Choose a workspace. The demo workspaces show a separate, complete example record; nothing in them reaches your own record."
+              onChange={(event) => chooseWorkspace(event.target.value)}
             >
               <option value="patient-carer">Patient &amp; carer workspace</option>
               <option value="clinician">Clinician workspace</option>
+              {demoAvailable() || isDemoRecord() ? <>
+                <option value="demo-patient-carer">Demo patient</option>
+                <option value="demo-clinician">Demo clinician</option>
+              </> : null}
             </select>
           </label>
+          {switchError ? <p role="alert" className="metadata">{switchError}</p> : null}
         </header>
         {workspace === "clinician" && session ? <PatientIdentity key={session.clinician.username} version={version} /> : null}
         </div>

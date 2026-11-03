@@ -1,0 +1,102 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [9 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Italic /Encoding /WinAnsiEncoding >>
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R /F5 7 0 R /F6 8 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 3973 >>
+stream
+BT /F2 25 Tf 0.2 0.28 0.34 rg 1 0 0 1 43.00 800.00 Tm (EPL) Tj ET
+BT /F2 15 Tf 0.2 0.28 0.34 rg 1 0 0 1 106.00 804.00 Tm (EXAMPLE PATHOLOGY) Tj ET
+BT /F1 8 Tf 0.2 0.28 0.34 rg 1 0 0 1 106.00 788.00 Tm (LABORATORY  /  INTEGRATED DIAGNOSTICS) Tj ET
+BT /F1 7.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 368.53 769.00 Tm (8 Sample Circuit, Sydney NSW 2000  |  02 5550 0190) Tj ET
+BT /F1 7.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 402.54 756.00 Tm (reports@examplepathology.example.invalid) Tj ET
+0.2 0.28 0.34 RG 1 w 43 744 m 552 744 l S
+BT /F2 11 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 720.00 Tm (Jane Doe) Tj ET
+BT /F1 9.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 305.00 720.00 Tm (DOB  1 November 1935) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 703.00 Tm (Patient ID  JD-19351101) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 305.00 703.00 Tm (Sydney Aged Care) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 689 m 552 689 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 680.00 Tm (Referrer: Dr James Smith  /  Sydney Aged Care) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 663.00 Tm (Report date: 30 October 2026) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.92 663.00 Tm (Collected: 29 October 2026 \(time not supplied\)) Tj ET
+BT /F2 12 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 637.00 Tm (Renal function panel) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 613.00 Tm (Specimen: Serum) Tj ET
+BT /F6 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 414.30 613.00 Tm (Accession: EPL-20261029-016) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 596.00 Tm (Received by practice: 31 October 2026) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 478.31 596.00 Tm (Report status: Final) Tj ET
+BT /F1 8.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 579.00 Tm (Clinical details: Not supplied on the request.) Tj ET
+0.95 0.96 0.96 rg 43 540.8 509 25 re f
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 550.80 Tm (Test) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 550.80 Tm (Result) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 550.80 Tm (Units) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 550.80 Tm (Reference interval) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 550.80 Tm (Flag) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 536.8 m 552 536.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 528.80 Tm (Potassium) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 528.80 Tm (4.3) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 528.80 Tm (mmol/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 528.80 Tm (3.5–5.2) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 528.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 521.8 m 552 521.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 512.80 Tm (Urea) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 512.80 Tm (6.1) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 512.80 Tm (mmol/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 512.80 Tm (2.5–8.0) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 512.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 505.8 m 552 505.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 496.80 Tm (Creatinine) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 496.80 Tm (74) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 496.80 Tm (µmol/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 496.80 Tm (45–90) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 496.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 489.8 m 552 489.8 l S
+BT /F2 11 Tf 0.2 0.28 0.34 rg 1 0 0 1 43.00 467.80 Tm (Previous results — 14 April 2026) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 446.80 Tm (Potassium 4.2 mmol/L; Urea 5.8 mmol/L; Creatinine 72 µmol/L.) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 423.60 Tm (Authorised for release by the Example Pathology Laboratory duty scientist. Reference intervals are those supplied for this report.) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 57 m 552 57 l S
+BT /F1 8 Tf 0.35 0.36 0.38 rg 1 0 0 1 43.00 42.00 Tm () Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 479.66 26.00 Tm (Laboratory report | 1) Tj ET
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000000413 00000 n 
+0000000511 00000 n 
+0000000611 00000 n 
+0000000706 00000 n 
+0000000883 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+4909
+%%EOF

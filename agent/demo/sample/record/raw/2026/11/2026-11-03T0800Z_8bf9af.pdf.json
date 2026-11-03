@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_8bf9af.pdf",
+  "artifact_ts": null,
+  "bytes": 5195,
+  "capture": {
+    "note": null,
+    "original_filename": "Renal function panel.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2VB0BS145BNMRTJ147Z",
+  "hash": "8bf9af9eafb67bcf63ea31aeffc8e749ec3dd08d6f9cb5cc46d8ea8b10c7032a",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:34Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "8bf9af"
+}

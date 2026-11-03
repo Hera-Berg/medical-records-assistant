@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_ab7f3c.pdf",
+  "artifact_ts": null,
+  "bytes": 6111,
+  "capture": {
+    "note": null,
+    "original_filename": "Hearing-aid service check.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2VK2C19FVFXZDPDGQX4",
+  "hash": "ab7f3cb31c8e67a74a8d50b482eee0de4c866ec4591460a5078611c8c8b3ca4f",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:38Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "ab7f3c"
+}

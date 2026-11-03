@@ -867,7 +867,8 @@ def retrieve(
                 continue
             offer([Passage(key=row.cite, kind=ROW, event_id=row.event_id,
                 subject_id=None, title=f"{metadata.get('title', 'Document')} — {section}",
-                text=f"{text} (Source author: {metadata.get('author', 'Not recorded')}; Fictional demo)",
+                text=f"{text} (Source author: {metadata.get('author', 'Not recorded')}"
+                     + (")" if metadata.get('sample') else "; Fictional demo)"),
                 predicate="~source", tier=row.marker, corrected=False, when=row.date.render(),
                 citation=citer.cite(row.cite, row.cite_description),
                 rank=1 if _matches_terms(heading, source_terms) or section == "Results" else 2,

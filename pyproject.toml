@@ -64,6 +64,9 @@ include = ["agent*"]
 "agent.server" = ["static_files/**"]
 # What each local model was measured to do, shown where a person chooses one.
 "agent.runtime" = ["measurements.json"]
+# The demo record behind "Demo patient" and "Demo clinician": its events, its
+# original documents and the key that opens its progress notes.
+"agent.demo" = ["sample/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

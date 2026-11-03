@@ -174,6 +174,16 @@ def _preview(text: str, limit: int = TRANSCRIPT_PREVIEW) -> str:
     return collapsed[: limit - 1].rstrip() + "\u2026"
 
 
+#: Payload keys of note events that record what the application did rather than
+#: something a person wrote: review and release decisions, chart edits, who may
+#: receive messages, acknowledgements, bookings, and markers on the record itself.
+_BOOKKEEPING = frozenset({
+    "review_workflow", "clinical_record_edit", "review_recipient_authorisation",
+    "review_acknowledgement", "patient_booking", "clinical_upload", "review_dataset",
+    "care_team", "sample_record", "document_release",
+})
+
+
 def _note_text(event: Event) -> str:
     payload = event.payload
     for name in ("text", "transcript", "note"):
@@ -199,6 +209,8 @@ def build(
     demo_entries = entries(events, known)
     demo_sources = source_ids(events, known)
     demo_event_ids = {e.id for e in demo_entries.values()}
+    from ..demo_metadata import is_sample
+    sample = is_sample(events)
     demo_claim_ids = {e.id for e in events
                       if e.payload.get('demo_scenario') == SCENARIO
                       and (e.provenance or {}).get('artifact') in demo_sources}
@@ -299,6 +311,13 @@ def build(
         elif event.type == "note.recorded":
             if event.payload.get("calendar_only") is True:
                 continue
+            # The review workflow, the structured chart and the record's own
+            # settings keep their audit as note events with no words in them.
+            # They are bookkeeping, shown on the screens that own them; on the
+            # timeline they read as a patient entry saying only "A note was
+            # recorded".
+            if any(key in event.payload for key in _BOOKKEEPING) and _note_text(event) == "A note was recorded":
+                continue
             if event.payload.get('demo_scenario') == SCENARIO:
                 if event.id not in demo_event_ids:
                     continue
@@ -317,11 +336,11 @@ def build(
                     marker = MARKER_ARTEFACT
                 summary = _preview(' '.join(re.split(r'(?<=[.!?])\s+(?=[A-Z“])', p['text'])[:2]), 360)
                 rows.append(Row(date=FuzzyDate(parsed), date_kind=OCCURRED, marker=marker,
-                    text=f"{p['title']} — {summary} ({p['author']}; Fictional demo)",
+                    text=f"{p['title']} — {summary} ({p['author']})" if sample else f"{p['title']} — {summary} ({p['author']}; Fictional demo)",
                     cite=p['artifact'], event_id=event.id, sort_key=event.sort_key,
-                    cite_description='Patient-visible fictional demonstration source',
+                    cite_description='Patient-visible source' if sample else 'Patient-visible fictional demonstration source',
                     source_sections=readable_sections(p),
-                    demo={'title':p['title'], 'summary':summary, 'author':p['author'],
+                    demo={'title':p['title'], 'summary':summary, 'author':p['author'], 'sample':sample,
                           'event_type':p['event_type'], 'source_type':p['source_type'],
                           'fictional':True, 'status':p['status'], 'added_at':event.ts,
                           'original_wording_artifact':p.get('original_wording_artifact')}))

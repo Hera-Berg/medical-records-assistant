@@ -1,0 +1,170 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [9 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Italic /Encoding /WinAnsiEncoding >>
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R /F5 7 0 R /F6 8 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 8816 >>
+stream
+BT /F2 25 Tf 0.2 0.28 0.34 rg 1 0 0 1 43.00 800.00 Tm (EPL) Tj ET
+BT /F2 15 Tf 0.2 0.28 0.34 rg 1 0 0 1 106.00 804.00 Tm (EXAMPLE PATHOLOGY) Tj ET
+BT /F1 8 Tf 0.2 0.28 0.34 rg 1 0 0 1 106.00 788.00 Tm (LABORATORY  /  INTEGRATED DIAGNOSTICS) Tj ET
+BT /F1 7.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 368.53 769.00 Tm (8 Sample Circuit, Sydney NSW 2000  |  02 5550 0190) Tj ET
+BT /F1 7.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 402.54 756.00 Tm (reports@examplepathology.example.invalid) Tj ET
+0.2 0.28 0.34 RG 1 w 43 744 m 552 744 l S
+BT /F2 11 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 720.00 Tm (Jane Doe) Tj ET
+BT /F1 9.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 305.00 720.00 Tm (DOB  1 November 1935) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 703.00 Tm (Patient ID  JD-19351101) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 305.00 703.00 Tm (Sydney Aged Care) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 689 m 552 689 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 680.00 Tm (Referrer: Dr James Smith  /  Sydney Aged Care) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 663.00 Tm (Report date: 28 October 2026) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.92 663.00 Tm (Collected: 27 October 2026 \(time not supplied\)) Tj ET
+BT /F2 12 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 637.00 Tm (Full blood examination) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 613.00 Tm (Specimen: EDTA whole blood) Tj ET
+BT /F6 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 414.30 613.00 Tm (Accession: EPL-20261027-014) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 596.00 Tm (Received by practice: 28 October 2026) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 478.31 596.00 Tm (Report status: Final) Tj ET
+BT /F1 8.7 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 579.00 Tm (Clinical details: Not supplied on the request.) Tj ET
+0.95 0.96 0.96 rg 43 540.8 509 25 re f
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 550.80 Tm (Test) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 550.80 Tm (Result) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 550.80 Tm (Units) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 550.80 Tm (Reference interval) Tj ET
+BT /F2 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 550.80 Tm (Flag) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 536.8 m 552 536.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 528.80 Tm (Haemoglobin) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 528.80 Tm (101) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 528.80 Tm (g/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 528.80 Tm (115–165) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 528.80 Tm (LOW) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 521.8 m 552 521.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 512.80 Tm (Red cell count) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 512.80 Tm (3.45) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 512.80 Tm (x10^12/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 512.80 Tm (3.80–5.20) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 512.80 Tm (LOW) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 505.8 m 552 505.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 496.80 Tm (Haematocrit) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 496.80 Tm (0.310) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 496.80 Tm (L/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 496.80 Tm (0.350–0.460) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 496.80 Tm (LOW) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 489.8 m 552 489.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 480.80 Tm (MCV) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 480.80 Tm (90) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 480.80 Tm (fL) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 480.80 Tm (80–100) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 480.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 473.8 m 552 473.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 464.80 Tm (MCH) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 464.80 Tm (29.3) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 464.80 Tm (pg) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 464.80 Tm (27.0–33.0) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 464.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 457.8 m 552 457.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 448.80 Tm (MCHC) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 448.80 Tm (326) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 448.80 Tm (g/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 448.80 Tm (320–360) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 448.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 441.8 m 552 441.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 432.80 Tm (RDW) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 432.80 Tm (14.2) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 432.80 Tm (%) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 432.80 Tm (11.5–14.5) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 432.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 425.8 m 552 425.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 416.80 Tm (White cell count) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 416.80 Tm (6.8) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 416.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 416.80 Tm (4.0–11.0) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 416.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 409.8 m 552 409.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 400.80 Tm (Neutrophils) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 400.80 Tm (4.2) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 400.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 400.80 Tm (2.0–7.5) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 400.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 393.8 m 552 393.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 384.80 Tm (Lymphocytes) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 384.80 Tm (1.8) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 384.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 384.80 Tm (1.0–4.0) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 384.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 377.8 m 552 377.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 368.80 Tm (Monocytes) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 368.80 Tm (0.5) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 368.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 368.80 Tm (0.2–1.0) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 368.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 361.8 m 552 361.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 352.80 Tm (Eosinophils) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 352.80 Tm (0.2) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 352.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 352.80 Tm (0.0–0.5) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 352.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 345.8 m 552 345.8 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 336.80 Tm (Basophils) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 336.80 Tm (0.1) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 336.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 336.80 Tm (0.0–0.2) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 336.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 329.79999999999995 m 552 329.79999999999995 l S
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 320.80 Tm (Platelet count) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 225.00 320.80 Tm (245) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 290.00 320.80 Tm (x10^9/L) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 365.00 320.80 Tm (150–400) Tj ET
+BT /F1 8.8 Tf 0.1 0.12 0.14 rg 1 0 0 1 476.00 320.80 Tm () Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 313.79999999999995 m 552 313.79999999999995 l S
+BT /F2 11 Tf 0.2 0.28 0.34 rg 1 0 0 1 43.00 291.80 Tm (Previous results — 14 April 2026) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 270.80 Tm (Haemoglobin 128 g/L; Red cell count 4.30 x10^12/L; Haematocrit 0.390 L/L; MCV 91 fL; MCH 29.8 pg; MCHC 328 g/L; RDW 13.5 %;) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 256.60 Tm (White cell count 6.5 x10^9/L; Neutrophils 4.0 x10^9/L; Lymphocytes 1.7 x10^9/L; Monocytes 0.5 x10^9/L; Eosinophils 0.2 x10^9/L;) Tj ET
+BT /F1 8.6 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 242.40 Tm (Basophils 0.1 x10^9/L; Platelet count 250 x10^9/L.) Tj ET
+BT /F1 8.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 219.20 Tm (Authorised for release by the Example Pathology Laboratory duty scientist. Reference intervals are those supplied for this report.) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 57 m 552 57 l S
+BT /F1 8 Tf 0.35 0.36 0.38 rg 1 0 0 1 43.00 42.00 Tm () Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 479.66 26.00 Tm (Laboratory report | 1) Tj ET
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000000413 00000 n 
+0000000511 00000 n 
+0000000611 00000 n 
+0000000706 00000 n 
+0000000883 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+9752
+%%EOF

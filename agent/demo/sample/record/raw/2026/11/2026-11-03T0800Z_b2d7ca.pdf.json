@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_b2d7ca.pdf",
+  "artifact_ts": null,
+  "bytes": 905,
+  "capture": {
+    "note": null,
+    "original_filename": "Jane reports fewer communal breakfasts.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2TYBAE34VYW74CHK8G6",
+  "hash": "b2d7ca6b8aa8a803eb1d2598e9cffe199b787353b3d7873b7a04e99332096adf",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:28Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "b2d7ca"
+}

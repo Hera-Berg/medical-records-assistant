@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_8ebd29.pdf",
+  "artifact_ts": null,
+  "bytes": 910,
+  "capture": {
+    "note": null,
+    "original_filename": "Jane asks which heart tablet changed.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2TPXHHMHMEP7XSWCCR8",
+  "hash": "8ebd29dc4cc85614fab3d436603fe138f9f137342bfd38dfe3aa5333bbb6ebeb",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:20Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "8ebd29"
+}

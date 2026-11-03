@@ -53,9 +53,12 @@ def serve(
     import uvicorn  # noqa: PLC0415 - only needed when actually serving
 
     from .app import create_app
+    from .sample_record import wrap
 
     bound = check_host(host)
-    app = create_app(vault, worker=worker)
+    # The person's record, with the sample record served beside it and never
+    # mixed into it: see agent/server/sample_record.py.
+    app = wrap(create_app(vault, worker=worker), vault)
     uvicorn.run(
         app,
         host=bound,

@@ -179,7 +179,7 @@ export const api = {
    */
   capture: (
     files: File[],
-    source: "upload" | "paste" | "drop" | "recorder",
+    source: "upload" | "paste" | "drop" | "recorder" | "chat",
     capturedTs?: string | null,
     note?: string,
     metadata?: Record<string,string>,

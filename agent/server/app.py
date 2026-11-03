@@ -88,6 +88,7 @@ def create_app(
     worker: bool | None = None,
     probe_vision: bool = True,
     clock=None,
+    sample: bool = False,
 ) -> FastAPI:
     """Build the application for *vault*.
 
@@ -96,6 +97,12 @@ def create_app(
     test that fails on a slower machine for reasons nobody can reproduce. A test
     that wants the worker drives :meth:`agent.server.worker.Worker.run_once`
     directly instead.
+
+    ``sample`` builds the second app that serves the sample record beside the
+    person's own (see :mod:`agent.server.sample_record`). It reports the reader's
+    state but never takes it over: the reader is one process per machine, and
+    its idea of whether there is work waiting, and this machine's choice of
+    where documents are read, both belong to the person's own record.
     """
     redaction.install()
     configured = check_endpoint(vault)
@@ -132,7 +139,13 @@ def create_app(
     )
 
     state = RecordState(vault, clock=clock)
-    if session.reads_here(vault):
+    if sample:
+        if session.reads_here(vault):
+            status = supervisor.get(vault).status()
+            state.set_endpoint(endpoint_state.from_reader(status.state, status.reason, None))
+        elif not configured:
+            state.set_endpoint(endpoint_state.not_configured())
+    elif session.reads_here(vault):
         # Written once, so a synced config.toml gaining a [models.vlm] table from
         # another machine cannot move this one's documents to a box.
         if not under_pytest():

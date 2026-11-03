@@ -38,6 +38,8 @@ def documents(state: RecordState = Depends(get_state)):
     from ...demo_metadata import entries, source_ids, SCENARIO
     demo = entries(snapshot.events, snapshot.artifacts)
     by_source = {e.payload['artifact']: e for e in demo.values()}
+    from ...demo_metadata import is_sample
+    labelled = not is_sample(snapshot.events)
     hidden_originals = source_ids(snapshot.events, snapshot.artifacts) - by_source.keys()
     items = []
     for short, artifact in snapshot.artifacts.items():
@@ -56,7 +58,7 @@ def documents(state: RecordState = Depends(get_state)):
         if short in by_source:
             p = by_source[short].payload
             item.update(title=p['title'], category=p['source_type'], document_date=p['event_date'],
-                        professional=p['author'], access=p.get('access'), demo=True, event_type=p['event_type'],
+                        professional=p['author'], access=p.get('access'), demo=labelled, event_type=p['event_type'],
                         release_note='Release information not recorded')
             if p.get('native_document'):
                 from ...prescriptions import release_label

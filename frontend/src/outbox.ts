@@ -24,7 +24,17 @@
  * would be worse than recording without a safety net.
  */
 
-const DATABASE = "health-agent-outbox";
+import { isDemoRecord } from "./record";
+
+/**
+ * One queue per record. Every tab of an origin shares IndexedDB, so a single
+ * queue would let a capture made in a demo tab be sent later by a tab showing
+ * the person's own record, into their record. Read when the database is first
+ * opened, after the tab's record is pinned (see record.ts).
+ */
+function databaseName(): string {
+  return isDemoRecord() ? "health-agent-outbox-demo" : "health-agent-outbox";
+}
 const STORE = "pending";
 const VERSION = 1;
 
@@ -54,7 +64,7 @@ function open(): Promise<IDBDatabase | null> {
   return new Promise((resolve) => {
     let request: IDBOpenDBRequest;
     try {
-      request = indexedDB.open(DATABASE, VERSION);
+      request = indexedDB.open(databaseName(), VERSION);
     } catch (exc) {
       unavailable = (exc as Error).message;
       resolve(null);

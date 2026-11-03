@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_f41891.pdf",
+  "artifact_ts": null,
+  "bytes": 7211,
+  "capture": {
+    "note": null,
+    "original_filename": "Electrolyte panel.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2V74RH45XVE5FKDMQ6D",
+  "hash": "f41891646f1aa86d92cddb12e1cf50774fbb796d88e5aab1436e30681d30a42b",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:32Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "f41891"
+}

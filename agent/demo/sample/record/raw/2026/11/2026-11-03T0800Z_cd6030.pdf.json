@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_cd6030.pdf",
+  "artifact_ts": null,
+  "bytes": 5818,
+  "capture": {
+    "note": null,
+    "original_filename": "Outreach podiatry review.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2WAFTWKFF3TEW42BA1R",
+  "hash": "cd60301f7c646b8c2212b27df4f20a6d1f14c44f9899cfd70a03d9bc0ea8246e",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:44Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "cd6030"
+}

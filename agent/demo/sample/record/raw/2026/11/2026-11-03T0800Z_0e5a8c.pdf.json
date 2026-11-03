@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_0e5a8c.pdf",
+  "artifact_ts": null,
+  "bytes": 10038,
+  "capture": {
+    "note": null,
+    "original_filename": "Full blood examination.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2V36AWRJCK3DRJR8G8V",
+  "hash": "0e5a8ced828a79e871d4d58e57f8ded5392f58c102a8e4fffe3f4a7b06b3cfc8",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:30Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "0e5a8c"
+}

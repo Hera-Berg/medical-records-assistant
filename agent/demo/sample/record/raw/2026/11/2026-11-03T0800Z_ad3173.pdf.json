@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_ad3173.pdf",
+  "artifact_ts": null,
+  "bytes": 6433,
+  "capture": {
+    "note": null,
+    "original_filename": "Bedside functional review.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2W4DFMC4BRX4V0NHKM9",
+  "hash": "ad3173a1f7eececf70ad975035671f75c6dfc7fd3678d8366a37e73f27777fb0",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:42Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "ad3173"
+}

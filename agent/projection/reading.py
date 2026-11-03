@@ -74,6 +74,9 @@ class Reading:
     #: document with these is never finished, whatever was decided about the
     #: rest of it.
     unclear: int = 0
+    #: An original of the sample record that ships with the app, which is worded
+    #: without demonstration disclaimers (see ``demo_metadata.is_sample``).
+    sample: bool = False
 
     @property
     def is_finished(self) -> bool:
@@ -104,6 +107,8 @@ class Reading:
         Never a bare status word either. "unread" needs a legend; "Not read yet"
         does not, and this text is read by the person whose record it is.
         """
+        if self.state == 'demo-authored' and self.sample:
+            return 'Filed from the original document; nothing needed reading.'
         if self.state == 'demo-authored':
             return 'Authored fictional demonstration data; not live AI extraction or clinician verification.'
         if self.state == TRANSCRIBED:
@@ -191,9 +196,11 @@ def index(
     found: dict[str, Reading] = {}
     from ..demo_metadata import source_ids
     demo_sources = source_ids(events, artifacts)
+    from ..demo_metadata import is_sample
+    sample = is_sample(events)
     for short, artifact in artifacts.items():
         if short in demo_sources:
-            found[short] = Reading(short, 'demo-authored')
+            found[short] = Reading(short, 'demo-authored', sample=sample)
             continue
         mime = str(getattr(artifact, "mime", "") or "")
         recording = mime.startswith(("audio/", "video/"))

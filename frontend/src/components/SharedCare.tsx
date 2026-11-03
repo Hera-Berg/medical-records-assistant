@@ -1,4 +1,5 @@
 import {useEffect,useState,useRef} from 'react';
+import { isDemoRecord } from "../record";
 import {api} from '../api';
 import {Link} from '../router';
 import {sydneyDate,sydneyTimestamp} from '../dates';
@@ -23,7 +24,7 @@ export function Notifications({navigate}:{navigate:(to:string)=>void}){
     <p>{m.message}</p>{m.timeframe?<p className="metadata">Requested timeframe: {m.timeframe}</p>:null}
     <p className="metadata">{m.actor.name} · {sydneyTimestamp(m.at)} · To {names(m.recipients)}</p>
     {m.booking?<div className="booking-confirmed"><strong>{sydneyDate(m.booking.date)} · {m.booking.time} · {m.booking.professional}</strong>{m.booking.location?<p className="metadata">{m.booking.location}</p>:null}<Link to={'/calendar#'+m.booking.id} navigate={navigate} className="source-link">View appointment in calendar</Link><p className="metadata">Booking does not mean the report has been discussed.</p></div>:m.kind==='appointment_request'&&!m.action_resolved?<BookAppointment request={m} onBooked={refresh}/>:null}
-    <details className="notification-acknowledgements"><summary>Acknowledgement</summary>{m.recipients.map(r=>m.acknowledgements.some(a=>a.recipient===r)?<p className="metadata" key={r}>Demo acknowledgement recorded for {r==='patient'?'Jane':'Emily'}; understanding is not verified.</p>:<button key={r} className="btn" disabled={busy} onClick={()=>acknowledge(m.id,r)}>Record demo acknowledgement as {r==='patient'?'Jane':'Emily'}</button>)}</details>
+    <details className="notification-acknowledgements"><summary>Acknowledgement</summary>{m.recipients.map(r=>m.acknowledgements.some(a=>a.recipient===r)?<p className="metadata" key={r}>{isDemoRecord()?'Acknowledgement':'Demo acknowledgement'} recorded for {r==='patient'?'Jane':'Emily'}; understanding is not verified.</p>:<button key={r} className="btn" disabled={busy} onClick={()=>acknowledge(m.id,r)}>Record {isDemoRecord()?'':'demo '}acknowledgement as {r==='patient'?'Jane':'Emily'}</button>)}</details>
    </article>)}
   </>}
  </section>;
@@ -36,7 +37,7 @@ function BookAppointment({request,onBooked}:{request:Data['messages'][number];on
  const slot=slots?.find(s=>s.id===selected);
  return <section className="appointment-booking">
   {!open?<button className="btn btn-primary" onClick={load}>Choose an appointment with Dr Smith</button>:<>
-   <h3 className="section-heading">Dr James Smith · available appointments</h3><p className="metadata">Fictional demonstration times · 30-minute appointments · Australia/Sydney. This is not connected to a real practice schedule. If these times do not meet the requested timeframe, contact your care team.</p>
+   <h3 className="section-heading">Dr James Smith · available appointments</h3><p className="metadata">{isDemoRecord()?'':'Fictional demonstration times · '}30-minute appointments · Australia/Sydney.{isDemoRecord()?'':' This is not connected to a real practice schedule.'} If these times do not meet the requested timeframe, contact your care team.</p>
    {error?<p role="alert">{error}</p>:null}
    {slots===null?<p role="status">Loading times…</p>:!slots.length?<p>No available demonstration times. Please contact your care team.</p>:preview&&slot?<div className="workflow-preview" aria-label="Appointment booking preview">
     <h4 className="section-heading">Confirm your appointment</h4><p><strong>{sydneyDate(slot.date)} · {slot.time} · {slot.professional}</strong></p>{slot.location?<p>{slot.location}</p>:null}<p>Booked by {recipient==='patient'?'Jane':'Emily'} in the shared demo workspace.</p>

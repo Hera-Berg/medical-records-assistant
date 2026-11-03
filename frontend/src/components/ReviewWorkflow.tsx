@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { isDemoRecord } from "../record";
 import { api } from '../api';
 import { sydneyTimestamp } from '../dates';
 import type { ReviewIssue,WorkflowEvent } from '../types';
@@ -10,10 +11,10 @@ export function WorkflowIndicators({issue}:{issue:ReviewIssue}){
   <span>{w.reviewed?'Reviewed':'Not reviewed'}</span><span>{w.communications.some(c=>c.kind==='communication')?'Communication recorded':'Not notified'}</span>
   <span>{issue.contributions.some(c=>c.access==='clinical')?(w.releases.length?`Released (${new Set(w.releases.map(r=>r.source)).size} document${new Set(w.releases.map(r=>r.source)).size===1?'':'s'})`:'Not released'):'Own submissions · no release required'}</span>
   {w.actions.some(a=>!a.resolved)?<span>{w.actions.some(a=>!a.resolved&&a.kind==='appointment_request')?(w.actions.some(a=>!a.resolved&&a.booking)?'Appointment booked · discussion pending':'Appointment requested · action outstanding'):'Clinical action outstanding'}</span>:null}
-  {w.communications.some(c=>c.method==='in_app'||c.kind==='appointment_request')?<span>{w.acknowledgements.length?'Demo acknowledgement recorded':'Sent · acknowledgement not recorded'}</span>:null}
+  {w.communications.some(c=>c.method==='in_app'||c.kind==='appointment_request')?<span>{w.acknowledgements.length?(isDemoRecord()?'Acknowledgement recorded':'Demo acknowledgement recorded'):'Sent · acknowledgement not recorded'}</span>:null}
  </span>;
 }
-const recipientsLabel=(values:string[])=>values.map(v=>v==='patient'?'Jane Doe':'Emily Doe (authorised demo carer)').join(' and ');
+const recipientsLabel=(values:string[])=>values.map(v=>v==='patient'?'Jane Doe':isDemoRecord()?'Emily Doe (authorised carer)':'Emily Doe (authorised demo carer)').join(' and ');
 function eventDescription(a:WorkflowEvent){
  if(a.kind==='notification_retracted')return `Notification withdrawn · ${a.basis}`;
  if(a.kind==='review')return `Reviewed ${a.sources?.length??0} source(s)`;
@@ -62,7 +63,7 @@ export function ReviewWorkflow({issue,onChanged,initialMode=""}:{issue:ReviewIss
    {issue.contributions.some(c=>c.access==='clinical')?<><button className="btn" disabled={busy||!issue.contributions.some(c=>c.access==='clinical'&&w.reviewed_sources.includes(c.id))} onClick={()=>toggle('release')}>Release to patient file</button>{!issue.contributions.some(c=>c.access==='clinical'&&w.reviewed_sources.includes(c.id))?<span className="metadata">Available after review</span>:null}</>:<span className="metadata">Own submissions remain accessible without release</span>}
   </div>
   {w.actions.some(a=>!a.resolved)?<p className="metadata">{w.actions.filter(a=>!a.resolved).length} outstanding action{w.actions.filter(a=>!a.resolved).length===1?'':'s'}</p>:null}
-  {w.communications.some(c=>c.method==='in_app'||c.kind==='appointment_request')?<p className="metadata">{w.acknowledgements.length?'Demo acknowledgement recorded; understanding not verified.':'In-app request/message sent · acknowledgement not recorded.'}</p>:null}
+  {w.communications.some(c=>c.method==='in_app'||c.kind==='appointment_request')?<p className="metadata">{w.acknowledgements.length?(isDemoRecord()?'Acknowledgement recorded; understanding not verified.':'Demo acknowledgement recorded; understanding not verified.'):'In-app request/message sent · acknowledgement not recorded.'}</p>:null}
   {w.releases.length?<p className="metadata">Released document(s): {new Set(w.releases.map(r=>r.source)).size}. Notification is recorded separately.</p>:null}
   {error?<p role="alert" className="login-error">{error}</p>:null}{status?<p role="status">{status}</p>:null}
   {mode==='action_created'?<form className="workflow-form" onSubmit={e=>{e.preventDefault();save({kind:'action_created',description,timeframe});}}>
@@ -80,7 +81,7 @@ export function ReviewWorkflow({issue,onChanged,initialMode=""}:{issue:ReviewIss
    {mode==='release'?<><label>Document to share<select className="field" value={source} onChange={e=>setSource(e.target.value)}>{issue.contributions.filter(c=>c.access==='clinical').map(c=><option key={c.id} value={c.id}>{c.headline}</option>)}</select></label>
     {!w.reviewed_sources.includes(source)?<p className="metadata">Review the selected document before release.</p>:null}</>:null}
    <fieldset><legend>Recipients</legend>{['patient','carer'].map(r=><label className="check-label" key={r}><input type="checkbox" checked={recipients.includes(r)} onChange={e=>setRecipients(e.target.checked?[...recipients,r]:recipients.filter(x=>x!==r))}/>{r==='patient'?'Jane Doe':'Emily Doe · authorised demo carer'}</label>)}</fieldset>
-   <p className="metadata">Recipients are recorded in one shared patient/carer demo view. Individual recipient access is simulated.</p>
+   <p className="metadata">{isDemoRecord()?'Jane and Emily share one patient and carer workspace.':'Recipients are recorded in one shared patient/carer demo view. Individual recipient access is simulated.'}</p>
    {mode==='communication'?<><label>Method<select className="field" value={method} onChange={e=>setMethod(e.target.value)}><option value="phone">Phone · clinician-recorded</option><option value="in_person">In person · clinician-recorded</option><option value="in_app">In-app message</option></select></label>
     {method!=='in_app'?<label>Actual communication time, including timezone<input className="field" required placeholder="2026-11-02T10:30:00+11:00" value={stamp} onChange={e=>setStamp(e.target.value)}/></label>:null}</>:null}
    {mode==='appointment_request'?<label>Requested timeframe or priority<input className="field" required maxLength={200} value={timeframe} onChange={e=>setTimeframe(e.target.value)}/></label>:null}
@@ -103,7 +104,7 @@ export function ReviewWorkflow({issue,onChanged,initialMode=""}:{issue:ReviewIss
    <div className="workflow-buttons"><button className="btn" disabled={busy} onClick={()=>toggle('communication')}>Record prior communication</button><button className="btn" disabled={busy} onClick={()=>toggle('action_created')}>Add clinical action</button></div>
    <p className="metadata">Review, communication and release are independent. Opening a source does not mark it reviewed. Recording a notification does not release a document.</p>
    <ul>{w.history.map(a=><li key={a.id}><strong>{eventDescription(a)}</strong><p className="metadata">{a.actor.name} · {a.actor.role} · {sydneyTimestamp(a.at)}</p>{a.message?<p>{a.message}</p>:null}</li>)}</ul>
-   {w.acknowledgements.map((a,i)=><p key={i} className="metadata">Demo acknowledgement: {a.recipient==='patient'?'Jane':'Emily'} · {sydneyTimestamp(a.at)}. This records acknowledgement, not understanding.</p>)}
+   {w.acknowledgements.map((a,i)=><p key={i} className="metadata">{isDemoRecord()?'Acknowledgement':'Demo acknowledgement'}: {a.recipient==='patient'?'Jane':'Emily'} · {sydneyTimestamp(a.at)}. This records acknowledgement, not understanding.</p>)}
   </details>
  </section>;
 }

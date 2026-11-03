@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_e01b24.pdf",
+  "artifact_ts": null,
+  "bytes": 883,
+  "capture": {
+    "note": null,
+    "original_filename": "Jane reports persistent dizziness.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2TR4FFNW47PGVRZRZD0",
+  "hash": "e01b24b288fe6d08366fbdd45ae517407a8117da69d57a38d4e61d9f4418e60f",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:22Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "e01b24"
+}

@@ -509,6 +509,24 @@ silently, as answers withhold, because naming it would point at it.
 **Not on the consultation summary.** Its sections are fixed and its budget is one page. Whether
 recent symptoms earn a place there is a decision for the summary, not something this added.
 
+Added for the demo record:
+
+**"Demo patient" and "Demo clinician" open a second, complete record that ships with the app**
+(`agent/demo/sample/`, built by `python -m agent.demo.sample` from `JANE_DOE_COMPLETE_RECORD.md`).
+It is served by its own `create_app` instance beside the person's own, so the two never share a
+record state, a projection, an index or an Ask pipeline. It is copied fresh into this machine's app
+data folder at every start, never inside a record, and its clock is fixed at the moment it describes.
+
+**Which record a request reaches is decided per tab, and the person's own record is the default.**
+Every request the interface makes carries `X-Health-Record: own | demo`, fixed when the tab loads;
+the `care_record` cookie decides only navigations. A cookie alone would let a tab still showing the
+person's own record be answered from the demo after another tab switched — the one failure this
+design exists to prevent. `tests/test_sample_record.py` asserts both directions, Ask included.
+
+**The demo is not labelled as a demonstration on screen**; the switch already says which record is
+open. `demo_metadata.is_sample` is the one test every such wording choice makes. A printed summary
+from it still says it is invented: a sheet of paper outlives the screen it was printed from.
+
 ## Storage layout
 
 The vault root is user-nominated. Everything below is relative to it.

@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_e7c5e7.pdf",
+  "artifact_ts": null,
+  "bytes": 3679,
+  "capture": {
+    "note": null,
+    "original_filename": "GP prescription record for atrial fibrillation.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2T97R3S6TZQM6R8XWRM",
+  "hash": "e7c5e7bf57fa0dbf255740f14bd34ff610b981d33e8a46d6027668cde1968f85",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:12Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "e7c5e7"
+}

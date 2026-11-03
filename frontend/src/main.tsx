@@ -4,6 +4,7 @@ import { App } from "./App";
 import { setupApi } from "./api";
 import { Setup } from "./components/Setup";
 import { rememberInstallation } from "./installation";
+import { pinRecord } from "./record";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -15,8 +16,8 @@ const mount = createRoot(root);
  * same address. Only the setup server answers `/api/setup`; the record's server
  * does not, and that is how the page knows which it is talking to.
  */
-setupApi
-  .state()
+pinRecord()
+  .then(() => setupApi.state())
   .then((state) => {
     rememberInstallation(state.packaged);
     mount.render(

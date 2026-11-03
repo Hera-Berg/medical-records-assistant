@@ -1,0 +1,22 @@
+{
+  "about": "Sidecar for the artefact of the same name in this folder. The artefact is the original as received and is never modified. Written once at ingest; corrections live in the event log under events/, never here.",
+  "artifact": "2026-11-03T0800Z_08ab18.pdf",
+  "artifact_ts": null,
+  "bytes": 2852,
+  "capture": {
+    "note": null,
+    "original_filename": "Dr Olivia Bennett - GP note.pdf",
+    "source": "import",
+    "source_mtime_hint": null
+  },
+  "captured_ts": null,
+  "declared_mime": null,
+  "event": "01M6GHW2T4SRQCZ5DWBEHH6DN2",
+  "hash": "08ab18aa1e40ea0d26e2f06f05ec76fa96d8651bb5aff67dbd670deae4a58260",
+  "hash_algo": "sha256",
+  "ingested_ts": "2026-11-03T08:00:08Z",
+  "mime": "application/pdf",
+  "mime_source": "sniffed",
+  "schema": 1,
+  "short": "08ab18"
+}

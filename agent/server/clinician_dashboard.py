@@ -7,7 +7,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from .. import profile, care_team
-from ..demo_metadata import entries, source_ids
+from ..demo_metadata import entries, source_ids, is_sample
 from .routes.calendar import calendar_events
 from .comparison import resolve, day, instant
 
@@ -165,4 +165,4 @@ def build(state, account, comparison_date=None):
         'upcoming_appointments':upcoming[:3], 'past_attendance_unknown':past_unknown,
         'comparison_date':cutoff, 'comparison_period':period.data,
         'receipt_limitation':'Clinical receipt dates are not recorded for some existing sources. Actual upload/import timestamps are shown where available; they do not establish clinical receipt dates.', 'first_review':last is None, 'groups':groups,
-        'summary_kind':'Prepared fictional demo summaries require clinician review. Original typed notes are labelled separately.'}
+        'summary_kind':('Prepared summaries require clinician review.' if is_sample(state.snapshot().events) else 'Prepared fictional demo summaries require clinician review.')+' Original typed notes are labelled separately.'}

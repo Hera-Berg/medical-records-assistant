@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { isDemoRecord } from "../record";
 import { useComparison } from '../comparison';
 import { sydneyDate as dateLabel, sydneyTimestamp, SYDNEY } from '../dates';
 import { api } from '../api';
@@ -100,7 +101,7 @@ export function ClinicianHome({navigate,issueId}:{navigate:(to:string)=>void;iss
    <Link to="/clinician/calendar" navigate={navigate} className="source-link">View calendar</Link>
    {data.upcoming_appointments.length>1?<details><summary className="metadata">More upcoming appointments ({data.upcoming_appointments.length-1})</summary><ul>{data.upcoming_appointments.slice(1).map(a=><li key={a.id}>{dateLabel(a.date)}{a.time?` · ${a.time}`:''} · {a.title} · {a.professional??'Professional not recorded'}</li>)}</ul></details>:null}
   </section>
-  <footer className="review-notice"><span className="metadata">Fictional demonstration · Prepared summaries require clinician review</span><details><summary>About this summary</summary><div className="metadata">
+  <footer className="review-notice"><span className="metadata">{isDemoRecord()?'':'Fictional demonstration · '}Prepared summaries require clinician review</span><details><summary>About this summary</summary><div className="metadata">
    <p>{data.comparison_period.boundary_note} Through {sydneyTimestamp(data.comparison_period.end_timestamp)} · Australia/Sydney.</p>
    <p>{data.last_consultation?`Your last completed consultation: ${dateLabel(data.last_consultation.date)} · ${data.last_consultation.title}`:'First review of this patient. Select a comparison date.'}</p>
    <p>{data.receipt_limitation} Historical documents newly received are not newly occurring clinical events.</p>

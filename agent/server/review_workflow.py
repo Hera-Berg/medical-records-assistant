@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from fastapi import HTTPException
 from ..events import envelope
-from ..demo_metadata import entries, source_ids
+from ..demo_metadata import entries, source_ids, is_sample
 from .comparison import resolve, day, instant, SYDNEY
 from .routes.calendar import calendar_events
 
@@ -88,7 +88,7 @@ def contribution(p,snapshot,period,context=False):
     return dict(id=p['demo_item_id'],headline=document_title(p),summary=p['text'],original_text=p['text'],author=p['author'],role=p['role'],
         date=p['event_date'],event_date=None if p.get('observation_unknown') or p.get('upload_only') else p['event_date'],recorded_at=p.get('recorded_at'),date_basis='Observation date not supplied' if p.get('observation_unknown') else None,document_date=native.get('date'),authored_date=native.get('authored_date'),
         received_date=native.get('received_date'),uploaded_at=artifact.ingested_ts if artifact else None,source_url='/clinician/artifact/'+p['artifact'] if p['artifact'] else '/clinician/observation/'+p['demo_item_id'],
-        artifact=p['artifact'],ordered_panel=native.get('ordered_panel') or p.get('ordered_panel'),status='Prepared fictional source',review_status=None,results=native.get('results',[]),
+        artifact=p['artifact'],ordered_panel=native.get('ordered_panel') or p.get('ordered_panel'),status='Awaiting clinician review' if is_sample(snapshot.events) else 'Prepared fictional source',review_status=None,results=native.get('results',[]),
         access=p['access'],laboratory_flag=p.get('laboratory_flag'),context=context,
         ordering='Same consultation day; ordering unknown' if position=='same-day-unknown' else None)
 
@@ -148,8 +148,11 @@ def dashboard(state,account,selected=None):
     return dict(clinician={k:account[k] for k in ('username','name','role','salutation')},patient={'name':identity['full_name'],'date_of_birth':identity['date_of_birth'],'facility':identity['address'].split('\n')[0]},
         today=now.date().isoformat(),last_consultation=period.last,comparison_date=period.data['start_date'],comparison_period=period.data,first_review=not period.last,
         upcoming=upcoming_rows[0] if upcoming_rows else None,upcoming_appointments=upcoming_rows,past_attendance_unknown=[],
-        issues=result,groups=groups,summary_kind='Prepared fictional demo summaries · require clinician review',receipt_limitation='Event, document, fictional receipt and actual import dates are distinct.',
-        workflow_enabled=True,recipient_simulation='Patient and Emily share one demo workspace; recipient separation is simulated, not individual authenticated access.',
+        issues=result,groups=groups,**(dict(summary_kind='Prepared summaries · require clinician review',receipt_limitation='Event, document, receipt and actual import dates are distinct.',
+            recipient_simulation='Jane and Emily share one patient and carer workspace.') if is_sample(snapshot.events) else
+            dict(summary_kind='Prepared fictional demo summaries · require clinician review',receipt_limitation='Event, document, fictional receipt and actual import dates are distinct.',
+            recipient_simulation='Patient and Emily share one demo workspace; recipient separation is simulated, not individual authenticated access.')),
+        workflow_enabled=True,
         tab_counts={'needs_review':sum(not i['workflow']['reviewed'] for i in result),'action_required':sum(any(not a['resolved'] for a in i['workflow']['actions']) for i in result),'reviewed':sum(i['workflow']['reviewed'] for i in result)})
 
 def valid_recipients(body,events):

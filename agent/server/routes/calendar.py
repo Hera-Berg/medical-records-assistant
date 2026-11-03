@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Body, HTTPException
 from ...events import envelope
 from ... import profile
 from ...prescriptions import listing
-from ...demo_metadata import entries, SCENARIO
+from ...demo_metadata import entries, SCENARIO, is_sample
 from ..deps import get_state
 from ..state import RecordState
 
@@ -23,25 +23,28 @@ def team(events):
 
 def calendar_events(snapshot,now):
     records={}
+    # The sample record is not labelled as a demonstration on screen; the
+    # workspace switch already says which record is open.
+    label=not is_sample(snapshot.events)
     for event in snapshot.events:
         p=event.payload
         if event.type=='note.recorded' and p.get('calendar_only') is True and isinstance(p.get('calendar_entry'),dict):
             records[p['calendar_id']]={**p['calendar_entry'],'id':p['calendar_id'],
-                'fictional':p.get('fictional') is True,'added_at':event.ts,'editable':not p.get('fictional')}
+                'fictional':label and p.get('fictional') is True,'added_at':event.ts,'editable':not p.get('fictional')}
     for event in entries(snapshot.events,snapshot.artifacts).values():
         p=event.payload; document=p.get('native_document',{})
         appointment=document.get('calendar_appointment')
         if appointment:
             key='source:'+p['demo_item_id']
             records[key]={'id':key,'date':p['event_date'],'title':p['title'],
-                          'kind':'appointment','fictional':True,'source_url':'/artifact/'+p['artifact'],
+                          'kind':'appointment','fictional':label,'source_url':'/artifact/'+p['artifact'],
                           **appointment,'editable':False}
     for row in listing(snapshot.events,snapshot.artifacts,now,snapshot.projection):
         if row.get('expiry_date'):
             key='expiry:'+row['id']
             records[key]={'id':key,'date':row['expiry_date'],'title':row['medicine']+' prescription expiry',
                 'kind':'prescription','time':None,'professional':row['prescriber'], 'location':None,
-                'status':row['treatment_status'],'source_url':row['source_url'],'fictional':row['fictional'],
+                'status':row['treatment_status'],'source_url':row['source_url'],'fictional':label and row['fictional'],
                 'description':'Prescription validity ends on this day. This does not stop the medicine.',
                 'expiry_state':row['expiry']['state'],'editable':False}
     born=profile.read(snapshot.events)['values']['date_of_birth']
@@ -54,7 +57,7 @@ def calendar_events(snapshot,now):
             except ValueError: continue
             key='birthday:'+str(year)
             records[key]={'id':key,'date':birthday.isoformat(),'time':None,'title':name+'’s birthday',
-                'kind':'birthday','description':f'Turns {year-dob.year}.','fictional':bool(entries(snapshot.events,snapshot.artifacts)),
+                'kind':'birthday','description':f'Turns {year-dob.year}.','fictional':label and bool(entries(snapshot.events,snapshot.artifacts)),
                 'source_url':'/profile','editable':False}
     except ValueError:
         pass

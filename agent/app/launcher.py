@@ -328,9 +328,10 @@ class Controller:
             )
 
         from ..server.app import create_app  # noqa: PLC0415 - heavy, and only once a record opens
+        from ..server.sample_record import wrap  # noqa: PLC0415 - the same reason
 
         try:
-            app = create_app(vault)
+            app = wrap(create_app(vault), vault)
         except HealthAgentError as exc:
             return setup(setup_app_mod.Problem(setup_app_mod.CANNOT_OPEN, str(exc), str(vault.root)))
         self.vault, self.app = vault, app

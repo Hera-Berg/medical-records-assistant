@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isDemoRecord } from "../record";
 import { api } from "../api";
 import type { CareTeamMember, CareTeamProfile } from "../types";
 
@@ -75,7 +76,7 @@ export function CareTeam({ version }: { version: number }) {
         ) : null;
       })}
       {!data.care_team.length ? <p>No care-team details recorded yet. Add your usual GP and pharmacy in your profile.</p> : null}
-      {demo ? <p className="metadata care-team-disclosure">Names and care-team details are fictional. Photographs illustrate demo profiles.</p> : null}
+      {demo && !isDemoRecord() ? <p className="metadata care-team-disclosure">Names and care-team details are fictional. Photographs illustrate demo profiles.</p> : null}
     </div>
   );
 }

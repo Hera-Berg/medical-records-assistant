@@ -7,6 +7,16 @@ not authenticated identities. Ordinary notes and uploads retain their behaviour.
 SCENARIO = 'jane-two-year-v1'
 
 
+def is_sample(events):
+    """Whether these events are the sample record that ships with the app.
+
+    The sample is written without demonstration disclaimers in what a person
+    reads: the workspace switch already says which record is open. This is the
+    one test every such wording choice makes, set by ``agent/demo/sample.py``.
+    """
+    return any(e.type == 'note.recorded' and e.payload.get('sample_record') is True for e in events)
+
+
 def history(events, artifacts):
     """Valid demo notes, including earlier authored versions (never deleted)."""
     for event in events:

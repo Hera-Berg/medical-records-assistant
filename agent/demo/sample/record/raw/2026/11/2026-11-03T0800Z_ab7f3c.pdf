@@ -1,0 +1,101 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [9 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Italic /Encoding /WinAnsiEncoding >>
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R /F5 7 0 R /F6 8 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 4889 >>
+stream
+BT /F1 27 Tf 0.12 0.36 0.39 rg 1 0 0 1 43.00 789.00 Tm (example) Tj ET
+BT /F2 11 Tf 0.12 0.36 0.39 rg 1 0 0 1 43.00 767.00 Tm (COMMUNITY AUDIOLOGY) Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 399.94 797.00 Tm (2 Demonstration Road, Sydney NSW 2000) Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 503.07 782.00 Tm (02 5550 0142) Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 386.94 767.00 Tm (hearing@communityaudiology.example.invalid) Tj ET
+0.12 0.36 0.39 RG 1.3 w 43 749 m 552 749 l S
+BT /F1 10 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 725.00 Tm (3 November 2026) Tj ET
+BT /F1 10 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 702.80 Tm (Dr James Smith) Tj ET
+BT /F1 10 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 688.80 Tm (Sydney Aged Care) Tj ET
+BT /F2 10 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 663.80 Tm (Re: Jane Doe | DOB 1 November 1935 | JD-19351101) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 646.60 Tm (Sydney Aged Care) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 622.40 Tm (Dear Dr Smith,) Tj ET
+BT /F2 11 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 600.20 Tm (Hearing-aid service check) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 576.00 Tm (I saw Jane at Sydney Aged Care today for a brief hearing-aid service check after she reported that speech) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 561.80 Tm (sounded muffled through the left aid. Her daughter Emily attended with Jane's agreement. This was a) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 547.60 Tm (troubleshooting visit.) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 524.40 Tm (Jane has used hearing aids since September 2025 and would like to follow conversation more easily at meals.) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 510.20 Tm (No new audiogram was obtained today.) Tj ET
+0.95 0.96 0.96 rg 43 474.0000000000001 509 25 re f
+BT /F2 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 484.00 Tm (Check) Tj ET
+BT /F2 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 219.00 484.00 Tm (Finding / action) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 470.0000000000001 m 552 470.0000000000001 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 462.00 Tm (External device inspection) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 219.00 462.00 Tm (Left wax guard obstructed; replaced. Right wax guard clear.) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 449.0000000000001 m 552 449.0000000000001 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 440.00 Tm (Listening check) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 219.00 440.00 Tm (Both aids sounded clear after servicing.) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 427.0000000000001 m 552 427.0000000000001 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 418.00 Tm (Patient response) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 219.00 418.00 Tm (Jane reported clearer speech with the left aid.) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 405.0000000000001 m 552 405.0000000000001 l S
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 49.00 396.00 Tm (Programming / audiometry) Tj ET
+BT /F1 9 Tf 0.1 0.12 0.14 rg 1 0 0 1 219.00 396.00 Tm (No programming change or threshold testing undertaken.) Tj ET
+0.86 0.87 0.88 RG 0.35 w 43 383.0000000000001 m 552 383.0000000000001 l S
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 361.00 Tm (The immediate concern was consistent with a device maintenance problem. A satisfactory listening check is not) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 346.80 Tm (a measurement of hearing thresholds and does not exclude a change in hearing. We did not undertake) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 332.60 Tm (vestibular testing, and the reported dizziness should continue to be assessed by the medical team.) Tj ET
+BT /F2 11 Tf 0.12 0.36 0.39 rg 1 0 0 1 43.00 309.40 Tm (Recommendations) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 288.40 Tm (1. Facility staff can help Jane check that the aids are seated and switched on before meals. Please report any) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 274.20 Tm (return of muffled sound or discomfort.) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 253.00 Tm (2. Continue the booked hearing-aid review on 18 November, bringing both aids and any observations about) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 238.80 Tm (communication in daily activities.) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 217.60 Tm (3. Use a quiet setting and written medication information for important discussions, allowing Jane time to) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 203.40 Tm (respond.) Tj ET
+BT /F1 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 179.20 Tm (Yours sincerely,) Tj ET
+BT /F2 10.3 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 164.00 Tm (Olivia Reed) Tj ET
+BT /F1 9.5 Tf 0.1 0.12 0.14 rg 1 0 0 1 43.00 149.80 Tm (Audiologist) Tj ET
+0.72 0.75 0.77 RG 0.5 w 43 57 m 552 57 l S
+BT /F1 8 Tf 0.35 0.36 0.38 rg 1 0 0 1 43.00 42.00 Tm () Tj ET
+BT /F1 8 Tf 0.1 0.12 0.14 rg 1 0 0 1 505.90 26.00 Tm (Audiology | 1) Tj ET
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000000413 00000 n 
+0000000511 00000 n 
+0000000611 00000 n 
+0000000706 00000 n 
+0000000883 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+5825
+%%EOF

@@ -50,8 +50,8 @@ health-overview { display: block; padding: .5rem 0 0; --ov-serif: var(--font-san
 .ov-heading-with-icon p { color: var(--color-muted); margin-top: .3rem; }
 .ov-heading-with-icon .ov-icon-circle { width: 3.2rem; height: 3.2rem; }
 .ov-care-details { margin-top: .2rem; }
-.ov-care-details > div { display: grid; grid-template-columns: 5.5rem minmax(0,1fr); padding: .6rem 0; gap: .75rem; }
-.ov-care-details dt { color: var(--color-muted); }
+.ov-care-details > div { display: grid; grid-template-columns: 8rem minmax(0,1fr); padding: .6rem 0; gap: .75rem; }
+.ov-care-details dt { color: var(--color-muted); overflow-wrap: anywhere; }
 .ov-care-details dd { font-weight: 600; overflow-wrap: anywhere; }
 .ov-care-details dd span { display: block; font-weight: 400; margin-top: .2rem; color: var(--color-muted); }
 .ov-panel-footer { display: flex; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--color-rule); }

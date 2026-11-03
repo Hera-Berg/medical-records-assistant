@@ -221,7 +221,8 @@ def artifact_meta(
             native=dict(p['native_document']);native['title']=document_title(p)
             if p.get('review_dataset'):
                 from ..review_workflow import release_for
-                native.update(author=p['author'],fictional=True,consultation_date=p['event_date'],
+                from ...demo_metadata import is_sample
+                native.update(author=p['author'],fictional=not is_sample(snapshot.events),consultation_date=p['event_date'],
                               patient={**native.get('patient',{}),'dob':'1935-11-01'},
                               release=release_for(snapshot.events,p['artifact']))
                 native['results']=[{**r,'reference_interval':r.get('reference_interval') or r.get('reference')} for r in native.get('results',[])]

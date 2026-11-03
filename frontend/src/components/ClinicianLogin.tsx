@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { authRequest, notifyAccountChange } from "../clinicianAuth";
 import type { ClinicianSession } from "../types";
+import { isDemoRecord } from "../record";
 export function ClinicianLogin({ onSignedIn }: { onSignedIn: (session: ClinicianSession) => void }) {
   const [username,setUsername]=useState("");
   const [password,setPassword]=useState("");
@@ -17,6 +18,7 @@ export function ClinicianLogin({ onSignedIn }: { onSignedIn: (session: Clinician
   return <section className="surface clinician-login" aria-labelledby="clinician-sign-in">
     <h2 id="clinician-sign-in" className="section-heading">Clinician sign-in</h2>
     <p className="metadata">Use your clinician account to open the review dashboard.</p>
+    {isDemoRecord() ? <p className="metadata">Demo accounts: <strong>james.smith</strong> or <strong>olivia.bennett</strong>, password <strong>password</strong>.</p> : null}
     <form onSubmit={signIn} aria-busy={busy}>
       <label>Username<input className="field" autoComplete="username" required value={username} onChange={e=>setUsername(e.target.value)} aria-describedby={error ? "login-error":undefined} /></label>
       <label>Password<input className="field" type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} aria-describedby={error ? "login-error":undefined} /></label>
