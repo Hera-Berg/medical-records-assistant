@@ -120,7 +120,10 @@ output('Documents UI checks passed');
             self.assertEqual((ROOT/'frontend/public'/name).read_bytes(),(ROOT/'agent/server/static_files'/name).read_bytes())
         bundle=next((ROOT/'agent/server/static_files/assets').glob('*.js')).read_text()
         self.assertIn('to:`/documents`,label:`Documents`',bundle)
-        self.assertIn('x===`documents`?(0,b.jsx)(`health-documents`',bundle)
+        # Minifier variable names and routing expressions are not public contracts.
+        # Actual patient/clinician navigation is verified by the browser workflow check.
+        self.assertIn('Medical reports, letters and uploaded documents in one place.',bundle)
+        self.assertIn('View all documents',bundle)
 
 
 if __name__=='__main__':unittest.main()

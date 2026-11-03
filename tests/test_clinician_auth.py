@@ -61,7 +61,10 @@ class ClinicianTests(unittest.TestCase):
         self.assertEqual(james['upcoming']['date'],'2026-11-03')
         self.assertEqual(james['upcoming']['professional'],'Dr James Smith')
         self.assertEqual(james['groups']['medications'],[])
-        self.assertTrue(any(r['date']=='2026-10-22' for r in james['groups']['reported']))
+        self.assertEqual(len(james['upcoming_appointments']),3)
+        self.assertTrue(all(row['source_url'].startswith('/clinician/artifact/') for row in james['groups']['follow_up']))
+        self.assertTrue(any(a['attendance']=='Attendance unknown' for a in james['past_attendance_unknown']))
+        self.assertTrue(any(r['date']=='2026-10-22' for r in james['groups']['follow_up']))
         self.login('olivia.bennett')
         olivia=self.client.get('/api/clinician/dashboard').json()
         self.assertEqual(olivia['clinician']['name'],'Dr Olivia Bennett')
@@ -108,6 +111,61 @@ class ClinicianTests(unittest.TestCase):
         for _ in range(5):
             self.assertEqual(self.client.post('/api/auth/clinician/login',json={'username':'unknown','password':'wrong'}).status_code,401)
         self.assertEqual(self.client.post('/api/auth/clinician/login',json={'username':'james.smith','password':self.passwords['james.smith']}).status_code,429)
+
+    def test_recent_sources_and_idempotent_append_only_continuation(self):
+        from agent.demo.review_sequence import seed, SOURCES
+        before={p:p.read_bytes() for p in self.vault.events_dir.glob('*.jsonl')}
+        self.assertEqual(seed(self.vault),3)
+        after=len(self.vault.read().events)
+        self.assertEqual(seed(self.vault),0)
+        self.assertEqual(len(self.vault.read().events),after)
+        for path,content in before.items():
+            self.assertTrue(path.read_bytes().startswith(content))
+        self.login()
+        data=self.client.get('/api/clinician/dashboard').json()
+        rows=data['groups']['reported']
+        self.assertEqual({row['author'] for row in rows},{'Jane Doe','Emily Doe','Morgan Bell'})
+        self.assertEqual(len(rows),3)
+        self.assertEqual(len(data['groups']['follow_up']),1)
+        self.assertEqual(data['groups']['documents'],[])
+        self.assertEqual(data['groups']['medications'],[])
+        self.assertEqual(data['comparison_date'],'2026-10-21')
+        for row in rows:
+            self.assertGreater(row['date'],'2026-10-21')
+            self.assertEqual(self.client.get(row['source_url']).status_code,200)
+            short=row['source_url'].rsplit('/',1)[-1]
+            meta=self.client.get('/api/clinician/artifact/'+short+'/meta').json()
+            self.assertTrue(any(s.get('heading')=='Demo origin' for s in meta['native']['sections']))
+        old=self.client.get('/api/clinician/dashboard?comparison_date=2026-10-17').json()
+        self.assertTrue(any(r['date']=='2026-10-18' for r in old['groups']['reported']))
+        self.assertTrue(any(r['date']=='2026-10-19' for r in old['groups']['reported']))
+        self.assertTrue(any(r['date']=='2026-10-20' for r in old['groups']['reported']))
+
+    def test_original_typed_notes_have_genuine_sources_and_honest_attribution(self):
+        with patch('agent.server.routes.capture.envelope.format_ts',return_value='2026-11-01T23:00:00Z'):
+            note=self.client.post('/api/capture/text',data={'text':'Difficulty sleeping this week'}).json()
+        self.assertEqual(self.client.get('/api/clinician/observations/'+note['event']).status_code,401)
+        self.login()
+        data=self.client.get('/api/clinician/dashboard').json()
+        row=next(r for r in data['groups']['reported'] if r['id']==note['event'])
+        self.assertEqual(row['author'],'Author not recorded')
+        self.assertIn('Observation date not supplied',row['date_basis'])
+        self.assertEqual(self.client.get(row['source_url']).status_code,200)
+        original=self.client.get('/api/clinician/observations/'+note['event']).json()
+        self.assertEqual(original['text'],'Difficulty sleeping this week')
+        self.assertEqual(self.client.get('/api/clinician/observations/not-a-note').status_code,404)
+        sealed=next(e for e in self.app.state.record.snapshot().events if e.type=='doctor.note.sealed') if any(e.type=='doctor.note.sealed' for e in self.app.state.record.snapshot().events) else None
+        if sealed:
+            self.assertEqual(self.client.get('/api/clinician/observations/'+sealed.id).status_code,404)
+
+    def test_past_today_booking_has_unknown_attendance_and_is_not_an_action(self):
+        self.login()
+        self.app.state.record._clock=lambda:datetime(2026,11,3,8,tzinfo=timezone.utc)
+        data=self.client.get('/api/clinician/dashboard').json()
+        gp=next(a for a in data['past_attendance_unknown'] if a['id']=='demo:gp-2026-11-03')
+        self.assertEqual(gp['attendance'],'Attendance unknown')
+        self.assertTrue(all(a['date']>'2026-11-03' for a in data['upcoming_appointments']))
+        self.assertTrue(all(a['id']!='demo:gp-2026-11-03' for a in data['groups']['follow_up']))
 
     def test_first_review_requires_date_and_patient_assignment(self):
         self.login('olivia.bennett')

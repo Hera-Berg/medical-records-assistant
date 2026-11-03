@@ -12,6 +12,7 @@
  */
 
 import { createElement, useEffect, useState } from "react";
+import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api, artifactUrl } from "../api";
 import type { PageHeader } from "../App";
 import type { ArtifactMeta } from "../types";
@@ -37,6 +38,7 @@ export function Artifact({
   version: number;
   setHeader: (header: PageHeader) => void;
 }) {
+  const clinician = useClinicianLanguage();
   const [meta, setMeta] = useState<ArtifactMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState(0);
@@ -59,9 +61,9 @@ export function Artifact({
     setHeader({
       title: meta.native?.title || kindOf(meta.mime),
       subtitle:
-        meta.native ? "Readable document · original file retained separately." : "The original, exactly as it arrived. Every citation in your record ends here.",
+        meta.native ? "Readable document · original file retained separately." : clinician ? "Original source document from Jane’s record." : "The original, exactly as it arrived. Every citation in your record ends here.",
     });
-  }, [meta, setHeader]);
+  }, [meta, setHeader, clinician]);
 
   if (error) return <Empty>{error}</Empty>;
   if (!meta) return <Empty>Reading…</Empty>;
@@ -124,7 +126,7 @@ export function Artifact({
           absent="not known — this needs the document to be read"
         />
         <Row label="How it was added" value={meta.source} />
-        <Row label="Its file in your folder" value={meta.path} mono />
+        <Row label={clinician ? "Source file in the patient record" : "Its file in your folder"} value={meta.path} mono />
         <Row label="Fingerprint of the bytes" value={meta.digest} mono />
         <Row
           label="Size"
@@ -180,18 +182,10 @@ function WhatNext({ meta, onAsked }: { meta: ArtifactMeta; onAsked: () => void }
           the page someone opened deliberately to find out more, so the
           reassurance that belongs with each state lives here. */}
       {reading.deferred ? (
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          Your medication list has not changed because of this. The recording and
-          what it says are both kept, and both can be quoted. Reading a transcript
-          for medications, doses and allergies is the next piece of work; when it
-          arrives this recording will be read then, and nothing needs saying again.
-        </p>
+        <p className="mt-1 text-[color:var(--color-muted)]"><AudienceText patient={"Your medication list has not changed because of this. The recording and what it says are both kept, and both can be quoted. Reading a transcript for medications, doses and allergies is the next piece of work; when it arrives this recording will be read then, and nothing needs saying again."} clinician={"The patient’s medication list has not changed because of this. The recording and what it says are both kept, and both can be quoted. Reading a transcript for medications, doses and allergies is the next piece of work; when it arrives this recording will be read then, and nothing needs saying again."} /></p>
       ) : null}
       {reading.state === "not-read" ? (
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          It is stored in your folder either way, and nothing is lost while it
-          waits.
-        </p>
+        <p className="mt-1 text-[color:var(--color-muted)]"><AudienceText patient={"It is stored in your folder either way, and nothing is lost while it waits."} clinician={"It is stored in the record folder either way, and nothing is lost while it waits."} /></p>
       ) : null}
       {/* The in-app answer to "then read it again": once whatever stopped it is
           fixed — the file restored, the reading computer reconnected — this puts
@@ -211,10 +205,7 @@ function WhatNext({ meta, onAsked }: { meta: ArtifactMeta; onAsked: () => void }
         </div>
       ) : null}
       {reading.awaiting > 0 ? (
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          Nothing from it has been added to your record yet. A medication, a dose or
-          an allergy never is without you tapping to say so.
-        </p>
+        <p className="mt-1 text-[color:var(--color-muted)]"><AudienceText patient={"Nothing from it has been added to your record yet. A medication, a dose or an allergy never is without you tapping to say so."} clinician={"Nothing from it has been added to the patient record yet. A medication, a dose or an allergy never is without you tapping to say so."} /></p>
       ) : null}
     </>
   );
@@ -284,8 +275,7 @@ function Spoken({ meta }: { meta: ArtifactMeta }) {
           : ""}
       </p>
       <p className="mt-1 text-[color:var(--color-muted)]">
-        The recording is what your record keeps. These words are worked out from it and
-        can be worked out again.
+        <AudienceText patient="The recording is what your record keeps. These words are worked out from it and can be worked out again." clinician="The original recording remains in the patient record. The transcript is derived from it and can be regenerated." />
       </p>
     </>
   );

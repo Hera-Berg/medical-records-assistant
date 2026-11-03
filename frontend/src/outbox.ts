@@ -35,6 +35,7 @@ export interface Outgoing {
   source: "upload" | "paste" | "drop" | "recorder";
   /** Only ever set by the recorder, which genuinely knows it. */
   capturedTs: string | null;
+  metadata?: Record<string,string>;
   queuedAt: number;
   attempts: number;
   error: string | null;
@@ -118,12 +119,14 @@ export async function add(
   filename: string,
   source: Outgoing["source"],
   capturedTs: string | null = null,
+  metadata?: Record<string,string>,
 ): Promise<Outgoing> {
   const item: Omit<Outgoing, "id"> = {
     blob,
     filename,
     source,
     capturedTs,
+    metadata,
     queuedAt: Date.now(),
     attempts: 0,
     error: null,

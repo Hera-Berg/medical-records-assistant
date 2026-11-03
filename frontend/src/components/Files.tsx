@@ -1,3 +1,4 @@
+import { AudienceText } from "../recordLanguage";
 /**
  * The folder, from inside the app.
  *
@@ -136,7 +137,7 @@ export function Files({
   };
 
   if (error) return <Empty>{error}</Empty>;
-  if (!data) return <Empty>Reading your folder…</Empty>;
+  if (!data) return <Empty><AudienceText patient={"Reading your folder…"} clinician={"Reading the record folder…"} /></Empty>;
 
   return (
     <section>

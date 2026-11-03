@@ -55,11 +55,18 @@ import { Settings } from "./components/Settings";
 import { MenuIcon, Sidebar } from "./components/Sidebar";
 import { SummaryScreen } from "./components/Summary";
 import { DoctorNotes } from "./components/DoctorNotes";
-import { Timeline } from "./components/Timeline";
+import { ClinicalTimeline } from "./components/ClinicalTimeline";
 import { Welcome } from "./components/Welcome";
+import { ClinicianComparisonProvider } from "./comparison";
+import { ClinicianLanguage } from "./recordLanguage";
+import { PatientIdentity } from "./components/PatientIdentity";
+import { OriginalObservation } from "./components/OriginalObservation";
 import { ClinicianLogin } from "./components/ClinicianLogin";
 import { useClinicianSession, authRequest, notifyAccountChange, clinicianPath } from "./clinicianAuth";
 import { CareTeam } from "./components/CareTeam";
+import { MedicalDocuments } from "./components/MedicalDocuments";
+import { SubmittedUpdates } from "./components/SubmittedUpdates";
+import { SharedCare, Notifications } from "./components/SharedCare";
 import { ClinicianHome } from "./components/ClinicianHome";
 import { useWorkspace } from "./workspace";
 
@@ -87,7 +94,11 @@ export function App() {
   useEffect(() => {
     if (checked && needsClinician && !session && !signingIn) navigateBase("/clinician/sign-in");
     if (checked && session && signingIn) navigateBase("/clinician");
-  }, [checked, needsClinician, session, signingIn, navigateBase]);
+    if (checked && session && workspace === "clinician" && !signingIn) {
+      const canonical = clinicianPath(route.path);
+      if (canonical !== route.path) navigateBase(canonical);
+    }
+  }, [checked, needsClinician, session, signingIn, navigateBase, workspace, route.path]);
   const signOut = async () => {
     try {
       await authRequest("logout", {}); setSession(null); notifyAccountChange(); setSignOutError(null);
@@ -147,20 +158,26 @@ export function App() {
   const tail = [second, ...rest].filter(Boolean).join("/");
 
   let screen: React.ReactNode;
-  if (needsClinician && !checked) {
+  if ((needsClinician && !checked) || (session && workspace === "clinician" && clinicianPath(route.path) !== route.path)) {
     screen = <p role="status">Checking clinician session…</p>;
   } else if (signingIn || (needsClinician && !session)) {
     screen = <ClinicianLogin onSignedIn={result => { setSession(result); navigateBase("/clinician"); }} />;
   } else if (!first || first === "overview") {
-    screen = createElement("health-overview", { key: version });
+    screen = <><SharedCare navigate={navigate} compact/>{createElement("health-overview", { key: version })}</>;
   } else if (first === "clinician" && !tail) {
     screen = <ClinicianHome key={session?.clinician.username} navigate={navigate} />;
+  } else if (first === "issue" && tail) {
+    screen = <ClinicianHome key={session?.clinician.username} issueId={tail} navigate={navigate} />;
+  } else if (first === "observation" && tail) {
+    screen = <OriginalObservation id={tail} clinician={workspace === "clinician"} />;
+  } else if (first === "notifications") {
+    screen = <Notifications navigate={navigate}/>;
   } else if (first === "care-team") {
     screen = <CareTeam version={version} />;
   } else if (first === "profile") {
     screen = createElement("patient-profile");
   } else if (first === "documents") {
-    screen = createElement("health-documents", { key: version });
+    screen = <MedicalDocuments clinician={workspace === "clinician"} navigate={navigate} version={version}/>;
   } else if (first === "ask") {
     screen = (
       <Ask
@@ -172,7 +189,7 @@ export function App() {
   } else if (first === "calendar") {
     screen = createElement("health-calendar", { key: version });
   } else if (first === "timeline") {
-    screen = <Timeline navigate={navigate} subject={tail || undefined} version={version} />;
+    screen = <>{workspace === "patient-carer"?<PatientIdentity version={version} clinician={false}/>:null}<ClinicalTimeline key={workspace} navigate={navigate} version={version} clinician={workspace === "clinician"}/></>;
   } else if (first === "record" && tail) {
     screen = (
       <Entity
@@ -198,7 +215,7 @@ export function App() {
     );
   } else if (first === "add") {
     screen = (
-      <CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} />
+      <>{workspace === "patient-carer"?<PatientIdentity version={version} clinician={false}/>:null}<CapturePanel capture={capture} onCaptured={refresh} navigate={navigate} />{workspace === "patient-carer"?<SubmittedUpdates version={version} onChanged={refresh}/>:null}</>
     );
   } else if (first === "summary") {
     screen = (
@@ -233,6 +250,8 @@ export function App() {
   const asking = first === "ask";
 
   return (
+    <ClinicianLanguage.Provider value={workspace === "clinician" && Boolean(session)}>
+    <ClinicianComparisonProvider key={session?.clinician.username ?? "patient"}>
     <div className="app-shell" data-workspace={workspace} onClickCapture={event => {
       if (workspace !== "clinician" || !session) return;
       const anchor = (event.target as Element).closest("a");
@@ -281,6 +300,7 @@ export function App() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="app-topbar">
         <header className="app-header no-print">
           {(menuOpen && wide) || (needsClinician && !session) ? null : (
             <button
@@ -303,9 +323,9 @@ export function App() {
             </button>
           )}
           <div className="app-heading">
-            <h1 className="page-title">
-              {asking ? "Your health record" : header.title}
-            </h1>
+            {first === "clinician" && session ? <p className="page-title">Review dashboard</p> : <h1 className="page-title">
+              {asking ? workspace === "clinician" ? "Ask the patient record" : "Your health record" : header.title}
+            </h1>}
             {asking ? null : header.badge}
             {/* A label, not a banner: whoever opened a demonstration knows it
                 is one, but a printed page or a screenshot must still say so. */}
@@ -351,17 +371,19 @@ export function App() {
             ) : null}
           </Link> : null}
         </header>
+        {workspace === "clinician" && session ? <PatientIdentity key={session.clinician.username} version={version} /> : null}
+        </div>
 
-        <div className={`app-content ${asking ? "app-content-narrow" : ""}`}>
+        <div className={`app-content ${asking ? "app-content-narrow" : ""} ${workspace === "clinician" && (first === "clinician" || first === "issue") ? "app-content-review" : ""}`}>
           {(!needsClinician || session) ? <Attention
             health={health}
             error={healthError}
             navigate={go}
             /* The settings screen holds the control for the box and reports
                what stopped in its own words. One telling, not two. */
-            quietEndpoint={first === "settings" || first === "welcome"}
+            quietEndpoint={first === "add" || first === "settings" || first === "welcome" || first === "notifications" || first === "documents" || first === "timeline" || first === "progress-notes" || first === "doctor-notes" || (workspace === "clinician" && (first === "clinician" || first === "issue"))}
             /* The waiting screen is the list those two notices point at. */
-            quietReview={first === "review"}
+            quietReview={first === "review" || workspace === "patient-carer"}
           /> : null}
 
           {asking || !header.subtitle ? null : (
@@ -385,6 +407,8 @@ export function App() {
         </div>
       </div>
     </div>
+    </ClinicianComparisonProvider>
+    </ClinicianLanguage.Provider>
   );
 }
 
@@ -433,18 +457,20 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
   if (segments[0] === "clinician" && segments[1] === "sign-in") return { title: "Clinician sign-in", subtitle: "" };
   if (segments[0] === "clinician" && segments.length > 1) segments = segments.slice(1);
   const [first, second] = segments;
-  if (first === "clinician" && !second) {
+  if ((first === "clinician" && !second) || first === "issue") {
     return { title: "Review dashboard", subtitle: "" };
   }
   if (!first || first === "overview") {
     return { title: "Home", subtitle: "" };
   }
-  if (first === "care-team") return { title: "My care team", subtitle: "" };
+  if (first === "care-team") return { title: workspace === "clinician" ? "Care team" : "My care team", subtitle: "" };
+  if (first === "observation") return { title: "Original typed observation", subtitle: "" };
   if (first === "profile") {
     return { title: workspace === "clinician" ? "Patient profile" : "My profile", subtitle: "" };
   }
+  if (first === "notifications") return {title:"Notifications",subtitle:""};
   if (first === "documents") {
-    return { title: workspace === "clinician" ? "Documents" : "Shared documents", subtitle: "" };
+    return { title: "Documents", subtitle: "" };
   }
   if (first === "calendar") return { title: "Calendar", subtitle: "Appointments and important dates." };
   if (first === "timeline") {
@@ -452,24 +478,24 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
       title: "Timeline",
       subtitle: second
         ? "Everything the record holds about one entry, newest first."
-        : "Everything in your record, newest first. Tap a line to see the document it came from.",
+        : workspace === "clinician" ? "Letters, updates and care events in date order." : "Your updates and shared care documents in date order.",
     };
   }
   if (first === "record" && second) {
-    return { title: "One entry in your record", subtitle: "Reading…" };
+    return { title: workspace === "clinician" ? "Patient record entry" : "One entry in your record", subtitle: "Reading…" };
   }
   if (first === "record") {
     return {
       title: workspace === "clinician" ? "Clinical record" : "My health record",
-      subtitle:
+      subtitle: workspace === "clinician" ? "Jane’s medications, allergies and health conditions, linked to the patient record’s source documents." :
         "Your medications, allergies, health problems and the people who look after you — put together from your own documents, and only from what you have confirmed.",
     };
   }
   if (first === "artifact") {
-    return { title: "One of your documents", subtitle: "Reading…" };
+    return { title: workspace === "clinician" ? "Patient source document" : "One of your documents", subtitle: "Reading…" };
   }
   if (first === "files") {
-    return { title: "Your folder", subtitle: "Reading…" };
+    return { title: workspace === "clinician" ? "Record files" : "Your folder", subtitle: "Reading…" };
   }
   if (first === "welcome") {
     return {
@@ -478,11 +504,11 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
     };
   }
   if (first === "ask") {
-    return { title: "Ask your record", subtitle: "" };
+    return { title: workspace === "clinician" ? "Ask the patient record" : "Ask your record", subtitle: "" };
   }
   if ((first === "progress-notes" || first === "doctor-notes")) {
     return {
-      title: "Clinical notes",
+      title: "Progress notes",
       subtitle: "",
     };
   }
@@ -490,16 +516,16 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
     return {
       title: "Confirm extracted information",
       subtitle:
-        "Things read from your documents that need a quick yes or no from you. Nothing important joins your record until you say so.",
+        workspace === "clinician" ? "Information extracted from Jane’s documents that awaits confirmation." : "Things read from your documents that need a quick yes or no from you. Nothing important joins your record until you say so.",
     };
   }
   if (first === "summary") {
     return second
-      ? { title: "Your sheet for this appointment", subtitle: "Reading…" }
+      ? { title: workspace === "clinician" ? "Patient appointment summary" : "Your sheet for this appointment", subtitle: "Reading…" }
       : {
           title: "Appointment summary",
           subtitle:
-            "One page to take with you: what changed, what you take, what you are allergic to, and the question you came to ask. Every line says which of your documents it came from.",
+            workspace === "clinician" ? "Prepare a source-linked summary of Jane’s changes, medications, allergies and questions for the appointment." : "One page to take with you: what changed, what you take, what you are allergic to, and the question you came to ask. Every line says which of your documents it came from.",
         };
   }
   if (first === "settings") {
@@ -513,7 +539,7 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
     return {
       title: workspace === "clinician" ? "Upload or record information" : "Record an update",
       subtitle:
-        "A photo of a prescription, a letter, a test result, a note, or a voice recording. You don't need to say what it is — that is worked out afterwards.",
+        "",
     };
   }
   return { title: "Not found", subtitle: "" };

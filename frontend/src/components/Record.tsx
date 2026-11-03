@@ -17,6 +17,7 @@
  */
 
 import { createElement, useEffect, useState } from "react";
+import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api } from "../api";
 import { Link } from "../router";
 import type { MedicationRow, WikiIndex } from "../types";
@@ -36,6 +37,7 @@ export function Record({
   navigate: (to: string) => void;
   version: number;
 }) {
+  const clinician = useClinicianLanguage();
   const [data, setData] = useState<WikiIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,7 +53,7 @@ export function Record({
   }, [version]);
 
   if (error) return <Empty>Could not read the record: {error}</Empty>;
-  if (!data) return <Empty>Reading your record…</Empty>;
+  if (!data) return <Empty>{clinician ? "Loading the patient record…" : "Reading your record…"}</Empty>;
 
   const meds = data.current_medications;
   const empty =
@@ -70,8 +72,7 @@ export function Record({
     <section>
       <h2 className="mb-1 text-lg font-semibold">Medications</h2>
       <p className="mb-2 text-[color:var(--color-muted)]">
-        Worked out from your documents every time this page is opened, and never kept
-        as a second list that could drift out of step with them.
+        <AudienceText patient="Worked out from your documents every time this page is opened, and never kept as a second list that could drift out of step with them." clinician="Derived from Jane’s source documents. The medication list is a view of the patient record, not a separate copy." />
       </p>
       {meds.length === 0 ? (
         <Empty>No medication has been confirmed yet.</Empty>
@@ -229,8 +230,7 @@ export function Record({
           <p>
             {data.review.total} {data.review.total === 1 ? "thing is" : "things are"}{" "}
             waiting to be confirmed — {data.review.by_tier.high ?? 0} of them important.
-            Nothing important is added to your record without you saying so, so none of
-            it is on the lists above.
+            <AudienceText patient="Nothing important is added to your record without you saying so, so none of it is on the lists above." clinician="These entries await confirmation and are not included in the lists above." />
           </p>
           <p>
             <Link to="/review" navigate={navigate}>

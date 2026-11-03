@@ -7,7 +7,6 @@ import type { Workspace } from "../workspace";
 
 export function Sidebar({
   workspace,
-  health,
   path,
   navigate,
   uploading,
@@ -22,13 +21,13 @@ export function Sidebar({
   onClose?: () => void;
 }) {
   const cleanPath = path.replace(/\/$/, "") || "/";
-  const item = { clinician: workspace === "clinician", path: cleanPath === "/overview" ? "/" : cleanPath === "/doctor-notes" ? "/progress-notes" : cleanPath === "/artifact" || cleanPath.startsWith("/artifact/") ? "/documents" : cleanPath, navigate };
+  const item = { clinician: workspace === "clinician", path: cleanPath.startsWith("/issue/") ? "/clinician" : cleanPath === "/overview" ? "/" : cleanPath === "/doctor-notes" ? "/progress-notes" : cleanPath === "/artifact" || cleanPath.startsWith("/artifact/") ? "/documents" : cleanPath, navigate };
   const clinician = workspace === "clinician";
 
   return (
     <aside
       id="menu"
-      className="app-sidebar no-print"
+      className={`app-sidebar no-print ${cleanPath === "/timeline" ? "timeline-text-navigation" : ""}`}
       aria-label="Sections of your record"
     >
       <div className="app-brand">
@@ -38,7 +37,7 @@ export function Sidebar({
         >
           <Mark />
         </span>
-        <span className="app-brand-name">Care record</span>
+        <span className="app-brand-name">CareMind</span>
         {onClose ? <button type="button" className="icon-btn" onClick={onClose} aria-label="Close the menu">
           <CloseMenu />
         </button> : null}
@@ -52,12 +51,15 @@ export function Sidebar({
             <Item to="/record" label="Clinical record" icon={<Book />} {...item} />
             <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
             <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
-            <Item to="/progress-notes" label="Clinical notes" icon={<Lock />} {...item} />
+            <Item to="/progress-notes" label="Progress notes" icon={<Lock />} {...item} />
+            <Item to="/care-team" label="Care team" icon={<Book />} {...item} />
+            <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
           </> : <>
             <Item to="/" label="Home" exact icon={<Home />} {...item} />
             <Item to="/add" label="Record an update" icon={<Plus />} note={uploading > 0 ? `${uploading} sending` : undefined} {...item} />
+            <Item to="/notifications" label="Notifications" icon={<Bell />} {...item} />
             <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
-            <Item to="/documents" label="Shared documents" icon={<Folder />} {...item} />
+            <Item to="/documents" label="Documents" icon={<Folder />} {...item} />
             <Item to="/care-team" label="My care team" icon={<Book />} {...item} />
           </>}
         </div>
@@ -66,14 +68,10 @@ export function Sidebar({
         <div className="flex flex-col gap-0.5" aria-label="Record tools">
           {clinician ? <>
             <Item to="/add" label="Upload or record information" icon={<Plus />} note={uploading > 0 ? `${uploading} sending` : undefined} {...item} />
-            <Item to="/calendar" label="Calendar" icon={<Clock />} {...item} />
           </> : <>
-            <Item to="/record" label="My health record" icon={<Book />} {...item} />
             <Item to="/timeline" label="Timeline" icon={<Clock />} {...item} />
           </>}
-          <Item to="/review" label="Confirm extracted information" icon={<Inbox />} note={health && health.review.total > 0 ? String(health.review.total) : undefined} {...item} />
-          <Item to="/ask" label="Ask your record" icon={<Question />} {...item} />
-          <Item to="/summary" label="Appointment summary" icon={<Sheet />} {...item} />
+          <Item to="/ask" label={clinician ? "Ask the patient record" : "Ask your record"} icon={<Question />} {...item} />
         </div>
 
         <div className="mt-auto flex flex-col gap-0.5 pt-4" aria-label="Profile and settings">
@@ -105,17 +103,6 @@ function CloseMenu() {
   );
 }
 
-/** A sheet of paper, which is what this one actually produces. */
-function Sheet() {
-  return (
-    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17V3a.5.5 0 0 1 .5-.5Z" />
-      <path d="M12 2.5V6h3" />
-      <path d="M7.5 9.5h5M7.5 12.5h5" />
-    </svg>
-  );
-}
-
 /* A question mark, because that is what this one takes. Deliberately not a
    speech bubble: the rail should not promise a conversation with somebody. */
 function Question() {
@@ -128,15 +115,6 @@ function Question() {
   );
 }
 
-function Inbox() {
-  return (
-    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <path d="M3 11.5V15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5" />
-      <path d="M3 11.5 5 5h10l2 6.5" />
-      <path d="M3 11.5h4l1 2h4l1-2h4" />
-    </svg>
-  );
-}
 
 
 function Item({
@@ -166,7 +144,7 @@ function Item({
       ariaCurrent={active ? "page" : undefined}
       className={`nav-link ${active ? "is-active" : ""}`}
     >
-      <span aria-hidden="true" className="flex w-5 shrink-0 justify-center">
+      <span aria-hidden="true" className="nav-item-icon flex w-5 shrink-0 justify-center">
         {icon}
       </span>
       <span className="nav-label">{label}</span>
@@ -253,8 +231,12 @@ function Gear() {
 
 function Mark() {
   return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 12h4l2-5 3 10 2-5h7" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      {[0,72,144,216,288].map(angle=><path key={angle} d="M16 15C9 10 10 3 16 2C22 3 23 10 16 15Z" transform={`rotate(${angle} 16 16)`} fill="currentColor" fillOpacity=".09" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>)}
+      <circle cx="16" cy="16" r="4.5" fill="var(--color-nav)"/>
+      <path d="M16 13.3v5.4M13.3 16h5.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
   );
 }
+
+function Bell(){return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6" strokeLinecap="round" strokeLinejoin="round"/></svg>;}

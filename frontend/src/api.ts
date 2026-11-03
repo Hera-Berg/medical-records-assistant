@@ -12,7 +12,8 @@
  */
 
 import type {
-  DoctorNotes,
+  SharedCare, AppointmentSlot, PatientBooking, PortalDocument, SubmittedNote,
+  DoctorNotes, ProgressNotes,
   CareTeamProfile,
   ClinicianDashboardData,
   ArtifactMeta,
@@ -49,10 +50,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if ((!init?.method || init.method === "GET") && window.location.pathname.startsWith("/clinician") && /^\/api\/(wiki|timeline|profile|documents|artifact|artifacts|medications|prescriptions|calendar)(\/|$|\?)/.test(path)) {
+  if (window.location.pathname.startsWith('/clinician') && (path.startsWith('/api/capture')||path.startsWith('/api/review'))) path=path.replace('/api/','/api/clinician/');
+  if ((!init?.method || init.method === "GET") && window.location.pathname.startsWith("/clinician") && /^\/api\/(wiki|timeline|profile|documents|artifact|artifacts|medications|prescriptions|calendar|summary|files)(\/|$|\?)/.test(path)) {
     path = path.replace("/api/", "/api/clinician/");
   }
-  if (path.startsWith("/api/doctor-notes") && init?.method && clinicianCsrf()) {
+  if ((path.startsWith("/api/doctor-notes") || path.startsWith("/api/clinician/")) && init?.method && clinicianCsrf()) {
     init = { ...init, headers: {...init.headers, "X-Clinician-CSRF": clinicianCsrf()!} };
   }
   let response: Response;
@@ -108,6 +110,16 @@ export const setupApi = {
 };
 
 export const api = {
+  reviewAction: (id:string,body:Record<string,unknown>) => post<{event?:string;duplicate:boolean}>(`/api/clinician/issues/${encodeURIComponent(id)}/workflow`,body),
+  appointmentAvailability: () => request<{slots:AppointmentSlot[];timezone:string;fictional:boolean}>("/api/patient/appointments/availability"),
+  bookAppointment: (body:Record<string,unknown>) => post<{booking:PatientBooking;duplicate:boolean}>("/api/patient/appointments/book",body),
+  portalDocuments: (clinician:boolean) => request<{documents:PortalDocument[];total:number;initial_limit:number;access_note:string}>(clinician?"/api/clinician/document-list":"/api/patient/documents"),
+  submittedNotes: () => request<{notes:SubmittedNote[];simulation:string}>("/api/patient/updates"),
+  correctSubmittedNote: (id:string,text:string,revision:string) => post<{duplicate:boolean}>(`/api/patient/updates/${encodeURIComponent(id)}/correct`,{text,revision}),
+  sharedCare: () => request<SharedCare>("/api/shared-care"),
+  acknowledgeCare: (message:string,recipient:string) => post<{acknowledged?:boolean}>("/api/shared-care/acknowledge",{message,recipient}),
+  clinicianPatient: () => request<{values:Record<string,string>}>("/api/clinician/profile"),
+  originalObservation: (id: string, clinician=true) => request<{text:string; recorded_at:string; author:string; role:string; date_basis:string}>(`/api/${clinician?"clinician":"patient"}/observations/${encodeURIComponent(id)}`),
   clinicianDashboard: (comparison: string) => request<ClinicianDashboardData>(`/api/clinician/dashboard${comparison ? `?comparison_date=${encodeURIComponent(comparison)}` : ""}`),
   profile: () => request<CareTeamProfile>("/api/profile"),
   welcomeDone: () => post<{ welcome: boolean }>("/api/welcome/done", {}),
@@ -120,6 +132,8 @@ export const api = {
     request<{ queued: string }>(`/api/artifact/${encodeURIComponent(short)}/read-again`, {
       method: "POST",
     }),
+
+  clinicalTimeline: (clinician=true) => request<import("./components/ClinicalTimeline").ClinicalTimelineData>(clinician?"/api/clinician/timeline/feed":"/api/patient/timeline/feed"),
 
   timeline: (params: {
     from?: string;
@@ -139,6 +153,9 @@ export const api = {
     const suffix = query.toString();
     return request<Timeline>(`/api/timeline${suffix ? `?${suffix}` : ""}`);
   },
+  progressNotes: () => request<ProgressNotes>("/api/clinician/progress-notes"),
+  saveProgressNote: (body:{text:string;written:string;request_id:string}) => post<ProgressNotes>("/api/clinician/progress-notes",body),
+  importLegacyProgressNotes: (passphrase:string) => post<ProgressNotes>("/api/clinician/progress-notes/import-legacy",{passphrase}),
   doctorNotes: () => request<DoctorNotes>("/api/doctor-notes"),
   createNotesCompartment: (body: unknown) =>
     post<DoctorNotes>("/api/doctor-notes/compartment", body),
@@ -163,18 +180,21 @@ export const api = {
     source: "upload" | "paste" | "drop" | "recorder",
     capturedTs?: string | null,
     note?: string,
+    metadata?: Record<string,string>,
   ) => {
     const form = new FormData();
     for (const file of files) form.append("files", file, file.name);
     form.append("source", source);
     if (capturedTs) form.append("captured_ts", capturedTs);
     if (note) form.append("note", note);
+    for(const [key,value] of Object.entries(metadata??{})) if(value) form.append(key,value);
     return request<CaptureResponse>("/api/capture", { method: "POST", body: form });
   },
 
-  note: (text: string) => {
+  note: (text: string, metadata?: Record<string,string>) => {
     const form = new FormData();
     form.append("text", text);
+    for(const [key,value] of Object.entries(metadata??{})) if(value) form.append(key,value);
     return request<{ event: string; ts: string; text: string }>("/api/capture/text", {
       method: "POST",
       body: form,
@@ -250,7 +270,7 @@ export const api = {
    * folder.
    */
   previewSummary: (body: { question?: string; label?: string; since?: string | null }) =>
-    request<Summary>("/api/summary/preview", {
+    request<Summary>(window.location.pathname.startsWith("/clinician/") ? "/api/clinician/summary/preview" : "/api/summary/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -258,7 +278,7 @@ export const api = {
 
   /** Prepare it for real: one event, and two files in `exports/`. */
   prepareSummary: (body: { question?: string; label?: string; since?: string | null }) =>
-    request<Summary>("/api/summary", {
+    request<Summary>(window.location.pathname.startsWith("/clinician/") ? "/api/clinician/summary" : "/api/summary", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

@@ -49,6 +49,6 @@ export function notifyAccountChange() {
   try { localStorage.setItem("health-agent.account-change", String(Date.now())); } catch { /* Cookie enforcement still applies. */ }
 }
 export function clinicianPath(to: string) {
-  if (/^\/(record|artifact|documents|timeline|calendar|profile|progress-notes|doctor-notes)(\/|$)/.test(to)) return `/clinician${to}`;
+  if (/^\/(record|artifact|documents|timeline|calendar|profile|progress-notes|doctor-notes|summary|files|review|add)(\/|$)/.test(to)) return `/clinician${to}`;
   return to;
 }

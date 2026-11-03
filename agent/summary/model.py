@@ -141,6 +141,7 @@ class Source:
     #: folder is the record, and a sheet that can only be followed through a
     #: running app is a sheet that stops being evidence when the app dies.
     rel: str | None = None
+    url: str | None = None
 
     @property
     def word(self) -> str:
@@ -153,6 +154,7 @@ class Source:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            **({'url':self.url} if self.url else {}),
             "tier": self.tier,
             "tier_word": self.word,
             "when": self.when,

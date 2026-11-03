@@ -16,10 +16,13 @@ from .state import RecordState
 
 
 def get_state(request: Request) -> RecordState:
-    return request.app.state.record
+    from .patient_access import state_for
+    return state_for(request)
 
 
 def get_index(request: Request) -> Index:
+    from .patient_access import PatientState, NoPrivateIndex
+    if isinstance(get_state(request),PatientState):return NoPrivateIndex()
     return request.app.state.index
 
 

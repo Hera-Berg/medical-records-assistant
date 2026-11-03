@@ -1,3 +1,4 @@
+import { AudienceText } from "../recordLanguage";
 /**
  * The review inbox: everything waiting on a person, most consequential first.
  *
@@ -190,10 +191,7 @@ export function Review({
       ) : null}
 
       {items.length === 0 ? (
-        <Empty>
-          Nothing is waiting for you. Everything read so far has been decided, and your
-          record shows only what you agreed to.
-        </Empty>
+        <Empty><AudienceText patient={"Nothing is waiting for you. Everything read so far has been decided, and your record shows only what you agreed to."} clinician={"Nothing is waiting for you. Everything read so far has been decided, and the patient record shows only what you agreed to."} /></Empty>
       ) : (
         <>
           <p className="mb-4">
@@ -360,12 +358,7 @@ function Body({
 
   if (item.kind === "withdrawn-by-rejection") {
     return (
-      <p className="mt-1">
-        You confirmed something read out of this document, and later rejected it. The
-        later decision is the one that counts, so it has been taken out of your record
-        — and what it said is deliberately not repeated here. Was rejecting it what you
-        meant?
-      </p>
+      <p className="mt-1"><AudienceText patient={"You confirmed something read out of this document, and later rejected it. The later decision is the one that counts, so it has been taken out of your record — and what it said is deliberately not repeated here. Was rejecting it what you meant?"} clinician={"You confirmed something read out of this document, and later rejected it. The later decision is the one that counts, so it has been taken out of the patient record — and what it said is deliberately not repeated here. Was rejecting it what you meant?"} /></p>
     );
   }
 
@@ -375,7 +368,7 @@ function Body({
         You confirmed that you stopped taking{" "}
         <span className="font-semibold">{item.name}</span>, and that is recorded on its
         page with the source.{" "}
-        <span className="font-semibold">It stays on your medication list</span>, because
+        <span className="font-semibold"><AudienceText patient={"It stays on your medication list"} clinician={"It stays on the patient’s medication list"} /></span>, because
         only a prescription or a lab result can take a medication off it. A clinician
         seeing both what was prescribed and what you actually take is better served than
         by either alone. If it should come off the list, correct it here.
@@ -496,14 +489,12 @@ function StopNote({ item }: { item: InboxItem }) {
     <p className="mt-2">
       {item.stop.transitions ? (
         <>
-          Confirming takes <span className="font-semibold">{item.name}</span> off your
-          medication list. Its page and its whole history are kept.
-        </>
+          Confirming takes <span className="font-semibold">{item.name}</span><AudienceText patient={"off your medication list. Its page and its whole history are kept."} clinician={"off the patient’s medication list. Its page and its whole history are kept."} /></>
       ) : (
         <>
           Confirming records that you stopped taking{" "}
           <span className="font-semibold">{item.name}</span>.{" "}
-          <span className="font-semibold">It stays on your medication list</span>, because
+          <span className="font-semibold"><AudienceText patient={"It stays on your medication list"} clinician={"It stays on the patient’s medication list"} /></span>, because
           only a prescription or a lab result can take it off — a clinician seeing both
           what was prescribed and what you actually take is better served than by either
           alone.
@@ -752,9 +743,7 @@ function Anomalies({ anomalies }: { anomalies: { count: number; items: string[] 
           ? "One note about the record itself"
           : `${anomalies.count} notes about the record itself`}
       </h2>
-      <p className="text-[color:var(--color-muted)]">
-        These are about how the record is filed, not about your health.
-      </p>
+      <p className="text-[color:var(--color-muted)]"><AudienceText patient={"These are about how the record is filed, not about your health."} clinician={"These are about how the record is filed, not about the patient’s health."} /></p>
       <ul className="mt-1 list-disc pl-5">
         {anomalies.items.map((item) => (
           <li key={item}>{item}</li>

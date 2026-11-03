@@ -673,6 +673,7 @@ export interface FileContent {
  * about what the patient is taking.
  */
 export interface SummarySource {
+  url?: string;
   tier: Tier | null;
   tier_word: string;
   when: string | null;
@@ -716,6 +717,8 @@ export interface SummaryWaiting {
 }
 
 export interface Summary {
+  comparison_period?: ComparisonPeriod;
+  comparison_basis?: string;
   id: string;
   prepared: string;
   prepared_words: string;
@@ -960,6 +963,7 @@ export interface CareTeamMember {
   group: "facility" | "external" | "family";
 }
 export interface CareTeamProfile {
+  values: Record<string,string>;
   care_team: CareTeamMember[];
   demo_scenario?: string;
 }
@@ -968,15 +972,53 @@ export interface ClinicianIdentity {
   username: string; name: string; role: string; salutation: string;
 }
 export interface ClinicianSession { clinician: ClinicianIdentity; csrf: string; }
+export interface WorkflowEvent {
+ id:string; kind:string; at:string; actor:{username:string;name:string;role:string}; sources?:string[]; source?:string; priority?:string; basis?:string; message?:string; method?:string; communication_at?:string; delivery?:string; recipients?:string[]; timeframe?:string; resolved?:boolean; action?:string; description?:string; booking?:PatientBooking|null;
+}
+export interface IssueWorkflow {
+ reviewed:boolean; reviewed_sources:string[]; reviews:WorkflowEvent[]; communications:WorkflowEvent[]; releases:WorkflowEvent[]; actions:WorkflowEvent[]; priority:WorkflowEvent|null; history:WorkflowEvent[];
+ acknowledgements:Array<{message:string;recipient:string;at:string;simulation?:boolean}>;
+}
+export interface PatientBooking {id:string;request:string;slot_id:string;date:string;time:string;professional:string;location?:string|null;recipient:string;booked_by:string;simulation:boolean;recorded_at?:string;}
+export interface AppointmentSlot {id:string;date:string;time:string;starts_at:string;professional:string;location?:string|null;duration_minutes:number;fictional:boolean;}
+export interface PortalDocument {workflow_issue?:ReviewIssue;released?:boolean;id:string;title:string;date:string|null;received_date?:string|null;author:string;category:string;accessible:boolean;url:string|null;status:string;release_message?:string|null;}
+export interface SubmittedNote {id:string;text:string;original_text:string;author:string;recorded_at:string;event_date:string|null;revision:string;corrected_at:string|null;can_correct:boolean;simulation:boolean;}
+export interface SharedCare {
+ simulation:string;
+ messages:Array<{id:string;kind:string;at:string;message:string;recipients:string[];actor:{name:string};timeframe?:string;status:string;action_resolved?:boolean;booking?:PatientBooking|null;acknowledgements:Array<{recipient:string;at:string}>}>;
+ documents:Array<{id:string;at:string;message:string;recipients:string[];actor:{name:string};artifact:string;title:string}>;
+}
+export interface ReviewIssue {
+  workflow?:IssueWorkflow; priority?:"urgent"|"attention"|"routine"|"untriaged"; priority_basis?:string; laboratory_flags?:string[]; context?:ReviewIssue["contributions"];
+
+  id:string; section:"reported"|"updates"|"follow_up"; headline:string; label:string|null; summary:string|null; date:string; sort_date:string; display_date:string; source_count:number;
+  contributions:Array<ClinicianDashboardData["groups"]["reported"][number] & {original_text:string|null; review_status:string|null; artifact?:string; ordered_panel?:string; access?:string; context?:boolean; results?:Array<{test:string;result:string;unit:string;reference:string;flag:string}>}>;
+}
 export interface ClinicianDashboardData {
+  issues:ReviewIssue[];
+  workflow_enabled?:boolean; recipient_simulation?:string; tab_counts?:Record<string,number>;
   clinician: ClinicianIdentity;
   patient: {name: string; date_of_birth: string; facility: string};
+  comparison_period: ComparisonPeriod; receipt_limitation: string;
   today: string; comparison_date: string | null; first_review: boolean;
   last_consultation: {date: string; title: string} | null;
   upcoming: {date: string; title: string; professional?: string; time?: string} | null;
+  upcoming_appointments: Array<{id:string; date:string; title:string; professional?:string; time?:string; source_url:string; attendance:string}>;
+  past_attendance_unknown: Array<{id:string; date:string; title:string; professional?:string; source_url:string; attendance:string}>;
   summary_kind: string;
-  groups: Record<'reported' | 'documents' | 'medications' | 'follow_up', Array<{
+  groups: Record<'reported' | 'documents' | 'medications' | 'follow_up' | 'newly_received', Array<{
     id: string; headline: string; summary: string; author: string; role: string;
-    date: string; source_url: string; status: string;
+    date: string; source_url: string; status: string; date_basis?: string; event_date?: string | null; event_timestamp?: string | null;
+    authored_date?: string | null; authored_at?: string | null; document_date?: string | null; received_date?: string | null; received_at?: string | null; uploaded_at?: string | null; recorded_at?: string; ordering?: string | null; outside_period?: boolean;
   }>>;
 }
+
+export interface ComparisonPeriod {
+  mode: "last_consultation" | "custom" | "first_review";
+  timezone: string; start_date: string | null; start_timestamp: string | null;
+  end_timestamp: string; precision: "timestamp" | "date" | null;
+  boundary_note: string; default_date: string | null;
+}
+
+export interface ProgressNote {id:string;author:string;role:string;username?:string;written:string;text:string;saved_at:string;original_saved_at?:string;imported:boolean;}
+export interface ProgressNotes {notes:ProgressNote[];legacy_locked_count:number;protection:string;}

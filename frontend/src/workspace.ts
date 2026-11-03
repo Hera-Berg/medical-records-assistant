@@ -14,7 +14,7 @@ export function useWorkspace(path: string): Workspace {
   });
   const workspace = path === "/clinician" || path.startsWith("/clinician/")
     ? "clinician"
-    : path === "/" || path === "/overview" || path === "/overview/"
+    : path === "/notifications" || path === "/" || path === "/overview" || path === "/overview/"
       ? "patient-carer"
       : remembered;
 

@@ -137,6 +137,8 @@ a:hover { text-decoration: underline; }
 
 def _href(source, mode: str) -> str | None:
     if mode == SERVER_LINKS:
+        if source.url:
+            return source.url
         return ARTIFACT_ROUTE.format(short=source.artifact) if source.artifact else None
     return source.rel
 

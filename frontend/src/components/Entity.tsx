@@ -19,6 +19,7 @@
  */
 
 import { createElement, useEffect, useState } from "react";
+import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api } from "../api";
 import { Link } from "../router";
 import type { PageHeader } from "../App";
@@ -62,6 +63,7 @@ export function Entity({
   version: number;
   setHeader: (header: PageHeader) => void;
 }) {
+  const clinician = useClinicianLanguage();
   const [data, setData] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,10 +89,10 @@ export function Entity({
     if (!data) return;
     setHeader({
       title: data.name,
-      subtitle: "Everything your record holds about this, and the documents behind it.",
+      subtitle: clinician ? "Information in Jane’s record and its supporting source documents." : "Everything your record holds about this, and the documents behind it.",
       badge: <StatusMark status={data.status} />,
     });
-  }, [data, setHeader]);
+  }, [data, setHeader, clinician]);
 
   if (error) return <Empty>{error}</Empty>;
   if (!data) return <Empty>Reading…</Empty>;
@@ -151,7 +153,7 @@ export function Entity({
               : null
           }
         />
-        <Fact label="Its file in your folder" value={data.path} mono />
+        <Fact label={clinician ? "Source file in the patient record" : "Its file in your folder"} value={data.path} mono />
       </dl>
 
       {/*
@@ -188,7 +190,7 @@ export function Entity({
         <Mentions data={data} navigate={navigate} />
       ) : null}
 
-      {data.kind === "symptom" ? null : <Heading>What your record says</Heading>}
+      {data.kind === "symptom" ? null : <Heading>{clinician ? "What the patient record says" : "What your record says"}</Heading>}
       {data.kind === "symptom" ? null : data.slots.length === 0 ? (
         <Empty>Nothing has been confirmed about this yet.</Empty>
       ) : (
@@ -370,7 +372,7 @@ export function Entity({
       {data.markdown ? (
         <details className="mt-5 no-print">
           <summary className="cursor-pointer border-b border-[color:var(--color-rule)] pb-1 text-lg font-semibold">
-            The file in your folder
+            <AudienceText patient="The file in your folder" clinician="Source file in the patient record" />
           </summary>
           <p className="mt-1 text-[color:var(--color-muted)]">
             <code className="font-mono">{data.path}</code> — regenerated from the event

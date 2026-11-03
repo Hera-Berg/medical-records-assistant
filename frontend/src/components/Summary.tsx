@@ -21,6 +21,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useComparison } from "../comparison";
+import { sydneyToday } from "../dates";
+import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api, ApiError, artifactUrl } from "../api";
 import type { PageHeader } from "../App";
 import { Link } from "../router";
@@ -68,6 +71,9 @@ function Compose({
   navigate: (to: string) => void;
   onChanged: () => void;
 }) {
+  const clinician = useClinicianLanguage();
+  const {chosen,setChosen}=useComparison();
+  const [draft,setDraft]=useState(chosen);
   const [question, setQuestion] = useState("");
   const [label, setLabel] = useState("");
   const [sheet, setSheet] = useState<SheetData | null>(null);
@@ -93,38 +99,40 @@ function Compose({
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       api
-        .previewSummary({ question, label })
-        .then(setSheet)
+        .previewSummary({ question, label, ...(clinician ? {since:chosen || null} : {}) })
+        .then(result=>{setSheet(result);setError(null);if(clinician)setDraft(result.comparison_period?.start_date??"");})
         .catch((exc: Error) => setError(exc.message));
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer.current);
-  }, [question, label, version]);
+  }, [question, label, version, clinician, chosen]);
 
   const prepare = useCallback(() => {
     setBusy(true);
     setError(null);
     api
-      .prepareSummary({ question, label })
+      .prepareSummary({ question, label, ...(clinician ? {since:chosen || null} : {}) })
       .then((result) => {
         onChanged();
         navigate(`/summary/${result.id}`);
       })
       .catch((exc: ApiError) => setError(exc.message))
       .finally(() => setBusy(false));
-  }, [question, label, navigate, onChanged]);
+  }, [question, label, navigate, onChanged, clinician, chosen]);
 
   return (
     <div>
+      {clinician ? <form className="comparison-form" onSubmit={e=>{e.preventDefault();setChosen(draft);}}>
+        <label>Summary comparison from<input className="field" type="date" required max={sydneyToday()} value={draft} onChange={e=>setDraft(e.target.value)} /></label>
+        <button className="btn">Apply date</button>{sheet?.comparison_period?.default_date ? <button className="btn" type="button" onClick={()=>{setChosen("");setDraft(sheet.comparison_period?.default_date??"");}}>Use last consultation</button>:null}
+      </form> : <p className="metadata">Patient/carer summary: the chosen date, previous prepared patient/carer summary or stated 90-day window. This is not a clinician’s consultation date.</p>}
+      {sheet?.comparison_basis ? <p className="metadata">{sheet.comparison_basis} {sheet.comparison_period?.boundary_note}</p>:null}
       <p>
-        One page to take to an appointment. It lists what changed, what you take, what
-        you are allergic to and what you are being treated for — each line saying which
-        of your documents it came from — and it ends with the question you came to ask.
+        <AudienceText patient="One page to take to an appointment. It lists what changed, what you take, what you are allergic to and what you are being treated for — each line saying which of your documents it came from — and it ends with the question you came to ask." clinician="Prepare a source-linked appointment summary of Jane’s changes, medication list, allergies, conditions and questions." />
       </p>
 
-      <Heading>What you came to ask</Heading>
+      <Heading><AudienceText patient="What you came to ask" clinician="Jane’s questions for the appointment" /></Heading>
       <p className="text-[color:var(--color-muted)]">
-        Your words, printed exactly as you type them. Nothing on this sheet is written
-        for you.
+        <AudienceText patient="Your words, printed exactly as you type them. Nothing on this sheet is written for you." clinician="Record Jane’s question in her own words. This field is printed as entered." />
       </p>
       <textarea
         value={question}
@@ -137,9 +145,7 @@ function Compose({
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="block">
           <span className="block">Who is the appointment with?</span>
-          <span className="block text-[color:var(--color-muted)]">
-            Used to name the file in your folder.
-          </span>
+          <span className="block text-[color:var(--color-muted)]"><AudienceText patient={"Used to name the file in your folder."} clinician={"Used to name the file in the record folder."} /></span>
           <input
             value={label}
             onChange={(event) => setLabel(event.target.value)}
@@ -151,20 +157,17 @@ function Compose({
           type="button"
           className="btn btn-primary"
           onClick={prepare}
-          disabled={busy}
+          disabled={busy || (clinician && (!sheet || Boolean(error)))}
         >
           {busy ? "Preparing…" : "Prepare this sheet"}
         </button>
       </div>
-      <p className="mt-2 text-[color:var(--color-muted)]">
-        Preparing it saves two files into your folder — one to read in any text editor,
-        one to print — and records that you made it. Nothing below has been saved yet.
-      </p>
+      <p className="mt-2 text-[color:var(--color-muted)]"><AudienceText patient={"Preparing it saves two files into your folder — one to read in any text editor, one to print — and records that you made it. Nothing below has been saved yet."} clinician={"Preparing it saves two files into the record folder — one to read in any text editor, one to print — and records that you made it. Nothing below has been saved yet."} /></p>
 
       {error ? <Empty>{error}</Empty> : null}
 
       <Heading>How it will look</Heading>
-      {sheet ? <SheetView sheet={sheet} /> : <Empty>Reading your record…</Empty>}
+      {sheet ? <SheetView sheet={sheet} /> : <Empty><AudienceText patient={"Reading your record…"} clinician={"Reading the patient record…"} /></Empty>}
 
       {past.length > 0 ? (
         <>
@@ -243,7 +246,7 @@ function OneSheet({
   useEffect(() => {
     if (!response) return;
     setHeader({
-      title: "Your sheet for this appointment",
+      title: response?.comparison_period ? "Clinician appointment summary" : "Your sheet for this appointment",
       subtitle:
         response.summary === null
           ? "This one is no longer shown."
@@ -333,11 +336,7 @@ function SheetView({
       )}
 
       {sheet.overflowed ? (
-        <p className="mt-4 text-[color:var(--color-muted)]">
-          This runs past one page. Nothing was dropped from your medications or
-          allergies to make it fit — a missing medication is worse than a second
-          sheet.
-        </p>
+        <p className="mt-4 text-[color:var(--color-muted)]"><AudienceText patient={"This runs past one page. Nothing was dropped from your medications or allergies to make it fit — a missing medication is worse than a second sheet."} clinician={"This runs past one page. Nothing was dropped from the patient’s medications or allergies to make it fit — a missing medication is worse than a second sheet."} /></p>
       ) : null}
       <p className="mt-4 border-t border-[color:var(--color-rule)] pt-2 text-[color:var(--color-muted)]">
         {sheet.waiting.sentence}
@@ -397,6 +396,7 @@ function Row({
   tappable?: boolean;
   onOpen: (short: string) => void;
 }) {
+  const clinician = useClinicianLanguage();
   const artifact = line.sources.find((source) => source.artifact)?.artifact ?? null;
   const canOpen = Boolean(tappable && artifact);
   return (
@@ -431,6 +431,7 @@ function Row({
       </div>
       <div className="text-[color:var(--color-muted)] sm:text-right sm:whitespace-nowrap">
         {line.source_text}
+        {clinician ? line.sources.map(source=><a key={source.citation.key} className="source-link dashboard-line" href={source.url ?? (source.artifact ? `/clinician/artifact/${encodeURIComponent(source.artifact)}` : `/files/${source.citation.target??""}`)}>View original source</a>):null}
       </div>
     </div>
   );
@@ -501,9 +502,7 @@ function FullScreen({
         ) : !meta ? (
           <Empty>Opening…</Empty>
         ) : !meta.present ? (
-          <Empty>
-            The record says this document exists, but its bytes are not in your folder.
-          </Empty>
+          <Empty><AudienceText patient={"The record says this document exists, but its bytes are not in your folder."} clinician={"The record says this document exists, but its bytes are not in the record folder."} /></Empty>
         ) : mime.startsWith("image/") ? (
           <img src={url} alt="" className="mx-auto block max-h-full" />
         ) : mime.startsWith("audio/") ? (

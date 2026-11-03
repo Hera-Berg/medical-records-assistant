@@ -90,6 +90,7 @@ class Reference:
     ts: str | None
     day: date | None
     source: str
+    note_override: str | None = None
 
     @property
     def reason(self) -> str:
@@ -98,6 +99,8 @@ class Reference:
 
     @property
     def note(self) -> str:
+        if self.note_override is not None:
+            return self.note_override
         if self.day is None:
             return ""
         return _NOTES[self.source].format(when=dates_mod.render_date(self.day))
@@ -214,7 +217,7 @@ def reference_for(
             ts=f"{day.isoformat()}T23:59:59Z", day=day, source=FROM_CHOSEN
         )
 
-    previous = summaries(events)
+    previous = [event for event in summaries(events) if not event.payload.get('clinician_context')]
     if previous:
         last = previous[-1]
         parsed = parse_ts_or_none(last.ts)
@@ -241,6 +244,7 @@ def compose(
     reference: Reference | None = None,
     demo: bool = False,
     summary_id: str = PREVIEW_ID,
+    clinician_context: dict | None = None,
 ) -> Summary:
     """Build one sheet from an event stream. Writes nothing, appends nothing.
 
@@ -262,7 +266,7 @@ def compose(
     artifacts = citations_mod.index_artifacts(events)
     from ..prescriptions import listing
     prescription_rows = listing(events, artifacts, as_of, now)
-    return build(
+    summary = build(
         now.entities,
         prescriptions=tuple(prescription_rows),
         before=before,
@@ -278,6 +282,10 @@ def compose(
         demo=demo,
         summary_id=summary_id,
     )
+    if clinician_context:
+        from .clinician import apply
+        summary = apply(summary,clinician_context,artifacts,events)
+    return summary
 
 
 def _as_at(events: Sequence[Event], moment: datetime) -> list[Event]:
@@ -315,6 +323,7 @@ def plan(
     label: str = "",
     since: date | str | None = None,
     demo: bool = False,
+    clinician_context: dict | None = None,
 ) -> Prepared:
     """Everything a prepared summary consists of, before anything is written.
 
@@ -322,7 +331,10 @@ def plan(
     under one lock. The event id is minted first and becomes the summary's id,
     because the sheet prints it and the two must be the same string.
     """
-    reference = reference_for(list(events), as_of, since)
+    reference = reference_for(list(events), as_of, since) if not clinician_context else Reference(
+        ts=clinician_context['period']['start_timestamp'],
+        day=date.fromisoformat(clinician_context['period']['start_date']),source='clinician',
+        note_override=clinician_context['basis'])
     event = envelope.new(EVENT_TYPE, device=device, ts=format_ts(as_of))
     summary = compose(
         events,
@@ -332,6 +344,7 @@ def plan(
         reference=reference,
         demo=demo,
         summary_id=event.id,
+        clinician_context=clinician_context,
     )
 
     stem = export_stem(root, summary.prepared, label)
@@ -345,6 +358,7 @@ def plan(
     event = dataclasses.replace(
         event,
         payload={
+            **({'clinician_context':clinician_context} if clinician_context else {}),
             "summary": event.id,
             "prepared": summary.prepared.isoformat(),
             "as_of": format_ts(as_of),
@@ -407,6 +421,7 @@ def prepare(
     since: date | str | None = None,
     events: Sequence[Event] | None = None,
     append: Callable[[Event], Any] | None = None,
+    clinician_context: dict | None = None,
 ) -> Prepared:
     """Prepare a sheet: append the event, then write the two exports."""
     stream = list(events) if events is not None else list(vault.read().events)
@@ -419,6 +434,7 @@ def prepare(
         label=label,
         since=since,
         demo=vault.is_demo,
+        clinician_context=clinician_context,
     )
     (append or vault.append)(prepared.event)
     write(vault.root, prepared.files)
@@ -497,6 +513,7 @@ def restore(events: Sequence[Event], summary_id: str) -> Restored:
         ts=since_ts if isinstance(since_ts, str) else None,
         day=since_day,
         source=str(payload.get("since_source") or FROM_WINDOW),
+        note_override=payload['clinician_context']['basis'] if payload.get('clinician_context') else None,
     )
 
     summary = compose(
@@ -510,6 +527,7 @@ def restore(events: Sequence[Event], summary_id: str) -> Restored:
         reference=reference,
         demo=bool(payload.get("demo")),
         summary_id=event.id,
+        clinician_context=payload.get("clinician_context"),
     )
     return Restored(event=event, summary=summary, exports=exports)
 

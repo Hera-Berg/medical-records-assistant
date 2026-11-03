@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
 
 from ... import ingest as ingest_mod
@@ -64,10 +64,14 @@ MAX_CLOCK_SKEW_S = 60
 
 @router.post("/api/capture", status_code=202)
 def capture(
+    request: Request,
     files: list[UploadFile],
     source: str = Form("upload"),
     note: str | None = Form(None),
     captured_ts: str | None = Form(None),
+    author: str = Form(""),
+    role: str = Form(""),
+    observation_date: str = Form(""),
     state: RecordState = Depends(get_state),
 ) -> JSONResponse:
     """Take one or more files into the record and queue them to be read.
@@ -78,6 +82,7 @@ def capture(
     other four, and a partial success the caller cannot see is worse than a
     failure it can.
     """
+    metadata = _submission_metadata(state, author, role, observation_date)
     if source not in WEB_SOURCES:
         raise HTTPException(
             status_code=400,
@@ -124,6 +129,11 @@ def capture(
             # duplicate is not re-ingested, but `Queue.add` is idempotent on the
             # artefact and re-queuing one whose read never completed is how a
             # job lost to a crash gets picked up again.
+            if request.url.path.startswith('/api/clinician/') and result.status == ingest_mod.STATUS_STORED:
+                from ..review_workflow import enabled
+                if enabled(state.snapshot().events):state.append(envelope.new('note.recorded',state.vault.identity.id,payload={'clinical_upload':result.short,'author':request.state.clinician['name']}))
+            if result.status == ingest_mod.STATUS_STORED and metadata:
+                state.append(envelope.new("note.recorded",state.vault.identity.id,payload={"submission_artifact":result.short,**metadata}))
             job = queue.add(result.short)
             queued.append(result.short)
             results.append(
@@ -137,7 +147,7 @@ def capture(
                     "mime": result.mime,
                     "event": result.event.id,
                     "job": job.id,
-                    "url": f"/api/artifact/{result.short}",
+                    "url": f"{'/api/clinician' if request.url.path.startswith('/api/clinician/') else '/api'}/artifact/{result.short}",
                 }
             )
         state.invalidate()
@@ -254,7 +264,11 @@ def _store_one(
 
 @router.post("/api/capture/text", status_code=202)
 def capture_text(
+    request: Request,
     text: str = Form(...),
+    author: str = Form(""),
+    role: str = Form(""),
+    observation_date: str = Form(""),
     state: RecordState = Depends(get_state),
 ) -> dict[str, Any]:
     """Record a typed note.
@@ -265,6 +279,7 @@ def capture_text(
     lands on the timeline at the moment it was recorded, which is the only date
     anything knows about it.
     """
+    metadata = _submission_metadata(state, author, role, observation_date)
     body = text.strip()
     if not body:
         raise HTTPException(status_code=400, detail="an empty note records nothing")
@@ -274,7 +289,23 @@ def capture_text(
         "note.recorded",
         identity.id,
         actor="user",
-        payload={"text": body, "source": "typed"},
+        payload={**metadata, "text": body, "source": "typed", "submission_workspace":"clinician" if request.url.path.startswith("/api/clinician/") else "patient-carer"},
     )
     state.append(event)
     return {"event": event.id, "ts": event.ts, "text": body}
+
+
+def _submission_metadata(state, author, role, observation_date):
+    from datetime import date
+    from zoneinfo import ZoneInfo
+    result = {}
+    for key,value in (("author",author),("role",role)):
+        if len(value)>120:raise HTTPException(400,"Name and role must be 120 characters or fewer.")
+        if value.strip():result[key]=value.strip()
+    if observation_date:
+        try:
+            parsed=date.fromisoformat(observation_date)
+            if parsed.isoformat()!=observation_date or parsed>state.now().astimezone(ZoneInfo('Australia/Sydney')).date():raise ValueError()
+        except ValueError:raise HTTPException(400,"Choose a valid observation date that is not in the future.")
+        result['observation_date']=observation_date
+    return result

@@ -1,3 +1,4 @@
+import { AudienceText } from "../recordLanguage";
 /**
  * What needs a person, said in sentences.
  *
@@ -196,9 +197,7 @@ export function Attention({
             record without you tapping to say so.{" "}
           </>
         ) : null}
-        They are on the <strong>Confirm extracted information</strong> screen, and your record shows
-        only what you have already agreed to until you get to them.
-      </Banner>,
+        They are on the <strong>Confirm extracted information</strong><AudienceText patient={"screen, and your record shows only what you have already agreed to until you get to them."} clinician={"screen, and the patient record shows only what you have already agreed to until you get to them."} /></Banner>,
     );
   }
 
@@ -245,9 +244,7 @@ export function Attention({
         }
         action={review}
         folded
-      >
-        About how your record is filed, not about your health.
-        <ul className="mt-1 list-disc pl-5">
+      ><AudienceText patient={"About how your record is filed, not about your health."} clinician={"About how the patient record is filed, not about the patient’s health."} /><ul className="mt-1 list-disc pl-5">
           {health.anomalies.items.map((item) => (
             <li key={item}>{item}</li>
           ))}

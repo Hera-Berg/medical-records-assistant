@@ -4,7 +4,7 @@ No calendar arithmetic infers repeat balances, dispensing or remaining supply.
 """
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from .projection.dates import parse_iso_date
+from .projection.dates import parse_iso_date, render_date
 from .demo_metadata import entries
 
 SYDNEY = ZoneInfo('Australia/Sydney')
@@ -16,7 +16,7 @@ def expiry_status(expiry, now):
     if expires is None:
         return {'state':'unknown','label':'Expiry not recorded','days':None}
     delta=(expires-day).days
-    formatted=expires.strftime('%d %B %Y').lstrip('0')
+    formatted=render_date(expires)
     label=(f'Expired — {formatted}' if delta<0 else 'Expires today' if delta==0 else
            f'Expires in {delta} days — {formatted}' if delta<=30 else f'Valid until {formatted}')
     return {'state':'expired' if delta<0 else 'soon' if delta<=30 else 'valid','label':label,'days':delta}

@@ -42,6 +42,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useClinicianLanguage, AudienceText } from "../recordLanguage";
 import { api, ApiError } from "../api";
 import type { AskResponse, FoundEntry } from "../types";
 import { Link } from "../router";
@@ -79,6 +80,7 @@ export function Ask({
    *  Nothing in the record changed; this only asks the shell to re-read health. */
   onBoxState: () => void;
 }) {
+  const clinician = useClinicianLanguage();
   const [question, setQuestion] = useState("");
   const [thread, setThread] = useState<Exchange[]>([]);
   const [busy, setBusy] = useState(false);
@@ -166,13 +168,12 @@ export function Ask({
       {empty ? (
         <div className="flex flex-1 flex-col justify-center py-8">
           <h2 className="text-center text-xl font-semibold">
-            What would you like to find in your record?
+            {clinician ? "What would you like to find in Jane’s record?" : "What would you like to find in your record?"}
           </h2>
           {/* What it will not do, said before anyone types rather than after
               they are refused — in one sentence, not a paragraph. */}
           <p className="mx-auto mt-2 max-w-xl text-center text-[color:var(--color-muted)]">
-            Answers come only from your own documents, and each line shows which one. It
-            won't tell you what something means or what to do — that's one for your doctor.
+            <AudienceText patient="Answers come only from your own documents, and each line shows which one. It won't tell you what something means or what to do — that's one for your doctor." clinician="Answers use only Jane’s source documents, with a source link for each line. This search does not provide clinical interpretation or treatment advice." />
           </p>
 
           {documents === 0 ? (
@@ -233,7 +234,7 @@ export function Ask({
         }}
       >
         <label className="sr-only" htmlFor="ask-question">
-          Ask your record
+          {clinician ? "Ask the patient record" : "Ask your record"}
         </label>
         <div className="composer flex items-end gap-2">
           <textarea
@@ -253,17 +254,17 @@ export function Ask({
             }}
             className="min-h-[2.25rem] flex-1 resize-none self-center border-0 bg-transparent py-1.5 outline-none focus-visible:outline-none"
             placeholder={
-              exhausted ? "Start again to ask something new" : "Ask about your medications, letters, results…"
+              exhausted ? "Start again to ask something new" : clinician ? "Search Jane’s medications, letters and results…" : "Ask about your medications, letters, results…"
             }
           />
           <button
             type="submit"
             className="icon-btn icon-btn-primary"
             disabled={busy || exhausted || !question.trim()}
-            aria-label={busy ? "Reading your record" : "Ask"}
+            aria-label={busy ? clinician ? "Searching the patient record" : "Reading your record" : "Ask"}
             title={
               busy
-                ? "Still reading your record for the last question"
+                ? clinician ? "Searching the patient record for the last question" : "Still reading your record for the last question"
                 : exhausted
                   ? "Start again to ask something new"
                   : !question.trim()
@@ -324,9 +325,7 @@ function Exchanged({
       </p>
 
       {pending ? (
-        <p className="mt-1 text-[color:var(--color-muted)]">
-          Reading your record…
-        </p>
+        <p className="mt-1 text-[color:var(--color-muted)]"><AudienceText patient={"Reading your record…"} clinician={"Reading the patient record…"} /></p>
       ) : null}
 
       {error ? (
@@ -387,8 +386,7 @@ function Answered({
 
       {answer.state === "empty" ? (
         <p className="mt-2 text-[color:var(--color-muted)]">
-          Nothing here is answered from anywhere but your own documents, so a question
-          your record does not cover has no answer rather than a general one.
+          <AudienceText patient="Nothing here is answered from anywhere but your own documents, so a question your record does not cover has no answer rather than a general one." clinician="Answers come only from Jane’s source documents. Questions not covered by the patient record have no generated answer." />
         </p>
       ) : null}
 
@@ -463,7 +461,7 @@ function Found({
         <thead>
           <tr>
             <th>Where from</th>
-            <th>In your record</th>
+            <th><AudienceText patient="In your record" clinician="In the patient record" /></th>
             <th>Source</th>
           </tr>
         </thead>
@@ -473,7 +471,7 @@ function Found({
               <td>
                 {entry.corrected ? (
                   <span className="chip" title="You typed this correction yourself">
-                    Your correction
+                    <AudienceText patient="Your correction" clinician="Recorded correction" />
                   </span>
                 ) : entry.tier ? (
                   <TierMark tier={entry.tier} />
@@ -496,7 +494,7 @@ function Found({
       {total > entries.length ? (
         <p className="mt-2 text-[color:var(--color-muted)]">
           {total - entries.length} more {total - entries.length === 1 ? "entry" : "entries"}{" "}
-          matched. Your record has all of them.
+          <AudienceText patient="matched. Your record has all of them." clinician="matched. All are available in the patient record." />
         </p>
       ) : null}
     </div>

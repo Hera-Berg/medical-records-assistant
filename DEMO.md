@@ -26,7 +26,7 @@ works as before; `--jane` selects this dated scenario.
 ## What to open
 
 - Overview shows the latest five entries from `/api/timeline?limit=5`.
-- Timeline shows all 68 events, 24 October 2024 through 22 October 2026,
+- The original timeline contains 68 events, 24 October 2024 through 22 October 2026,
   newest first. Its existing date filters, source filters and calendar use the
   same projection. Click an event or its source citation to open the original.
 - Documents opens the record's own collection in this scenario. Search by title,
@@ -165,39 +165,22 @@ and a care-plan review. Prescription expiry events use the recorded dates and
 link to the prescription source; expiry is not a treatment-stop instruction.
 Bookings do not automatically become "attended" as time passes.
 
-**Progress notes** (`/progress-notes`; older `/doctor-notes` links still work)
-opens with a short password prompt. The fictional facility collection uses:
+**Progress notes** opens within the authenticated clinician workspace without a
+second password. All 21 fictional notes retain their original authors, dates and
+text. New notes record the signed-in clinician's identity. Notes remain excluded
+from patient views, summaries, answers and document release.
 
-    pass
+Notes use server-managed AES-GCM encryption at rest. The private machine key lives
+outside the vault, under the application configuration's `clinician-note-keys`
+directory, and must be retained with machine backups. This is not end-to-end
+encryption: the authenticated server decrypts notes for authorised clinicians.
+The original legacy ciphertext remains recoverable. The known demo collection
+was imported once; other legacy collections offer a one-time import using their
+original passphrase rather than resetting or discarding their contents.
 
-It contains 21 encrypted notes from October 2024 to October 2026 by Dr James
-Smith, Morgan Bell (registered nurse), and locum GPs Dr Olivia Bennett and
-Dr Liam Wilson. It begins with routine follow-up, not an admission consultation.
-External specialists are not seeded into this collection. The nurse and locums
-also appear in the Overview care team; GP and specialist membership remain
-separate. Notes expand individually after unlocking, and adding a note is in a
-collapsed section. The existing automatic lock and lock-on-leaving behaviour
-remain in place.
-
-The password is for this **fictional demo collection only**. Existing encrypted
-notes, keys and passwords are not reset or decrypted during population. A
-previous collection with a different password remains locked and is reported
-as such. The facility notes use the same PBKDF2/AES-GCM format as existing notes;
-only ciphertext is returned by the notes API. They do not appear in calendar
-previews, the health timeline, document summaries, appointment sheets or answers.
-Names entered or selected do not establish authenticated professional identity.
-
-Additional focused checks:
-
-```sh
-.venv314/bin/python -m unittest tests.test_calendar_progress -v
-```
-
-These cover birthday boundaries, bookings/source links, calendar saves and
-retries, invalid/DST times, leap-year/month navigation, later user edits, correct
-and incorrect password handling, encrypted-note preservation, public-view
-exclusion and the served Progress notes interface. Full visual desktop/mobile
-browser checks remain unavailable in the execution environment.
+Focused checks: `tests/test_progress_notes_session.py` and
+`frontend/tools/check-session-progress-notes.mjs` cover session protection,
+encrypted storage, original-note preservation and desktop/mobile access.
 
 
 ## Optional OpenAI connection
@@ -213,3 +196,103 @@ Never put a key in chat, source code or the vault's config.toml.
 
 Provider tests: `.venv314/bin/python -m unittest tests.test_openai_provider -v`.
 These use mocked responses and do not establish live account access or billing.
+
+## Post-consultation dashboard continuation
+
+The original 68-source history ends on 22 October 2026. The carer/nurse/patient
+observations on 18–20 October precede Dr Smith's 21 October consultation; they
+correctly do not appear in an exclusive comparison after that date. A previously
+planned later demonstration sequence was not present in the repository or vault.
+
+The dashboard correction appends three clearly authored fictional sources:
+23 October (Jane, breakfast participation), 24 October (Emily, walking support),
+and 25 October (Morgan, nearby staff support). These extend the established
+scenario without changing original dates, diagnoses, prescriptions, historical
+source files, user-added notes or sealed clinical notes. Their PDF/text originals
+and native metadata explicitly identify their newly authored demo origin.
+
+```sh
+.venv314/bin/python -m agent.demo.review_sequence --vault ./vault/jane-doe-demo
+```
+
+This explicit, idempotent command adds missing continuation sources only. The
+original two-year scenario and its original manifest remain intact; the
+continuation brings the authored source count to 71. It creates no clinical
+claims, review-completion events or tasks. Dashboard summary notices distinguish
+prepared demo content from later ordinary typed notes; those notes retain their
+original event text and recorded timestamp, and an unknown author/date of
+observation is not inferred.
+
+Outstanding follow-up now uses the explicit unresolved 22 October heart-medication
+question, not calendar bookings. The nearest three future appointments have their
+own compact section; past bookings without attendance evidence say “Attendance
+unknown”. Filtering uses source-event dates, except original typed notes whose
+only known date is explicitly labelled “date recorded”.
+
+## Revised clinician review demonstration (review-v2)
+
+The local Jane record is replaced only through `agent.demo.review_dataset.refresh`:
+first a complete recoverable copy is made beside the active vault, then a new
+staging vault is populated and swapped into place. Other vaults are not touched.
+The seeder refuses to reset an already refreshed vault, so it cannot silently
+wipe review work. Stop the app before restoring an archive to the active path.
+
+The refreshed record has 14 clinical PDF originals across November 2024–October
+2026, plus five original patient/carer/staff updates. Its `DATASET-MANIFEST.json`
+records source IDs, original hashes, fictional event/document/receipt dates,
+actual import dates and demonstration purposes. These are newly authored fiction,
+not recovered historical reports or live generation. The sodium critical alert is
+an explicit fictional laboratory flag. It does not establish a cause for symptoms
+or a clinician-assigned priority. Apixaban remains on the current chart; there is
+no warfarin/INR monitoring scenario.
+
+Review, priority assessments, communications, releases, appointment requests,
+internal clinical actions and explicit action resolutions are independent
+append-only `note.recorded` workflow events. Authenticated clinician identity and
+server timestamps are recorded. Source opening changes no review state. A review
+covers explicitly identified contributions, not any later contribution silently.
+The two clinicians share item review/audit history but keep their own documented
+consultation boundaries. Semantic deduplication and submission IDs prevent repeated
+clicks from creating duplicate requests, messages or releases.
+
+The original laboratory flag is retained after a clinician changes their priority.
+Explicit source-critical flags sort first, followed by clinician priority and
+recency. Related walking reports and Jane's linked dizziness/meal-participation
+reports retain individual source text. Date filtering happens before grouping;
+older pathology is labelled context and excluded from current-period source counts.
+Unresolved clinician-created actions keep their dated source visible outside the
+selected period. Ordinary calendar bookings do not create actions.
+
+Patient/carer notification and release use a **shared, unauthenticated demonstration
+workspace**. Jane explicitly authorises Emily for these fictional communications.
+Recipients are recorded and shown, but access separation between Jane and Emily
+is simulated; this is not individual carer authentication. Acknowledgements are
+explicit demo actions, never inferred from sending or reading a screen, and never
+prove understanding. Phone/in-person records are clinician-entered attestations.
+No email, SMS, external scheduling or real delivery service is implemented.
+Appointment requests are outstanding actions and in-app notifications, not bookings.
+Resolving their action records does not fabricate a calendar booking.
+
+Only a reviewed, selected clinical document and its approved message can be
+released. Patient API projections and original-file/metadata endpoints exclude
+unreleased clinical sources; raw vault browsing uses protected clinician endpoints.
+Clinician uploads use protected capture endpoints in this refreshed scenario.
+Patient/carer original submissions stay accessible without release. Sealed clinical
+notes require clinician authentication and remain encrypted at rest;
+they are not release candidates. No existing original is overwritten by workflow.
+
+Automated browser mutations run against the disposable fixture on port 7788 via
+`frontend/tools/serve-review-fixture.py` and `check-review-workflow.mjs`. The active
+port-7777 demo is checked read-only and begins with recent items unreviewed,
+unnotified and unreleased. Supply the fixture password through the environment;
+credentials are never rendered in the interface or stored as plaintext in the repo.
+
+## Expanded specialist correspondence
+
+`python -m agent.demo.specialist_letters --vault ./vault/jane-doe-demo` appends an
+expanded fictional cardiology edition and new podiatry/audiology correspondence.
+It is idempotent and requires these authors to be existing care-team members.
+The new documents are dated when authored; the original cardiology PDF and its
+historical document/receipt dates remain retained. The new edition requires fresh
+review and release, while earlier audit records remain intact. Prescription
+content restates the current chart and does not issue a new medication change.

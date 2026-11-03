@@ -43,7 +43,7 @@ def listing(events, artifacts, values):
         if isinstance(booking, dict) and p.get('calendar_id'):
             bookings[p['calendar_id']] = booking
     for member in roster:
-        add(member['name'], member['role'], member.get('organisation', ''), member.get('facility', False))
+        add(member['name'], member['role'], member.get('organisation', ''), member.get('facility', False), **{k:member[k] for k in ('location','phone','kind','group') if member.get(k)})
 
     # Explicit follow-up bookings name ongoing allied-health relationships which
     # the older facility roster did not contain. Do not parse combined attendees.

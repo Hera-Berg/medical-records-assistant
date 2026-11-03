@@ -23,6 +23,6 @@ export function ClinicianLogin({ onSignedIn }: { onSignedIn: (session: Clinician
       {error ? <p id="login-error" role="alert" className="login-error">{error}</p>:null}
       <button className="btn btn-primary" disabled={busy}>{busy ? "Signing in…":"Sign in"}</button>
     </form>
-    <p className="metadata">Signing in does not unlock passphrase-protected clinical notes.</p>
+    <p className="metadata">Your clinician session also authorises access to Progress notes.</p>
   </section>;
 }

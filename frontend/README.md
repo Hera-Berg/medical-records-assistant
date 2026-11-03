@@ -315,15 +315,16 @@ local files. Production use needs HTTPS, deployment hardening and independent
 security review. Accounts/sessions are machine-local and do not sync with the
 patient vault.
 
-The dashboard is a read-only projection of Jane's existing authored demo
-sources and explicit bookings. The default comparison is the authenticated
+The dashboard is a read-only projection of Jane’s authored demo sources,
+original typed contributions and explicit bookings. The default comparison is the authenticated
 clinician's latest completed/attended consultation (James: 21 October 2026;
 Olivia: 26 March 2025). A clinician without one must select a comparison date.
 No generated-summary timestamp becomes a consultation date. Prepared source
 excerpts are labelled as awaiting clinician review; there is no live generation,
 new review-completion state, task-management feature or other-patient inbox.
 Source-event dates determine the comparison interval; outstanding follow-up
-lists recorded bookings whose completion is not recorded, not inferred tasks.
+contains only explicitly documented unresolved requests. Ordinary appointments
+are separate; attendance is unknown where completion is not documented.
 
 Verification: `python -m unittest tests.test_clinician_auth -q` covers password
 checks, access boundaries, account separation, source links, expiry/revocation,
@@ -337,3 +338,153 @@ The browser check is `frontend/tools/check-clinician.mjs`. Supply
 `HEALTH_ORIGIN`, `PLAYWRIGHT_MODULE` and `CHROME_PATH`. It requires developer-only
 Playwright and Chrome; neither is an application dependency. Older workspace
 checks that assume anonymous clinician access are superseded by this check.
+
+## Dashboard correction: source windows and appointment semantics
+
+The original 18–20 October patient/carer/nurse observations precede Dr Smith’s
+21 October consultation and are excluded by a strict “after” comparison. The
+separate, explicit continuation command documented in `DEMO.md` appends three
+newly authored fictional sources for 23–25 October; it never changes historical
+dates or modifies clinical claims. Later ordinary typed notes are also included
+with their recorded dates, unknown author where no author was recorded, and a
+protected original-event view at `/clinician/observation/{event_id}`. Sealed notes
+are never eligible for that endpoint or the dashboard.
+
+Only the explicit unresolved 22 October medication question currently qualifies
+as outstanding follow-up. Bookings do not create clinical actions. The nearest
+three future appointments are separate; past unconfirmed bookings (including
+appointments earlier today with a known time) say “Attendance unknown”. Summaries
+are one or two supporting sentences with a single prepared-demo-review notice;
+empty sections use compact inline rows. Counts equal the displayed source rows.
+The shared sticky clinician header has a patient identity strip using the
+protected profile API. Context-sensitive interface wording changes only the
+clinician view, never original documents or patient-facing wording.
+
+For the corrected dashboard browser regression, run
+`frontend/tools/check-dashboard-corrections.mjs` with `CARE_DEMO_PASSWORD`,
+`PLAYWRIGHT_MODULE` and optionally `HEALTH_ORIGIN`/`CHROME_PATH` supplied locally.
+It verifies every source link and displayed count, the comparison window,
+attribution, unknown attendance, separate upcoming appointments, the patient
+identity strip, mobile layout, sign-out and the clinical-notes lock.
+
+## Clinician comparison periods (command 5)
+
+`agent/server/comparison.py` is the shared, read-only resolver for the dashboard
+and clinician appointment summaries. It matches attended/completed consultations
+to the authenticated account. A recorded completion/consultation timestamp wins;
+otherwise the recorded appointment date/time is used, or the date remains
+explicitly date-only. Same-day entries without sufficient clock precision say
+“ordering unknown”; the consultation's own source is not listed as its own change.
+All clinical comparison and display clocks use `Australia/Sydney`, including DST.
+
+Custom dates start at Sydney midnight, inclusive, and are validated server-side.
+“Use last consultation” restores the account's default. The in-memory comparison
+preference is shared across clinician dashboard/summary navigation and cleared
+when the account changes. It never writes consultation history. First reviews
+require a chosen date before any date-based changes summary can be prepared.
+
+Rows preserve event/observation dates, document dates, explicit authoring dates,
+clinical receipt dates and actual first upload/import timestamps separately.
+Unavailable dates remain unknown. Older dated documents uploaded/received in the
+window appear under “Newly received” and never become new medication or symptom
+changes. Upload/import time is not relabelled as clinical receipt. Original typed
+notes without an observation date use their recording timestamp and the explicit
+label “Observation date not supplied”. Unresolved documented requests stay visible
+outside the selected period, with their original date; appointments stay separate.
+
+New clinician appointment summaries reuse the exact dashboard period and source
+selection, the existing current-medication/allergy/condition sections, source
+links, renderers, page budget and export workflow. The chosen comparison/source
+context is pinned in the summary event so restore/print does not move its basis.
+Clinician summaries are account-scoped and do not become the patient workflow's
+“previous summary”. The patient/carer workflow retains its chosen-date/previous-
+patient-summary/90-day basis and labels it explicitly. Older saved summaries are
+not rewritten. Export budgeting may omit rows and reports the omission count.
+
+`tests/test_comparison_period.py` uses isolated sources/clocks for late receipts,
+missing dates, same-day ordering, Sydney midnight/DST, per-account defaults,
+custom/reset, first review and summary restoration. No edge-case dates are written
+to Jane's existing demonstration sources.
+
+The clinician review opens with at most five grouped issues across Reported changes,
+New documents & treatment updates, and Outstanding follow-up. “View all changes”
+counts issues; source counts are separate. The walking-support demonstration groups
+Emily’s and Morgan’s contributions without treating them as independent corroboration.
+Issue details preserve original text, source links and separate date clocks. The
+per-account in-memory comparison context also retains expanded-list and return-scroll
+state during navigation. No review status is created. The explicitly identified
+accidental demo note `01M62NQPN2MQ6VB8DJ9ZJHVTEP` is omitted only from the active
+review projection; its original event and protected source endpoint remain available.
+
+`frontend/tools/check-compact-review.mjs` verifies the five-issue opening view,
+all issue/detail/source links, expanded return state, custom dates and responsive
+layout against a running demo. Supply `CARE_DEMO_PASSWORD` and optionally
+`PLAYWRIGHT_MODULE`, `CHROME_PATH`, and `HEALTH_ORIGIN` through the environment.
+
+The revised review-v2 dashboard adds three overlapping views (Needs review,
+Action required, Reviewed) over the same grouped issues. The desktop uses a compact list beside a persistent details/action panel, with
+a full-screen detail view on mobile. The comparison context retains
+tab, expanded-list state and scroll position when the drawer closes. Workflow
+status is loaded from the backend event-log projection, not browser flags. Generic
+clinical follow-up actions and appointment-request actions can be explicitly
+resolved with a recorded basis; reviewing/releasing does not resolve them.
+
+Patient Shared documents and the homepage show approved in-app messages and released
+originals through `SharedCare`. The demo view explicitly states its shared recipient
+simulation. Date, reporter, review, communication and release details remain behind
+the clinician issue click; the opening view is limited to five issue rows.
+
+
+The reference-layout update keeps the existing system font, local SVG navigation
+icons, lavender surfaces and purple controls. Laboratory/test names come from
+source result metadata (for example Sodium and Haemoglobin in the current record);
+no result is invented merely to match a mockup. Ordered pathology panel names
+come from the source report metadata.
+A red Abnormal label follows explicit source laboratory flags. The clinical-priority
+selector shows a clinician's saved assessment, or Not yet assessed; the original
+laboratory critical flag remains separate. Notify patient/carer opens the existing
+appointment-request recipient/message preview. It does not mark the patient notified,
+acknowledged or discussed, and does not release any source. Prior communications,
+internal actions and audit history remain available in the detail panel.
+
+`check-review-workflow.mjs` delegates to `check-reference-review.mjs`, which exercises
+the current two-column and mobile layout against the disposable fixture on 7788.
+The selected issue, tab, period, expansion and return scroll are memory-only view
+state scoped to the signed-in account; persisted clinical workflow stays in the log.
+
+
+Conventional pathology reports are authored by `agent.demo.pathology_reports`.
+The active fictional sources use ordered panel names and complete result tables
+rather than abnormality descriptions as report titles. Additional panel analytes
+are explicitly newly authored demo content; previously recorded key results are
+retained. The append-only upgrade preserves older PDF bytes, dates and audit events.
+Reviews and releases of an earlier edition do not approve an expanded replacement.
+The dashboard opens the protected original PDF directly for these reports; the
+readable source view and retained earlier editions remain available in evidence.
+
+Patient/carer notifications live at `/notifications`. The homepage links to that
+screen rather than mixing message forms into the document library. Appointment
+requests open a fictional Dr Smith availability list, then a booking preview and
+explicit confirmation. One append-only event stores both the linked booking and
+calendar entry; retries do not duplicate bookings and unavailable slots are refused.
+Booking does not acknowledge a message, mark a result discussed/reviewed, release
+a document or advance either clinician's consultation comparison date. Requests
+closed by a clinician cannot receive a new booking. Availability is local demo data,
+not a real practice scheduling integration; recipient separation remains simulated.
+
+Both workspaces use one document list with ten entries initially and View all for
+the remaining originals. The catalogue includes existing pathology panels, the
+cardiologist letter and other medical sources; uploaded files join the same list.
+There are no Example documents/My uploads collections. In the patient view,
+unreleased clinician reports expose only permitted catalogue metadata and stay
+locked until the existing review/release workflow permits original-file access.
+
+My health record and clinical confirmation are removed from patient navigation.
+For the refreshed Jane demo, clinical confirmation pages/APIs require a clinician
+session (and CSRF for writes). Record an update includes shared patient/carer note
+corrections. A correction appends a linked entry, retains original wording, uses
+an optimistic revision check and cannot change a clinical report or staff note.
+Unknown/shared authorship is labelled rather than claimed as authenticated Jane.
+
+Run `check-patient-portal.mjs` against the disposable 7788 fixture for notifications,
+booking/calendar, document permissions, note corrections and responsive verification.

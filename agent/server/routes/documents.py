@@ -56,11 +56,14 @@ def documents(state: RecordState = Depends(get_state)):
         if short in by_source:
             p = by_source[short].payload
             item.update(title=p['title'], category=p['source_type'], document_date=p['event_date'],
-                        professional=p['author'], demo=True, event_type=p['event_type'],
+                        professional=p['author'], access=p.get('access'), demo=True, event_type=p['event_type'],
                         release_note='Release information not recorded')
             if p.get('native_document'):
                 from ...prescriptions import release_label
-                native=p['native_document']
+                native=dict(p['native_document'])
+                if p.get('review_dataset'):
+                    from ..review_workflow import release_for
+                    native['release']=release_for(snapshot.events,p['artifact'])
                 item.update(title=native['title'], organisation=native.get('organisation'), role=native.get('specialty'),
                             recipient=native.get('recipient'),release_note=release_label(native),
                             release_date=(native.get('release') or {}).get('date'),

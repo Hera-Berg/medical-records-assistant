@@ -197,9 +197,11 @@ def artifact_meta(
         state.endpoint,
         located.artifact.mime,
     )
-    from ...demo_metadata import entries
+    from ...demo_metadata import entries, history as source_history
     demo = entries(snapshot.events, snapshot.artifacts)
-    for event in demo.values():
+    editions=[event for event in source_history(snapshot.events,snapshot.artifacts) if event.payload['artifact']==short]
+    candidates=[max(editions,key=lambda event:event.sort_key)] if editions else list(demo.values())
+    for event in candidates:
         p = event.payload
         if short not in (p['artifact'], p.get('original_wording_artifact'), *p.get('previous_artifacts', [])):
             continue
@@ -213,6 +215,12 @@ def artifact_meta(
         if p.get('native_document'):
             from ...prescriptions import listing
             native=dict(p['native_document'])
+            if p.get('review_dataset'):
+                from ..review_workflow import release_for
+                native.update(author=p['author'],fictional=True,consultation_date=p['event_date'],
+                              patient={**native.get('patient',{}),'dob':'1935-11-01'},
+                              release=release_for(snapshot.events,p['artifact']))
+                native['results']=[{**r,'reference_interval':r.get('reference_interval') or r.get('reference')} for r in native.get('results',[])]
             prescribed={row['id']:row for row in listing(snapshot.events,snapshot.artifacts,state.now(),snapshot.projection)
                         if row['source']==p['artifact']}
             native['prescriptions']=[prescribed[row['id']] for row in native.get('prescriptions',[]) if row['id'] in prescribed]

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from ...summary import html as html_mod
@@ -56,6 +56,7 @@ PRINT_HEADERS = {
 def _payload(summary, markdown: bytes | None = None) -> dict[str, Any]:
     data = summary.to_dict()
     data["print_url"] = f"/print/{summary.id}"
+    data['comparison_basis'] = 'Patient/carer summary basis: chosen date, previous prepared patient/carer summary, or the stated 90-day window; not a clinician consultation date.'
     if markdown is not None:
         # The exact bytes the folder holds. Sent so the screen can show the
         # archival copy rather than a second rendering of the same facts that
@@ -74,7 +75,7 @@ def listing(state: RecordState = Depends(get_state)) -> dict[str, Any]:
     """
     snapshot = state.snapshot()
     return {
-        "summaries": store_mod.listing(snapshot.events),
+        "summaries": [row for row in store_mod.listing(snapshot.events) if row["id"] not in {e.id for e in snapshot.events if e.payload.get("clinician_context")}],
         "as_of": snapshot.built_ts,
     }
 
@@ -144,8 +145,13 @@ def prepare(
 
 
 @router.get("/api/summary/{summary_id}")
-def one(summary_id: str, state: RecordState = Depends(get_state)) -> dict[str, Any]:
+def one(summary_id: str, request: Request, state: RecordState = Depends(get_state)) -> dict[str, Any]:
     """One prepared sheet, re-rendered from the log as it stood at the time."""
+    from ..clinician_summary import authorize_summary
+    event = authorize_summary(request,summary_id,state)
+    if event and event.payload.get('clinician_context'):
+        from .clinician import clinician_one_summary
+        return clinician_one_summary(summary_id,request,state)
     snapshot = state.snapshot()
     try:
         restored = store_mod.restore(snapshot.events, summary_id)
@@ -169,13 +175,15 @@ def one(summary_id: str, state: RecordState = Depends(get_state)) -> dict[str, A
 
 
 @router.get("/print/{summary_id}", include_in_schema=False)
-def print_sheet(summary_id: str, state: RecordState = Depends(get_state)):
-    """The A4 sheet, as a document. No chrome, no script, no login.
+def print_sheet(summary_id: str, request: Request, state: RecordState = Depends(get_state)):
+    """The A4 sheet, as a document. No chrome or script; clinician-owned IDs require their account session.
 
     The same renderer writes the file in ``exports/``; only the links differ,
     because here the originals are one route away and there they are a relative
     path into ``raw/``.
     """
+    from ..clinician_summary import authorize_summary
+    authorize_summary(request,summary_id,state)
     snapshot = state.snapshot()
     try:
         restored = store_mod.restore(snapshot.events, summary_id)

@@ -58,6 +58,7 @@ EVENT_TYPES: dict[str, str] = {
     # The payloads are ciphertext and the projection has no branch for either,
     # so neither reaches the wiki, the timeline, a summary or an answer. See
     # `agent.sealed`.
+    "clinician.note.sealed": ACTOR_USER,
     "compartment.created": ACTOR_USER,
     "compartment.note.sealed": ACTOR_USER,
 }

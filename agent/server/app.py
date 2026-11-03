@@ -196,7 +196,7 @@ def create_app(
     app.include_router(clinician.router)
     # Clinician views reuse the same public shared-record implementations, under
     # a protected namespace. Patient-visible originals remain in the patient flow.
-    for module in (record, documents, artifact, profile, calendar):
+    for module in (record, documents, artifact, profile, calendar, files):
         for route in module.router.routes:
             if isinstance(route, APIRoute) and 'GET' in route.methods:
                 app.add_api_route(route.path.replace('/api/', '/api/clinician/', 1),
@@ -204,12 +204,22 @@ def create_app(
                     response_model=route.response_model, status_code=route.status_code,
                     dependencies=route.dependencies, include_in_schema=False)
 
+    for route in capture.router.routes:
+        if isinstance(route,APIRoute):
+            app.add_api_route(route.path.replace('/api/','/api/clinician/',1),route.endpoint,methods=list(route.methods),status_code=route.status_code,include_in_schema=False)
+
+    for route in review.router.routes:
+        if isinstance(route,APIRoute):
+            app.add_api_route(route.path.replace('/api/','/api/clinician/',1),route.endpoint,methods=list(route.methods),include_in_schema=False)
+
     @app.middleware('http')
     async def clinician_boundary(request: Request, call_next):
         path = request.url.path
-        protected_api = path.startswith('/api/clinician/') or path.startswith('/api/doctor-notes')
+        from .review_workflow import enabled
+        managed_confirmation=enabled(app.state.record.snapshot().events) and (path.startswith('/api/review') or path.rstrip('/')=='/review')
+        protected_api = (managed_confirmation and path.startswith('/api/')) or path.startswith('/api/clinician/') or path.startswith('/api/doctor-notes')
         protected_page = (path.rstrip('/') == '/clinician' or path.startswith('/clinician/')) and path.rstrip('/') != '/clinician/sign-in'
-        protected_page = protected_page or path.rstrip('/') in ('/doctor-notes', '/progress-notes')
+        protected_page = protected_page or (managed_confirmation and not path.startswith('/api/')) or path.rstrip('/') in ('/doctor-notes', '/progress-notes')
         if protected_api or protected_page:
             session = app.state.clinician_auth.resolve(request.cookies.get(COOKIE))
             if not session:
@@ -224,6 +234,10 @@ def create_app(
                     return JSONResponse({'detail':exc.detail},status_code=exc.status_code,headers={'Cache-Control':'no-store'})
                 if not hmac.compare_digest(request.headers.get('x-clinician-csrf',''),session['csrf']):
                     return JSONResponse({'detail':'Refresh this page before saving.'},status_code=403,headers={'Cache-Control':'no-store'})
+        from .review_workflow import enabled
+        if enabled(app.state.record.snapshot().events) and path.startswith('/api/files'):
+            return JSONResponse({'detail':'Open this record administration view through the signed-in clinician workspace.'},status_code=403,headers={'Cache-Control':'no-store'})
+        if managed_confirmation and path.rstrip('/')=='/review':return RedirectResponse('/clinician/review',status_code=303)
         response = await call_next(request)
         if protected_api or protected_page or path.startswith('/api/auth/') or path.startswith('/clinician/'):
             response.headers['Cache-Control'] = 'no-store'
