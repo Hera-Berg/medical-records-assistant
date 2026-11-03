@@ -27,7 +27,8 @@ def build(state, clinician=True):
         native=p.get('native_document') or {}
         role=p.get('role') or 'Role not recorded'
         author=p.get('author') or 'Author not recorded'
-        title=native.get('ordered_panel') or p.get('title') or 'Uploaded document'
+        from ..document_titles import title as document_title
+        title=document_title(p)
         original=p.get('text') or ''
         received=native.get('received_date')
         document=native.get('date') or p.get('document_date')

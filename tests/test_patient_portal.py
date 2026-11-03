@@ -54,7 +54,7 @@ class PatientPortalTests(unittest.TestCase):
   payload=self.client.get('/api/patient/documents').json()
   self.assertEqual(payload['initial_limit'],10);self.assertGreaterEqual(payload['total'],10)
   first=payload['documents'][:10];titles={d['title'] for d in first}
-  self.assertIn('Electrolyte panel',titles);self.assertIn('Full blood examination (FBE)',titles);self.assertIn('Dr Matthew Thompson – Cardiologist letter',titles)
+  self.assertIn('Electrolyte panel',titles);self.assertIn('Full blood examination',titles);self.assertIn('Dr Matthew Thompson - Cardiologist letter',titles)
   self.assertTrue(all(not d['accessible'] and d['url'] is None for d in first))
   self.assertNotIn('122 mmol',str(payload));self.assertNotIn('result',first[0])
   self.assertEqual(self.client.get('/api/clinician/document-list').status_code,401)

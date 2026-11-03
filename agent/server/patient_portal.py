@@ -76,14 +76,21 @@ def documents(state,clinician=False):
     all_source_artifacts={e.payload.get('artifact') for e in snapshot.events if e.payload.get('demo_item_id')}
     rows=[]
     for e in selected+other:
-        p=e.payload;native=p.get('native_document') or {};short=p['artifact'];release=released.get(short)
+        p=e.payload;latest_artifact=p['artifact']
+        if not clinician and latest_artifact not in released:
+            # A new edition never silently releases new bytes. Keep the exact
+            # earlier released edition in the patient's file until a new release.
+            from ..demo_metadata import history as source_history
+            earlier=[old for old in source_history(snapshot.events,snapshot.artifacts) if old.payload['demo_item_id']==p['demo_item_id'] and old.payload['artifact'] in released]
+            if earlier:p=max(earlier,key=lambda old:old.sort_key).payload
+        native=p.get('native_document') or {};short=p['artifact'];release=released.get(short)
         accessible=clinician or p.get('access') in (None,'submission') or bool(release)
-        title=native.get('ordered_panel') or p['title']
-        if p.get('role')=='Cardiologist':title=p['author']+' – Cardiologist letter'
+        from ..document_titles import title as document_title
+        title=document_title(p)
         rows.append(dict(id='document:'+hashlib.sha256(p['demo_item_id'].encode()).hexdigest()[:16],title=title,date=native.get('date') or p['event_date'],received_date=native.get('received_date'),
                          author=p['author'],category='Pathology' if native.get('results') else 'Medical document',
                          accessible=accessible,url=('/clinician/artifact/' if clinician else '/artifact/')+short if accessible else None,
-                         status='Available' if accessible else 'Awaiting clinician release',release_message=release.get('message') if release else None))
+                         status='Released earlier edition' if short!=latest_artifact else 'Available' if accessible else 'Awaiting clinician release',release_message=release.get('message') if release else None))
     # All ordinary patient/carer and external uploads share the same list; no example/upload collections.
     clinical_uploads={e.payload['clinical_upload'] for e in snapshot.events if e.payload.get('clinical_upload')}
     names={e.payload.get('short'):(e.payload.get('capture') or {}).get('original_filename') for e in snapshot.events if e.type=='artifact.ingested'}

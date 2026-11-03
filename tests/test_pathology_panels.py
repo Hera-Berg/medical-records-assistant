@@ -26,7 +26,7 @@ class PathologyPanelTests(workflow_base.ReviewWorkflowTests):
    with pdfplumber.open(io.BytesIO(pdf)) as document:
     self.assertEqual(len(document.pages),1)
     text=document.pages[0].extract_text()
-    for label in (item['title'],'Result','Reference interval','Jane Doe','Received:', 'FICTIONAL'):
+    for label in (item['title'],'Result','Reference interval','Jane Doe','Received by practice:', 'Fictional demonstration document'):
      self.assertIn(label,text)
     for result in item['results']:self.assertIn(result[0],text)
     # Final result row remains above the report footer, including the long historical panel.

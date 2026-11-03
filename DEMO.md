@@ -296,3 +296,24 @@ The new documents are dated when authored; the original cardiology PDF and its
 historical document/receipt dates remain retained. The new edition requires fresh
 review and release, while earlier audit records remain intact. Prescription
 content restates the current chart and does not issue a new medication change.
+
+## Clinician structured record
+
+The clinician Clinical record uses four tabs and a table/detail layout. Its
+values come from the existing entity projection and original source metadata.
+First-documented dates are the earliest supporting source dates available, not
+inferred onset dates. Medicine relationships are shown only for explicitly scoped
+prescription records. Unknown routes, prescription validity, supply and functional
+findings remain unknown.
+
+Authorised Add/Edit actions append `claim.corrected` events and an internal
+`clinical_record_edit` audit containing account identity, timestamp, previous
+values and stated evidence. Functional edits also update the existing clinician
+profile accessibility summary. Concurrent stale edits are rejected. Original
+files, consultation comparison dates and document release records are unchanged.
+These structured edits do not issue prescriptions or release clinical information
+to the patient workspace. Existing patient-source permissions still apply.
+
+Checks: `tests/test_clinical_record.py` and
+`frontend/tools/check-clinical-record.mjs`. Browser writes require
+`MUTATE_FIXTURE=1` and the isolated test server on port 7788.

@@ -5,8 +5,8 @@ export function reviewTitle(issue:ReviewIssue):string {
   if(panel)return panel;
   const tests=[...new Set(issue.contributions.flatMap(c=>(c.results??[]).map(r=>r.test)))];
   if(tests.length)return tests.join(' & ');
-  const letter=issue.contributions.find(c=>c.role==='Cardiologist');
-  if(letter)return `${letter.author} – Cardiologist letter`;
+  const letter=issue.contributions.find(c=>['Cardiologist','Audiologist','Physiotherapist','Podiatrist'].includes(c.role));
+  if(letter)return `${letter.author} - ${letter.role} letter`;
   if(['walking','walking-support'].includes(issue.id))return 'Walking support';
   if(issue.id==='dizziness')return 'Persistent dizziness';
   if(issue.id==='med-question')return 'Medication question';

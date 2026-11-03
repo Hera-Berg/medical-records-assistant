@@ -25,7 +25,7 @@ SOURCES=[
  source('bennett-consult','2025-03-26','Completed locum GP consultation','Dr Olivia Bennett','Locum GP',
   'Completed consultation at 09:30 Australia/Sydney. Jane described her usual mobility with a frame. Hypertension and knee osteoarthritis were reviewed. No medication change was issued.',consultation=True),
  source('cardio-diagnosis','2025-05-02','Cardiology assessment: atrial fibrillation','Dr Matthew Thompson','Cardiologist',
-  'Atrial fibrillation documented. Apixaban 5 mg twice daily and metoprolol 25 mg twice daily were recommended and subsequently issued by the GP on 6 May 2025. No INR-monitoring plan is documented.'),
+  'Atrial fibrillation documented. Apixaban 5 mg twice daily and metoprolol 25 mg twice daily were recommended for GP prescribing and reconciliation. No INR-monitoring plan is documented.'),
  source('gp-af','2025-05-06','GP prescription record for atrial fibrillation','Dr James Smith','Usual GP',
   'GP issued apixaban 5 mg twice daily and metoprolol 25 mg twice daily following the cardiology letter. Amlodipine 2.5 mg once daily continued.'),
  source('previous-pathology','2026-04-14','Previous blood results for comparison','Example Pathology Laboratory','Laboratory',
@@ -33,7 +33,7 @@ SOURCES=[
  source('med-chart','2026-08-28','Current medication chart','Dr James Smith','Usual GP',
   'Current directions: apixaban 5 mg twice daily; metoprolol 25 mg twice daily; amlodipine 2.5 mg once daily; rosuvastatin 5 mg nightly. Amlodipine was reduced from 5 mg to 2.5 mg on this date. No later issued changes are documented.'),
  source('physio','2026-09-10','Physiotherapy assessment','Sarah Green','Physiotherapist',
-  'Jane uses her frame for walking. Practice location: Example Gardens · therapy room. Supervised walking practice was recommended. The assessment does not record a new diagnosis.',organisation='Example Gardens Residential Aged Care'),
+  'Jane uses her frame for walking. Practice location: Sydney Aged Care · therapy room. Supervised walking practice was recommended. The assessment does not record a new diagnosis.',organisation='Sydney Aged Care'),
  source('cardio-recommendation','2026-09-24','Cardiologist recommends medication review','Dr Matthew Thompson','Cardiologist',
   'Recommend GP review of symptoms and current medicines if dizziness persists. This letter does not issue a dose change or advise stopping apixaban. The recommendation awaits assessment in the current context.',received='2026-10-24',recommendation=True),
  source('smith-consult','2026-10-21','Completed usual GP consultation','Dr James Smith','Usual GP',
@@ -84,16 +84,20 @@ def populate(root, values, team, sealed=()):
         docdate=item.get('document_date',item['date'])
         header=f"FICTIONAL DEMONSTRATION SOURCE — {VERSION}\n{item['title']}\nJane Doe | DOB 1 November 1935\nAuthor: {item['author']} | {item['role']}\nEvent: {item['date']} | Authored: {docdate} | Fictional receipt: {item['received']}\n\n"
         text=header+item['text']+'\n\nNewly authored fictional record, not an actual historical report.'
-        result=ingest.ingest_bytes(vault,report_pdf(item,envelope.now_ts()) if item.get('ordered_panel') else source_pdf(text),ingest.CaptureContext(source='import',original_filename=item['id']+'.pdf',note='New fictional review demo source'))
-        native={'title':item['title'],'date':docdate,'authored_date':docdate,'received_date':item['received'],'organisation':item.get('organisation') or next((m['organisation'] for m in team if m['name']==item['author']), 'Example Pathology Laboratory' if item['role']=='Laboratory' else 'Example Gardens Residential Aged Care'),
+        from .document_templates import authored_source
+        organisation=item.get('organisation') or next((m['organisation'] for m in team if m['name']==item['author']), 'Example Pathology Laboratory' if item['role']=='Laboratory' else 'Sydney Aged Care')
+        pdf=report_pdf(item,envelope.now_ts()) if item.get('ordered_panel') else authored_source(item,organisation) if not item.get('submission') else source_pdf(text)
+        result=ingest.ingest_bytes(vault,pdf,ingest.CaptureContext(source='import',original_filename=item['id']+'.pdf',note='New fictional review demo source'))
+        native={'title':item['title'],'date':docdate,'authored_date':docdate,'received_date':item['received'],'organisation':item.get('organisation') or next((m['organisation'] for m in team if m['name']==item['author']), 'Example Pathology Laboratory' if item['role']=='Laboratory' else 'Sydney Aged Care'),
                 'specialty':item['role'],'professional':item['author'],'recipient':'Dr James Smith, Sydney Aged Care','patient':{'name':'Jane Doe','dob':'1 November 1935'},
                 'sections':[{'heading':'Original fictional source','text':item['text']}],
                 'results':[dict(test=r[0],result=r[1],unit=r[2],reference=r[3],flag=r[4]) for r in item.get('results',[])],
                 'medications':[],'prescriptions':[],'release':None}
+        if not item.get('submission'):native.update(facility_template='facility-documents-v1',original_document_layout=True)
         if item.get('ordered_panel'):
             native.update(ordered_panel=item['ordered_panel'],pathology_report=True,results=native_results(item['results']),sections=[])
             if item.get('laboratory_flag'):native['sections']=[{'heading':'Laboratory alert','text':item['laboratory_flag']}]
-        if item.get('consultation'):native['calendar_appointment']={'professional':item['author'],'time':'09:30','status':'Completed','location':'Example Gardens · GP room, Sydney Aged Care'}
+        if item.get('consultation'):native['calendar_appointment']={'professional':item['author'],'time':'09:30','status':'Completed','location':'Sydney Aged Care · GP room'}
         p={**item,'review_dataset':VERSION,'demo_scenario':SCENARIO,'demo_item_id':item['id'],'fictional':True,'patient_visible':True,
            'access':'submission' if item.get('submission') else 'clinical','event_date':item['date'],'source_type':'Patient/carer/staff update' if item.get('submission') else 'Clinical document',
            'event_type':'observation' if item.get('submission') else 'appointment' if item.get('consultation') else 'document',

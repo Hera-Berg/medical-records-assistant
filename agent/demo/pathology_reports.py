@@ -38,8 +38,8 @@ FBE=[
  r('Platelet count','245','x10^9/L','150–400','','250'),
 ]
 RENAL=[r('Urea','6.1','mmol/L','2.5–8.0','','5.8'),r('Creatinine','74','µmol/L','45–90','','72')]
-TITLES={'critical-sodium':'Electrolyte panel','low-haemoglobin':'Full blood examination (FBE)',
-        'stable-renal':'Renal function panel','previous-pathology':'Full blood examination & biochemistry'}
+TITLES={'critical-sodium':'Electrolyte panel','low-haemoglobin':'Full blood examination',
+        'stable-renal':'Renal function panel','previous-pathology':'Full blood examination and biochemistry'}
 
 def enrich(item):
     """Add newly authored fictional analytes; preserve every previously stated value."""
@@ -62,53 +62,14 @@ def enrich(item):
 
 
 def report_pdf(item,prepared):
-    """A4 pathology report, with aligned result columns and a real text layer."""
-    def plain(value):return str(value).replace('–','-').replace('—','-').replace('’',"'").replace('·',' / ')
-    def esc(value):return plain(value).replace('\\','\\\\').replace('(','\\(').replace(')','\\)')
-    commands=[]
-    def text(x,y,value,size=10,bold=False):commands.append(f'BT /{"F2" if bold else "F1"} {size} Tf 1 0 0 1 {x} {y} Tm ({esc(value)}) Tj ET')
-    def rule(y):commands.append(f'0.78 G 0.5 w 42 {y} m 553 {y} l S 0 G')
-    text(42,794,'EXAMPLE PATHOLOGY LABORATORY',17,True)
-    text(42,776,'FICTIONAL DEMONSTRATION REPORT',9)
-    rule(763);text(42,741,item['title'],16,True)
-    text(42,714,'Patient: Jane Doe',11,True);text(320,714,'DOB: 1 November 1935')
-    text(42,695,'Facility: Example Gardens Residential Aged Care')
-    text(42,676,'Requesting clinician: Dr James Smith / Sydney Aged Care')
-    text(42,650,'Collected: '+item.get('date',item.get('event_date','')))
-    text(300,650,'Specimen: '+('EDTA whole blood' if item['id']=='low-haemoglobin' else 'EDTA whole blood / serum' if item['id']=='previous-pathology' else 'Serum'))
-    text(42,632,'Reported: '+item.get('document_date',item.get('native_document',{}).get('date','')))
-    text(300,632,'Received: '+item.get('received',item.get('native_document',{}).get('received_date','')))
-    text(42,614,'Report ID: DEMO-'+item.get('date',item.get('event_date','')).replace('-','')+'-'+{'critical-sodium':'EP1','low-haemoglobin':'FBE1','stable-renal':'RF1','previous-pathology':'CMP1'}[item['id']],9);text(460,614,'Status: FINAL',9,True)
-    rule(602)
-    columns=[42,221,285,375,482]
-    for x,label in zip(columns,['Test','Result','Units','Reference interval','Flag']):text(x,583,label,9,True)
-    rule(574);y=554
-    for row in item['results']:
-        for x,value in zip(columns,row[:5]):text(x,y,value,9,bold=bool(row[4]))
-        rule(y-8);y-=18 if len(item['results'])>20 else 21
-    if item['id']=='critical-sodium':
-        text(42,y-12,'LABORATORY CRITICAL ALERT: sodium 122 mmol/L (<125 mmol/L).',9,True);y-=26
-    if item['id']!='previous-pathology':
-        text(42,y-14,'Previous results: 14 April 2026',9,True);y-=30
-        # Compact comparisons, not interpretations or suggested diagnoses.
-        previous=[f'{row[0]} {row[5]} {row[2]}' for row in item['results'] if len(row)>5 and row[5]]
-        import textwrap
-        for line in textwrap.wrap('; '.join(previous),width=100):text(42,y,line,8);y-=13
-    rule(85)
-    text(42,69,'All patient details, results and laboratory reference intervals are fictional demo data.',8)
-    text(42,55,'Demo report edition prepared '+prepared[:10]+'. Earlier original editions are retained.',8)
-    stream='\n'.join(commands).encode('cp1252')
-    objects=[b'<< /Type /Catalog /Pages 2 0 R >>',b'<< /Type /Pages /Kids [5 0 R] /Count 1 >>',
-             b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-             b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
-             b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>',
-             b'<< /Length '+str(len(stream)).encode()+b' >>\nstream\n'+stream+b'\nendstream']
-    out=bytearray(b'%PDF-1.4\n');offsets=[]
-    for n,obj in enumerate(objects,1):offsets.append(len(out));out+=f'{n} 0 obj\n'.encode()+obj+b'\nendobj\n'
-    at=len(out);out+=b'xref\n0 7\n0000000000 65535 f \n'
-    for offset in offsets:out+=f'{offset:010d} 00000 n \n'.encode()
-    out+=f'trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{at}\n%%EOF\n'.encode()
-    return bytes(out)
+    """Facility-specific laboratory layout; preserve supplied analytes and dates."""
+    from .document_templates import pathology
+    from ..document_titles import TEST_NAMES
+    key=item.get('id') or item['demo_item_id'];native=item.get('native_document') or {}
+    doc=dict(title=TEST_NAMES.get(item['title'],item['title']),event_date=item.get('date') or item.get('event_date'),document_date=item.get('document_date') or native.get('date'),
+        received_date=item.get('received') or native.get('received_date'),specimen='EDTA whole blood' if key=='low-haemoglobin' else 'EDTA whole blood / serum' if key=='previous-pathology' else 'Serum',
+        accession='DEMO-'+key.upper()+'-'+(item.get('date') or item.get('event_date','')).replace('-',''),results=item['results'],laboratory_flag=item.get('laboratory_flag'))
+    return pathology(doc)[0]
 
 
 def native_results(rows):

@@ -28,7 +28,7 @@ export function useRoute(): [Route, (to: string) => void] {
   }, []);
 
   const navigate = useCallback((to: string) => {
-    if (to === window.location.pathname) return;
+    if (to === window.location.pathname + window.location.search + window.location.hash) return;
     window.history.pushState(null, "", to);
     setRoute(current());
     window.scrollTo(0, 0);

@@ -242,7 +242,8 @@ def prepare_pdf(data: bytes, long_edge: int) -> Document:
     pages: list[PreparedImage] = []
     notes: list[str] = []
     try:
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
+        from ..pdf_render import PDF_RENDER_LOCK
+        with PDF_RENDER_LOCK, pdfplumber.open(io.BytesIO(data)) as pdf:
             for number, page in enumerate(pdf.pages, start=1):
                 rendered = page.to_image(resolution=PDF_RENDER_DPI)
                 buffer = io.BytesIO()

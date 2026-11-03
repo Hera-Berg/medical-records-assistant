@@ -74,6 +74,8 @@ FIELDS = {item["key"]: item for section in SECTIONS for item in section["fields"
 
 
 def read(events: Iterable[Event]):
+    from .record_identity import view_events
+    events=view_events(events)
     values = {key: "" for key in FIELDS}
     revision = updated_at = None
     for event in events:

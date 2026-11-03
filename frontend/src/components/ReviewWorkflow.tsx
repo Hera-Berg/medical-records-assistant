@@ -15,6 +15,7 @@ export function WorkflowIndicators({issue}:{issue:ReviewIssue}){
 }
 const recipientsLabel=(values:string[])=>values.map(v=>v==='patient'?'Jane Doe':'Emily Doe (authorised demo carer)').join(' and ');
 function eventDescription(a:WorkflowEvent){
+ if(a.kind==='notification_retracted')return `Notification withdrawn · ${a.basis}`;
  if(a.kind==='review')return `Reviewed ${a.sources?.length??0} source(s)`;
  if(a.kind==='priority')return `Priority: ${priorityLabels[a.priority as keyof typeof priorityLabels]} · ${a.basis}`;
  if(a.kind==='release')return `Released selected document to ${recipientsLabel(a.recipients??[])}`;

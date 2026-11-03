@@ -10,17 +10,19 @@ export interface ClinicalTimelineEvent {
 export interface ClinicalTimelineData {events:ClinicalTimelineEvent[];categories:string[];today:string;default_from:string;timezone:string;limitations:string;}
 export function ClinicalTimeline({navigate,version,clinician=true}:{navigate:(to:string)=>void;version:number;clinician?:boolean}){
  const [data,setData]=useState<ClinicalTimelineData|null>(null),[error,setError]=useState('');
- const [category,setCategory]=useState('All'),[range,setRange]=useState('30'),[limit,setLimit]=useState(10);
+ const related=new URLSearchParams(window.location.search).get('sources')?.split(',').filter(Boolean)??[];
+ const [category,setCategory]=useState('All'),[range,setRange]=useState(related.length?'all':'30'),[limit,setLimit]=useState(10);
  useEffect(()=>{let live=true;api.clinicalTimeline(clinician).then(d=>{if(live){setData(d);setError('');}}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[version,clinician]);
  if(error)return <p role="alert">Could not load the timeline: {error}</p>;
  if(!data)return <p role="status">Loading the timeline…</p>;
  const start=new Date(data.today+'T12:00:00Z');start.setUTCDate(start.getUTCDate()-Number(range)+1);
  const from=range==='all'?'':start.toISOString().slice(0,10);
- const all=data.events.filter(e=>category==='All'||e.category===category);
+ const all=data.events.filter(e=>(!related.length||related.includes(e.id))&&(category==='All'||e.category===category));
  const filtered=all.filter(e=>!from||(e.date!==null&&e.date.slice(0,10)>=from&&e.date.slice(0,10)<=data.today));
  const visible=filtered.slice(0,limit),months=[...new Set(visible.map(e=>e.month))];
  const more=filtered.length>limit,older=range!=='all'&&all.some(e=>!e.date||e.date.slice(0,10)<from);
  return <section className="clinical-timeline" aria-label={clinician?"Clinical timeline":"Patient timeline"}>
+  {related.length?<p className="metadata">Showing source entries related to the selected clinical record entry. <Link to="/clinician/timeline" navigate={navigate}>Show full timeline</Link></p>:null}
   <div className="timeline-toolbar">
    <div className="timeline-filters" role="group" aria-label="Event type">{['All',...data.categories].map(c=><button key={c} className={'btn '+(category===c?'btn-primary':'')} aria-pressed={category===c} onClick={()=>{setCategory(c);setLimit(10);}}>{c}</button>)}</div>
    <label className="timeline-range"><span className="sr-only">Date range</span><select className="field" aria-label="Date range" value={range} onChange={e=>{setRange(e.target.value);setLimit(10);}}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All history</option></select></label>

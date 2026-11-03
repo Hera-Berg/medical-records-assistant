@@ -49,6 +49,7 @@ import { Boundary } from "./components/Boundary";
 import { CapturePanel, DropOverlay, useCapture, useWindowCapture } from "./components/Capture";
 import { Entity } from "./components/Entity";
 import { Files } from "./components/Files";
+import { ClinicalRecord } from "./components/ClinicalRecord";
 import { Record } from "./components/Record";
 import { Review } from "./components/Review";
 import { Settings } from "./components/Settings";
@@ -200,7 +201,7 @@ export function App() {
       />
     );
   } else if (first === "record") {
-    screen = <Record navigate={navigate} version={version} />;
+    screen = workspace === "clinician" ? <ClinicalRecord navigate={navigate} version={version} onChanged={refresh}/> : <Record navigate={navigate} version={version} />;
   } else if (first === "artifact" && tail) {
     screen = <Artifact short={tail} version={version} setHeader={setHeader} />;
   } else if (first === "files") {
@@ -338,8 +339,14 @@ export function App() {
               </span>
             ) : null}
           </div>
-          <label className="demo-workspace-switch">
-            <span className="switch-caption"><span>Demo workspace</span>{health?.vault.demo ? <span className="switch-demo-indicator">Fictional demo</span> : null}</span>
+
+          {workspace === "clinician" && session ? <div className="clinician-account">
+            <div><span>{session.clinician.name}</span><span className="metadata dashboard-line">{session.clinician.role}</span></div>
+            <button className="btn" onClick={signOut}>Sign out</button>
+          </div> : null}
+          {signOutError ? <p role="alert">{signOutError}</p> : null}
+          <label className="workspace-switch">
+            <span className="switch-caption"><span>Workspace</span>{health?.vault.demo ? <span className="switch-demo-indicator">Fictional demo</span> : null}</span>
             <select
               value={workspace}
               title="Demonstration only. Does not sign you in or unlock clinical notes."
@@ -349,27 +356,6 @@ export function App() {
               <option value="clinician">Clinician workspace</option>
             </select>
           </label>
-          {workspace === "clinician" && session ? <div className="clinician-account">
-            <div><span>{session.clinician.name}</span><span className="metadata dashboard-line">{session.clinician.role}</span></div>
-            <button className="btn" onClick={signOut}>Sign out</button>
-          </div> : null}
-          {signOutError ? <p role="alert">{signOutError}</p> : null}
-          {(!needsClinician || session) ? <Link
-            to="/add"
-            navigate={go}
-            className="btn header-action"
-          >
-            <span aria-hidden="true">+</span>
-            <span>
-              {workspace === "clinician" ? "Upload information" : "Record an update"}
-            </span>
-            {capture.uploading > 0 ? (
-              <span className="text-[color:var(--color-muted)]">
-                {" "}
-                · {capture.uploading} sending
-              </span>
-            ) : null}
-          </Link> : null}
         </header>
         {workspace === "clinician" && session ? <PatientIdentity key={session.clinician.username} version={version} /> : null}
         </div>
@@ -381,7 +367,7 @@ export function App() {
             navigate={go}
             /* The settings screen holds the control for the box and reports
                what stopped in its own words. One telling, not two. */
-            quietEndpoint={first === "add" || first === "settings" || first === "welcome" || first === "notifications" || first === "documents" || first === "timeline" || first === "progress-notes" || first === "doctor-notes" || (workspace === "clinician" && (first === "clinician" || first === "issue"))}
+            quietEndpoint={first === "add" || first === "settings" || first === "welcome" || first === "notifications" || first === "documents" || first === "artifact" || first === "timeline" || (workspace === "clinician" && first === "record") || first === "progress-notes" || first === "doctor-notes" || (workspace === "clinician" && (first === "clinician" || first === "issue"))}
             /* The waiting screen is the list those two notices point at. */
             quietReview={first === "review" || workspace === "patient-carer"}
           /> : null}
@@ -487,7 +473,7 @@ function defaultHeader(segments: string[], workspace: "clinician" | "patient-car
   if (first === "record") {
     return {
       title: workspace === "clinician" ? "Clinical record" : "My health record",
-      subtitle: workspace === "clinician" ? "Jane’s medications, allergies and health conditions, linked to the patient record’s source documents." :
+      subtitle: workspace === "clinician" ? "" :
         "Your medications, allergies, health problems and the people who look after you — put together from your own documents, and only from what you have confirmed.",
     };
   }

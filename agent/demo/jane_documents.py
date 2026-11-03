@@ -58,13 +58,13 @@ def native_document(item):
     day=item['date']; author=item['author']; personal=author in ('Jane Doe','Emily Doe, daughter')
     organisation = ('Harbourside Cardiology' if 'Thompson' in author or author=='Harbourside Cardiology' else
         'Harbour Clinical Pharmacy' if 'Patel' in author else 'Sydney Labs' if 'Labs' in author or 'Rao' in author else
-        'Example Gardens Residential Aged Care' if personal or any(x in author for x in ('nurse','physiotherapist','therapist')) else
+        'Sydney Aged Care' if personal or any(x in author for x in ('nurse','physiotherapist','therapist')) else
         'Sydney Aged Care' if 'Smith' in author else 'Example Community Health')
     specialty=('Cardiology' if 'Thompson' in author else 'Pharmacy' if 'Patel' in author else
                'Pathology' if 'Labs' in author else 'Radiology' if 'Rao' in author else
                'General practice' if 'Smith' in author else author.split(', ',1)[1] if ', ' in author else None)
     doc={'title':item['title'],'type':item['source_type'], 'date':day, 'consultation_date':day,
-         'patient':{'name':'Jane Doe','dob':'1935-11-01','address':'Example Gardens Residential Aged Care, 1 Demonstration Lane, Sydney NSW 2000'},
+         'patient':{'name':'Jane Doe','dob':'1935-11-01','address':'Sydney Aged Care, 1 Demonstration Lane, Sydney NSW 2000'},
          'author':author,'specialty':specialty,'organisation':None if personal else organisation,
          'recipient':None if personal else 'Dr James Smith, Sydney Aged Care',
          'fictional':True,'edition':'Native demo edition; date of birth corrected to 1 November 1935. Earlier original copies are retained',

@@ -259,3 +259,17 @@ def patient_timeline_feed(request:Request):
 def patient_original_observation(event_id:str,request:Request):
     from ..patient_access import PatientState
     return original_observation(event_id,PatientState(request.app.state.record))
+
+
+@router.get('/api/clinician/clinical-record')
+def clinical_record(request:Request,state:RecordState=Depends(get_state)):
+    from ..clinical_record import build
+    from ..review_workflow import dashboard
+    dashboard(state,request.state.clinician)
+    return build(state)
+
+
+@router.post('/api/clinician/clinical-record')
+def update_clinical_record(request:Request,body:dict=Body(...),state:RecordState=Depends(get_state)):
+    from ..clinical_record import mutate
+    return mutate(state,request.state.clinician,body)

@@ -114,7 +114,7 @@ class PatientProfile extends HTMLElement {
       <nav class="profile-quicklinks" aria-label="Patient record shortcuts"><a href="/record">Medications <span>${meds}</span></a><a href="/record">Health conditions <span>${conditions}</span></a>${globalThis.window?.location?.pathname?.startsWith('/clinician/')?`<a href="/clinician/review">Waiting for review <span>${this.data.review_count}</span></a>`:'<a href="/add">Your submitted notes</a>'}<a href="/summary">Appointment sheet <span aria-hidden="true">↗</span></a></nav>
       <section class="profile-section profile-allergies" aria-labelledby="profile-allergy-heading">
         <div class="profile-section-heading"><div><p class="profile-eyebrow">AT A GLANCE</p><h2 id="profile-allergy-heading">Allergies & adverse reactions</h2></div><a href="/record">View clinical record ↗</a></div>
-        ${this.clinicalList(c.allergies, 'No confirmed allergy entries. Allergy status has not been established.', true)}
+        ${c.allergies?.length ? this.clinicalList(c.allergies, '', true) : v.allergy_notes ? '' : '<p>No allergies or reactions recorded.</p>'}
         ${v.allergy_notes ? `<div class="profile-patient-note"><span class="profile-tag">Patient-entered</span><p>${escapeText(v.allergy_notes)}</p></div>` : ''}
         <button class="profile-text-button" data-action="edit" data-section="notes">${v.allergy_notes ? 'Edit patient-entered notes' : 'Add allergy or reaction notes'}</button>
       </section>

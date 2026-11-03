@@ -21,3 +21,14 @@ health-native-document,health-prescriptions { display:block; }
   :root[data-theme="dark"] .rx-badge.rx-expired { background:#442723; color:#ffb4ad; }
   :root[data-theme="dark"] .rx-badge.rx-soon { background:#203b50; color:#b4d9ff; }
 }
+
+/* Preserve the issuing facility's original PDF layout inside the application. */
+.native-issued-meta{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:13px;color:var(--color-muted);margin:12px 0;}
+.native-issued-pdf{width:100%;height:calc(100vh - 230px);min-height:620px;border:1px solid var(--color-rule);background:#e8e9eb;}
+.native-issued-provenance{margin:16px 0;font-size:14px;}
+.native-issued-provenance p{margin:8px 0;}
+@media(max-width:700px){.native-issued-pdf{min-height:500px;height:70vh;}}
+
+.native-issued-pages{background:#e8e9eb;border:1px solid var(--color-rule);padding:18px;display:grid;gap:18px;justify-items:center;}
+.native-issued-page{display:block;width:100%;max-width:1000px;height:auto;background:white;border:1px solid #d2d5d9;}
+@media(max-width:700px){.native-issued-pages{padding:6px;gap:10px;}}

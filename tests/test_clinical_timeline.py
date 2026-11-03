@@ -15,8 +15,8 @@ class ClinicalTimelineTests(unittest.TestCase):
   dates=[r['date'] for r in rows if r['date']];self.assertEqual(dates,sorted(dates,reverse=True))
   medication=[r for r in rows if r['category']=='Medication changes']
   self.assertEqual({r['title'] for r in medication},{'GP prescription record for atrial fibrillation','Current medication chart'})
-  cardio=next(r for r in rows if r['title']=='Cardiology assessment: atrial fibrillation');self.assertEqual(cardio['category'],'Letters')
-  letter=next(r for r in rows if r['title']=='Cardiologist recommends medication review')
+  cardio=next(r for r in rows if r['author']=='Dr Matthew Thompson' and r['date']=='2025-05-02');self.assertEqual(cardio['category'],'Letters')
+  letter=next(r for r in rows if r['author']=='Dr Matthew Thompson' and r['date']=='2026-10-24')
   self.assertEqual(letter['date'],'2026-10-24');self.assertEqual(letter['document_date'],'2026-09-24');self.assertEqual(letter['event_type'],'Letter received')
   consultation=next(r for r in rows if r['title']=='Completed usual GP consultation');self.assertEqual(consultation['date'],'2026-10-21T09:30:00+11:00')
   self.assertIn('Electrolyte panel',{r['title'] for r in rows if r['category']=='Test results'})

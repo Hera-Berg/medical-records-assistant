@@ -201,28 +201,6 @@ export function Attention({
     );
   }
 
-  if (health.queue.depth > 0) {
-    banners.push(
-      <Banner
-        key="queue"
-        tone="info"
-        title={`${countWord(health.queue.depth, "file is", "files are")} waiting to be read.`}
-        folded
-      >
-        They are already stored in your folder. Nothing is lost while they wait.
-        {health.reading ? (
-          <>
-            {" "}
-            {health.reading.pace}
-            {health.reading.eta ? ` ${health.reading.eta}` : null}
-            {endpoint.state === "sleeping" || endpoint.state === "starting"
-              ? " The reader is waking up to read them."
-              : null}
-          </>
-        ) : null}
-      </Banner>,
-    );
-  }
 
   /*
     Anomalies are things the record noticed about itself — a malformed line, a

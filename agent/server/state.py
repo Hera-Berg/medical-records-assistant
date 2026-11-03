@@ -154,7 +154,8 @@ class RecordState:
         moment = self.now()
         fingerprint = fingerprint_log(self.vault.events_dir)
         read = self.vault.read()
-        events = tuple(read.events)
+        from ..record_identity import view_events
+        events = view_events(read.events)
         projection = project(events, moment)
         artifacts = citations_mod.index_artifacts(events)
         return Snapshot(

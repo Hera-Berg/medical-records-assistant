@@ -14,7 +14,8 @@ def key(name):
 
 
 def listing(events, artifacts, values):
-    events = tuple(events)
+    from .record_identity import view_events
+    events = view_events(events)
     members = {}
 
     def add(name, role, organisation='', facility=False, **extra):

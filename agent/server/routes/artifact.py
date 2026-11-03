@@ -45,6 +45,8 @@ router = APIRouter()
 
 
 def _resolve(state: RecordState, index: Index, token: str):
+    from ...record_identity import resolve
+    token=resolve(token,state.snapshot().events)
     snapshot = state.snapshot()
     try:
         short = lookup.resolve_short(snapshot, token, index)
@@ -84,9 +86,10 @@ def artifact(
         )
 
     artifact_record = located.artifact
-    headers = serving.headers_for(
-        artifact_record.mime, located.path.name, artifact_record.digest
-    )
+    from ...demo_metadata import history as source_history
+    authored=[e.payload for e in source_history(snapshot.events,snapshot.artifacts) if e.payload['artifact']==short and e.payload.get('download_filename')]
+    filename=authored[-1]['download_filename'] if authored else located.path.name
+    headers = serving.headers_for(artifact_record.mime, filename, artifact_record.digest)
     if request.headers.get("if-none-match") == headers["etag"]:
         return JSONResponse(status_code=304, content=None, headers=headers)
 
@@ -205,7 +208,8 @@ def artifact_meta(
         p = event.payload
         if short not in (p['artifact'], p.get('original_wording_artifact'), *p.get('previous_artifacts', [])):
             continue
-        extra['demo'] = {'title':p['title'], 'author':p['author'], 'event_date':p['event_date'],
+        from ...document_titles import title as document_title
+        extra['demo'] = {'title':document_title(p), 'author':p['author'], 'event_date':p['event_date'],
                          'source_type':p['source_type'], 'original_wording_artifact':p.get('original_wording_artifact'),
                          'related': [{'artifact':other.payload['artifact'], 'title':other.payload['title']}
                                      for other in demo.values() if other.payload['event_date'] in p.get('related_dates', [])]
@@ -214,7 +218,7 @@ def artifact_meta(
                                        if previous in snapshot.artifacts and previous != short]}
         if p.get('native_document'):
             from ...prescriptions import listing
-            native=dict(p['native_document'])
+            native=dict(p['native_document']);native['title']=document_title(p)
             if p.get('review_dataset'):
                 from ..review_workflow import release_for
                 native.update(author=p['author'],fictional=True,consultation_date=p['event_date'],
@@ -271,3 +275,31 @@ def prescription_records(state: RecordState = Depends(get_state)):
     from ...prescriptions import listing
     snapshot=state.snapshot()
     return {'prescriptions':listing(snapshot.events,snapshot.artifacts,state.now(),snapshot.projection)}
+
+
+@router.get('/api/artifact/{token}/pages/{page_number}')
+def issued_pdf_page(token:str,page_number:int,state:RecordState=Depends(get_state),index:Index=Depends(get_index)):
+    """Read-only raster view of an issued demo PDF under its original permissions.
+
+    This avoids browser PDF-plugin/sandbox incompatibilities. It never extracts
+    replacement prose or changes the original. No arbitrary file path is accepted.
+    """
+    import io
+    from fastapi import Response
+    from ...demo_metadata import history as source_history
+    snapshot,short=_resolve(state,index,token)
+    issued=any(e.payload['artifact']==short and e.payload.get('native_document',{}).get('original_document_layout') for e in source_history(snapshot.events,snapshot.artifacts))
+    if not issued or page_number<1 or page_number>20:raise HTTPException(404,'Issued document page not found.')
+    located=lookup.locate(state.vault,snapshot,short)
+    if not located.exists:raise HTTPException(410,'Original PDF is missing.')
+    try:
+        import pdfplumber
+    except ImportError:raise HTTPException(503,'PDF page rendering is unavailable. Use Open PDF to view the original.')
+    from ...pdf_render import PDF_RENDER_LOCK
+    with PDF_RENDER_LOCK:
+        with pdfplumber.open(located.path) as pdf:
+            if len(pdf.pages)>20 or page_number>len(pdf.pages):raise HTTPException(404,'Issued document page not found.')
+            output=io.BytesIO();pdf.pages[page_number-1].to_image(resolution=144).original.save(output,format='PNG')
+    headers=serving.headers_for('image/png',f'page-{page_number}.png',located.artifact.digest)
+    headers.update({'cache-control':'no-store','x-content-type-options':'nosniff'})
+    return Response(output.getvalue(),media_type='image/png',headers=headers)

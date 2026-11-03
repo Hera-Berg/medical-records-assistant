@@ -41,10 +41,20 @@ def listing(state):
         if not group or (kind == "med" and entity.status == "stopped"):
             continue
         item = serialise.entity_summary(entity, snapshot.as_of.date())
-        for predicate in ("reaction", "severity"):
+        for predicate in ("reaction", "severity", "verification", "route", "frequency"):
             slot = entity.slots.get(predicate)
             item[predicate] = slot.winner.value.literal if slot and slot.winner and not slot.is_conflicted else None
         clinical[group].append(item)
+    # Functional corrections are the same structured slots used by the clinical chart.
+    # Derive the profile summary rather than maintaining a separate edited copy.
+    from ...projection.subjects import slugify
+    person = snapshot.projection.entities.get('person:'+str(slugify(result['values'].get('full_name')) or 'patient'))
+    functional = {}
+    if person:
+        for key,slot in person.slots.items():
+            if key.startswith('function.') and key.count('.')==1 and slot.winner and slot.winner.value.literal!='Not recorded':
+                functional[key.split('.',1)[1]]=slot.winner.value.literal
+    result['functional_status']=functional
     result["clinical"] = clinical
     result["review_count"] = len(snapshot.projection.review)
     return result

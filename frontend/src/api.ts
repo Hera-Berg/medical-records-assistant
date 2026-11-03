@@ -133,6 +133,8 @@ export const api = {
       method: "POST",
     }),
 
+  clinicalRecord: () => request<import("./components/ClinicalRecord").ClinicalRecordData>("/api/clinician/clinical-record"),
+  saveClinicalRecord: (body:Record<string,unknown>) => post<{id:string;duplicate:boolean}>("/api/clinician/clinical-record",body),
   clinicalTimeline: (clinician=true) => request<import("./components/ClinicalTimeline").ClinicalTimelineData>(clinician?"/api/clinician/timeline/feed":"/api/patient/timeline/feed"),
 
   timeline: (params: {

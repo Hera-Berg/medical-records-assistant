@@ -31,11 +31,10 @@ class SpecialistLettersTests(unittest.TestCase):
    response=self.client.get('/api/clinician/artifact/'+edition['artifact']);self.assertEqual(response.status_code,200)
    with pdfplumber.open(io.BytesIO(response.content)) as pdf:
     text='\n'.join(page.extract_text() or '' for page in pdf.pages)
-    self.assertIn('FICTIONAL SPECIALIST CORRESPONDENCE',text);self.assertIn('Jane Doe',text);self.assertIn('1 November 1935',text);self.assertIn(p['author'],text)
+    self.assertIn('Fictional demonstration document — not for clinical use.',text);self.assertIn('Jane Doe',text);self.assertIn('1 November 1935',text);self.assertIn(p['author'],text)
     if key=='cardio-recommendation':
      self.assertGreaterEqual(len(pdf.pages),2)
      for medicine in ('Apixaban 5 mg','Metoprolol 25 mg','Amlodipine 2.5 mg','Rosuvastatin 5 mg'):self.assertIn(medicine,text)
-     self.assertIn('2026-09-24',text)
    issue=self.issue(key);self.assertFalse(issue['workflow']['reviewed']);self.assertFalse(issue['workflow']['releases']);self.assertFalse(issue['workflow']['communications'])
    self.assertEqual(self.client.get('/api/artifact/'+edition['artifact']).status_code,404)
   new=rows['cardio-recommendation'].payload

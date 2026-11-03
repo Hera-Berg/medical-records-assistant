@@ -40,22 +40,40 @@ def sources(snapshot):
 def history(events):
     return [dict(e.payload['review_workflow'],id=e.id,at=e.ts) for e in events if isinstance(e.payload.get('review_workflow'),dict)]
 
+def retracted(events):
+    return {a['target'] for a in history(events) if a['kind']=='notification_retracted'}
+
+
+def retract_notification(state,identifier,basis):
+    """User-authorised demo cleanup; retain the sent message and withdrawal in audit."""
+    with state.lock:
+        events=state.snapshot().events
+        if identifier in retracted(events):return {'duplicate':True}
+        target=next((a for a in history(events) if a['id']==identifier and (a['kind']=='appointment_request' or (a['kind']=='communication' and a.get('method')=='in_app'))),None)
+        if not target:raise ValueError('Sent notification not found.')
+        payload={'kind':'notification_retracted','issue':target['issue'],'target':identifier,'basis':basis,
+                 'actor':{'username':'demo-maintenance','name':'Demo record correction','role':'User-requested administrative correction'}}
+        event=envelope.new('note.recorded',state.vault.identity.id,payload={'review_workflow':payload})
+        state.append(event);return {'event':event.id,'duplicate':False}
+
+
 def issue_key(p):
     return {'nurse-clinical':'walking','meals':'dizziness'}.get(p['demo_item_id'],p.get('issue') or p['demo_item_id'])
 
 def states(events, key, ids):
     audit=[a for a in history(events) if a.get('issue')==key]
+    withdrawn=retracted(events)
     reviews=[a for a in audit if a['kind']=='review']
     # A prior review/release of the same source ID never approves newly added analytes.
     positions={event.id:n for n,event in enumerate(events)}
     revisions={event.payload['demo_item_id']:positions[event.id] for event in events if (event.payload.get('pathology_revision') or event.payload.get('document_revision')) and event.payload.get('demo_item_id')}
     reviewed={s for a in reviews for s in a['sources'] if positions[a['id']]>revisions.get(s,-1)}
     boundary=max((revisions.get(s,-1) for s in ids),default=-1)
-    communications=[a for a in audit if a['kind'] in ('communication','appointment_request') and positions[a['id']]>boundary]
+    communications=[a for a in audit if a['kind'] in ('communication','appointment_request') and positions[a['id']]>boundary and a['id'] not in withdrawn]
     releases=[a for a in audit if a['kind']=='release' and positions[a['id']]>revisions.get(a.get('source'),-1)]
     resolved={a['action'] for a in audit if a['kind']=='action_resolved'}
     booked={e.payload['patient_booking']['request']:e.payload['patient_booking'] for e in events if isinstance(e.payload.get('patient_booking'),dict)}
-    actions=[dict(a,resolved=a['id'] in resolved,booking=booked.get(a['id'])) for a in audit if a['kind'] in ('appointment_request','action_created')]
+    actions=[dict(a,resolved=a['id'] in resolved,booking=booked.get(a['id'])) for a in audit if a['kind'] in ('appointment_request','action_created') and a['id'] not in withdrawn]
     priorities=[a for a in audit if a['kind']=='priority']
     acknowledgements=[dict(e.payload['review_acknowledgement'],at=e.ts) for e in events if isinstance(e.payload.get('review_acknowledgement'),dict)]
     return dict(reviewed=bool(ids) and set(ids)<=reviewed,reviewed_sources=sorted(reviewed),reviews=reviews,
@@ -66,7 +84,8 @@ def contribution(p,snapshot,period,context=False):
     artifact=snapshot.artifacts.get(p['artifact'])
     native=p.get('native_document',{})
     position=period.position(p.get('event_timestamp') or p['event_date'])
-    return dict(id=p['demo_item_id'],headline=p['title'],summary=p['text'],original_text=p['text'],author=p['author'],role=p['role'],
+    from ..document_titles import title as document_title
+    return dict(id=p['demo_item_id'],headline=document_title(p),summary=p['text'],original_text=p['text'],author=p['author'],role=p['role'],
         date=p['event_date'],event_date=None if p.get('observation_unknown') or p.get('upload_only') else p['event_date'],recorded_at=p.get('recorded_at'),date_basis='Observation date not supplied' if p.get('observation_unknown') else None,document_date=native.get('date'),authored_date=native.get('authored_date'),
         received_date=native.get('received_date'),uploaded_at=artifact.ingested_ts if artifact else None,source_url='/clinician/artifact/'+p['artifact'] if p['artifact'] else '/clinician/observation/'+p['demo_item_id'],
         artifact=p['artifact'],ordered_panel=native.get('ordered_panel') or p.get('ordered_panel'),status='Prepared fictional source',review_status=None,results=native.get('results',[]),
@@ -80,8 +99,8 @@ def dashboard(state,account,selected=None):
     if identity.get('full_name')!='Jane Doe' or not any(care_team.key(m['name'])==care_team.key(account['name']) for m in care_team.listing(snapshot.events,snapshot.artifacts,identity)):
         raise HTTPException(403,'This clinician is not assigned to this patient.')
     appointments=calendar_events(snapshot,now);period=resolve(appointments,account,now,selected)
-    source=sources(snapshot);audit=history(snapshot.events)
-    unresolved_keys={a['issue'] for a in audit if a['kind'] in ('appointment_request','action_created') and not any(h['kind']=='action_resolved' and h.get('action')==a['id'] for h in audit)}
+    source=sources(snapshot);audit=history(snapshot.events);withdrawn=retracted(snapshot.events)
+    unresolved_keys={a['issue'] for a in audit if a['kind'] in ('appointment_request','action_created') and a['id'] not in withdrawn and not any(h['kind']=='action_resolved' and h.get('action')==a['id'] for h in audit)}
     issues={};groups={k:[] for k in ('reported','documents','medications','follow_up','newly_received')}
     for id,p in source.items():
         clinical=p.get('event_timestamp') or (p.get('recorded_at') if p.get('observation_unknown') else None) or p['event_date'];received=p['native_document'].get('received_date')
@@ -211,7 +230,7 @@ def mutate(state,account,key,body):
 
 def public_feed(state):
     snapshot=state.snapshot();audit=history(snapshot.events)
-    messages=[a for a in audit if a['kind']=='appointment_request' or (a['kind']=='communication' and a['method']=='in_app')]
+    messages=[a for a in audit if a['id'] not in retracted(snapshot.events) and (a['kind']=='appointment_request' or (a['kind']=='communication' and a['method']=='in_app'))]
     acks=[dict(e.payload['review_acknowledgement'],at=e.ts) for e in snapshot.events if 'review_acknowledgement' in e.payload]
     from .patient_portal import bookings
     booked={b['request']:b for b in bookings(snapshot.events)}

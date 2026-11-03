@@ -122,7 +122,8 @@ def project(events: Iterable[Event], as_of: datetime | str | None = None) -> Pro
     result independent of which device wrote what.
     """
     moment = _as_datetime(as_of)
-    events = list(events)
+    from ..record_identity import view_events
+    events = list(view_events(events))
 
     reconciliation = reconcile.reconcile(events, moment)
     entities = entities_mod.build_all(reconciliation, moment)

@@ -65,6 +65,8 @@ def listing(state):
         try:
             content=json.loads(AESGCM(key_data[1]).decrypt(base64.b64decode(p['iv']),base64.b64decode(p['ciphertext']),AAD.encode()))
         except Exception:raise ValueError('A progress note could not be decrypted. The original encrypted record has been retained.') from None
+        from .record_identity import settings,rename
+        if settings(events)[0]:content=rename(content)
         rows.append(dict(content,id=event.id,saved_at=event.ts,imported=bool(p.get('source_event'))))
     rows.sort(key=lambda row:(row.get('written',''),row['saved_at'],row['id']),reverse=True)
     return {'notes':rows,'legacy_locked_count':sum(n.event_id not in migrated for n in legacy),'protection':'Clinician sign-in required. Notes are encrypted at rest with a key held on this computer.'}

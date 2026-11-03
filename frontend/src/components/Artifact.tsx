@@ -61,7 +61,7 @@ export function Artifact({
     setHeader({
       title: meta.native?.title || kindOf(meta.mime),
       subtitle:
-        meta.native ? "Readable document · original file retained separately." : clinician ? "Original source document from Jane’s record." : "The original, exactly as it arrived. Every citation in your record ends here.",
+        meta.native ? meta.native.original_document_layout ? "" : "Readable document · original file retained separately." : clinician ? "Original source document from Jane’s record." : "The original, exactly as it arrived. Every citation in your record ends here.",
     });
   }, [meta, setHeader, clinician]);
 
