@@ -1167,3 +1167,54 @@
 .pt-app-notices:empty {
   display: none;
 }
+
+/* The next appointment: the one card on Home with a colour of its own. Purple,
+   so it never reads as the amber "needs a look"; the words still say what it is. */
+.pt-next.is-booked {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-paper));
+  border-left: 6px solid var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.pt-next-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  padding: 0.45rem 0;
+  border-radius: 12px;
+  background: var(--color-accent);
+  color: var(--color-paper);
+  line-height: 1.1;
+  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.pt-next-date strong {
+  font-size: 1.875rem;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.pt-next-label {
+  color: var(--color-accent);
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+.pt-next.is-booked .pt-next-title {
+  font-size: 1.375rem;
+  line-height: 1.25;
+}
+@media (max-width: 560px) {
+  .pt-next.is-booked {
+    grid-template-columns: auto 1fr;
+  }
+  .pt-next.is-booked > .pt-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}

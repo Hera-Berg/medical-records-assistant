@@ -75,7 +75,7 @@ export function Today({
         </section>
       ) : null}
 
-      <section aria-labelledby="next-heading" className="pt-card pt-next">
+      <section aria-labelledby="next-heading" className={`pt-card pt-next ${next ? "is-booked" : ""}`}>
         {calendar.state === "loading" ? (
           <p className="pt-muted" role="status">Looking for your next appointment…</p>
         ) : calendar.state === "failed" ? (
@@ -86,8 +86,15 @@ export function Today({
           </p>
         ) : next ? (
           <>
-            <div>
-              <h2 id="next-heading" className="pt-label">Next appointment</h2>
+            {/* A calendar page, so the next visit is the first thing seen. The
+                same date is in the line below in words, for a screen reader. */}
+            <div className="pt-next-date" aria-hidden="true">
+              <span>{dateTile(next.date).weekday}</span>
+              <strong>{dateTile(next.date).day}</strong>
+              <span>{dateTile(next.date).month}</span>
+            </div>
+            <div className="pt-next-body">
+              <h2 id="next-heading" className="pt-next-label">Next appointment</h2>
               <p className="pt-next-title">{next.title}</p>
               <p className="pt-next-when">{appointmentWhen(next, calendar.value.today)}</p>
             </div>
@@ -273,4 +280,14 @@ export function longDate(iso: string | null | undefined): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!match) return iso;
   return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}`;
+}
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "Wed", "11", "Nov" from a calendar date, without the browser's locale or zone. */
+function dateTile(iso: string): { weekday: string; day: string; month: string } {
+  const [y, m, d] = iso.split("-").map(Number);
+  const weekday = SHORT_DAYS[new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay()]!;
+  return { weekday, day: String(d), month: SHORT_MONTHS[m! - 1]! };
 }
