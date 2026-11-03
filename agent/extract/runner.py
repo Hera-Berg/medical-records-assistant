@@ -250,6 +250,12 @@ class Extractor:
             # turned it into words, and words are what this model reads.
             return self._run_transcript(short, artifact, log_events, started)
 
+        if artifact.mime == "text/plain":
+            # Typed words — a note added from the chat, or a text file. Read as
+            # text by the transcript reader and held at patient-reported; there is
+            # no page to look at and nothing to send but the words.
+            return self._run_typed(short, artifact, log_events, started)
+
         path = self._path(artifact)
         if path is None or not path.exists():
             return Outcome(
@@ -363,6 +369,95 @@ class Extractor:
                 note for note in proposal.notes if reason is None or reason not in note
             ),
             reading=reading,
+        )
+
+    def _run_typed(
+        self,
+        short: str,
+        artifact: citations_mod.Artifact,
+        log_events: Sequence[Event],
+        started: float,
+    ) -> Outcome:
+        """Read a plain-text artefact as the person's own words."""
+        path = self._path(artifact)
+        if path is None or not path.exists():
+            return Outcome(
+                short,
+                jobs_mod.NEEDS_ATTENTION,
+                reason=(
+                    f"the bytes for {short} are not in raw/ at {artifact.rel}. The "
+                    f"event is intact, so this is a missing file rather than a lost "
+                    f"record — restore it from a backup or the sync client's trash, "
+                    f"then choose \u201cTry reading it again\u201d on its page"
+                ),
+            )
+        try:
+            written = path.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            return Outcome(
+                short,
+                jobs_mod.UNREADABLE,
+                reason="this text file is not in a text encoding this app reads (UTF-8)",
+            )
+        written = written.strip()
+        if not written:
+            return Outcome(
+                short,
+                jobs_mod.DONE,
+                reading=READ_NOTHING,
+                reason="this note is empty, so there was nothing to read and nothing was sent",
+            )
+
+        settings = self.client.settings
+        prompt = transcripts_mod.build(written, typed=True)
+        key = propose.Key(artifact=short, prompt_hash=prompt.prompt_hash, model=settings.model)
+        already = propose.completed_keys(log_events)
+        if key.tuple in already:
+            return Outcome(
+                short,
+                jobs_mod.DONE,
+                reading=READ_ALREADY,
+                reason=(
+                    f"already read by {settings.model} under prompt "
+                    f"{_short_hash(key.prompt_hash)}; its claims are already in the log"
+                ),
+            )
+
+        result = reader_mod.read(self.client, prompt, mime=artifact.mime, locale=self.locale)
+        extraction = result.extraction
+        if result.notes:
+            extraction = replace(
+                extraction, notes=extraction.notes + tuple(dict.fromkeys(result.notes))
+            )
+        held, tier_notes = transcripts_mod.force_tier(extraction.claims)
+        if tier_notes:
+            extraction = replace(
+                extraction,
+                claims=tuple(held),
+                notes=extraction.notes + tuple(dict.fromkeys(tier_notes)),
+            )
+        log.info("read typed note %s: %d claims", short, len(extraction.claims))
+
+        proposal = propose.build(
+            device=self.vault.identity.id,
+            key=key,
+            completion=result.last,
+            extraction=extraction,
+            prompts_used=[prompt],
+            artifact=artifact,
+            already=already,
+            seen_models=propose.observed_models(log_events),
+            runtime=self._runtime(started),
+            turns=result.turns,
+            extra={"reader": "typed"},
+        )
+        return Outcome(
+            short,
+            _state_of(extraction),
+            events=proposal.events,
+            reason=extraction.unreadable_reason,
+            notes=proposal.notes,
+            reading=_reading_of(extraction),
         )
 
     def _run_transcript(

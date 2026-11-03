@@ -49,8 +49,9 @@ router = APIRouter()
 #: they are the terminal's. ``camera`` is not here either — the mobile camera
 #: input arrives as an ordinary file upload and a browser does not tell us when
 #: the shutter fired, so claiming it did would be the substitution this whole
-#: route is careful about.
-WEB_SOURCES = frozenset({"upload", "paste", "drop", "recorder"})
+#: route is careful about. ``chat`` is a file dropped into Ask, or a message the
+#: person chose to add to their record from it.
+WEB_SOURCES = frozenset({"upload", "paste", "drop", "recorder", "chat"})
 
 #: Sources that genuinely know when the bytes were made, because the page
 #: watched them being made.

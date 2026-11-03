@@ -102,7 +102,7 @@ def ask(
     # every prescription photo, which is the exact failure `probe_vision` exists
     # to catch.
 
-    return payload(answer, len(history), snapshot.built_ts)
+    return payload(answer, snapshot.built_ts)
 
 
 def _history(raw: object) -> tuple[classify_mod.Turn, ...]:
@@ -130,7 +130,7 @@ def _history(raw: object) -> tuple[classify_mod.Turn, ...]:
     return tuple(turns)
 
 
-def payload(answer, turns_used: int, built_ts: str) -> dict[str, Any]:
+def payload(answer, built_ts: str) -> dict[str, Any]:
     """One answer as JSON.
 
     Every sentence carries its own citation, resolved exactly as the wiki
@@ -165,11 +165,6 @@ def payload(answer, turns_used: int, built_ts: str) -> dict[str, Any]:
         "found": [_passage(passage) for passage in _shown(retrieval)],
         "found_total": len(retrieval.passages) if retrieval is not None else 0,
         "box": answer.box,
-        # How many more questions this conversation may carry before it starts
-        # again. Sent rather than counted in the browser: the cap is the
-        # server's, and a client counting to its own number would disagree with
-        # it the moment either changed.
-        "turns_left": max(0, classify_mod.MAX_TURNS - (turns_used + 1)),
         "as_of": built_ts,
     }
 

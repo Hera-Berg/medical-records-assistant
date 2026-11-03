@@ -32,7 +32,7 @@ export interface Outgoing {
   id: number;
   blob: Blob;
   filename: string;
-  source: "upload" | "paste" | "drop" | "recorder";
+  source: "upload" | "paste" | "drop" | "recorder" | "chat";
   /** Only ever set by the recorder, which genuinely knows it. */
   capturedTs: string | null;
   metadata?: Record<string,string>;

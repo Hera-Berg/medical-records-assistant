@@ -24,6 +24,7 @@ import pytest
 
 from agent import query
 from agent.query import context as context_mod
+from agent.query import classify as classify_mod
 from agent.query.classify import Turn
 from agent.query.retrieve import Passage, Retrieval
 
@@ -154,7 +155,28 @@ def test_history_yields_before_a_single_passage_does():
     assert built.dropped == 0, "the record yielded before the conversation did"
 
 
-def test_history_is_dropped_whole_rather_than_halved():
+def test_history_yields_oldest_turn_first():
+    """A follow-up leans on the turn just before it, so that turn is kept longest."""
+    first = Turn("first question", "x" * 300)
+    second = Turn("second question", "second answer")
+    with_both = context_mod.render_history([first, second])
+    with_second = context_mod.render_history([second])
+    room = context_mod.MAX_PROMPT_CHARS - context_mod.RESERVED_CHARS
+    overhead = len(passage(0).line)
+    # Exactly fills the budget beside the second turn alone, so the first turn
+    # is what has to go.
+    filler = passage(room - len(with_second) - 1 - overhead)
+    assert len(with_both) > len(with_second)
+
+    built = context_mod.build(Retrieval(passages=(filler,)), [first, second])
+
+    assert built.dropped_history == 1
+    assert "second question" in built.history
+    assert "first question" not in built.history
+    assert built.dropped == 0
+
+
+def test_all_history_yields_before_the_last_passage_does():
     big = almost_the_whole_budget()
 
     built = context_mod.build(
@@ -167,15 +189,16 @@ def test_history_is_dropped_whole_rather_than_halved():
     assert "second question" not in built.extracts
 
 
-def test_only_the_last_two_turns_are_rendered():
+def test_only_the_most_recent_window_is_rendered():
+    window = classify_mod.MAX_PRIOR_TURNS
     built = context_mod.build(
         Retrieval(passages=(passage(50),)),
-        [Turn(f"question {n}", f"answer {n}") for n in range(6)],
+        [Turn(f"question {n}.", f"answer {n}") for n in range(window + 3)],
     )
 
-    assert "question 5" in built.history
-    assert "question 4" in built.history
-    assert "question 3" not in built.history
+    assert f"question {window + 2}." in built.history
+    assert f"question 3." in built.history
+    assert "question 2." not in built.history
 
 
 def test_a_turn_whose_answer_was_dropped_carries_no_content_forward():

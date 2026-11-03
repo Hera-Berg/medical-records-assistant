@@ -102,7 +102,36 @@ with certainty goes in unclear. If they mention no medicines, return an empty
 list."""
 
 
-def build(transcript: str) -> Prompt:
+#: The same reader for words the person typed rather than said. The rules are the
+#: transcript's rules; only the description of what is being read differs, so a
+#: typo is not mistaken for a mishearing and a list is not mistaken for rambling.
+TYPED_SYSTEM = SYSTEM.replace(
+    "You read a transcript of a voice note that the owner of a personal health record\n"
+    "made about themselves, and report exactly what they said.",
+    "You read a note that the owner of a personal health record typed about\n"
+    "themselves, and report exactly what they wrote.",
+).replace(
+    "This is speech, so it rambles, repeats itself, corrects itself and trails off.\n"
+    "That is normal and is not a reason to tidy it.",
+    "This is a typed note, so it may be short, misspelt or written as a list.\n"
+    "That is normal and is not a reason to tidy it.",
+)
+
+TYPED_OPENING = """\
+This is a note the person typed into their record about themselves. Read it as
+their own words, not as a document from a clinician.
+
+--- note begins ---
+{transcript}
+--- note ends ---
+
+First, the medications. Report every medicine they write about with certainty,
+with the strength and how often copied exactly as written. Anything you cannot
+tell with certainty goes in unclear. If they mention no medicines, return an
+empty list."""
+
+
+def build(transcript: str, typed: bool = False) -> Prompt:
     """The conversation about one transcript, hashed over the words it carries.
 
     The transcript is part of the rendered prompt, so the hash identifies this
@@ -114,14 +143,15 @@ def build(transcript: str) -> Prompt:
     from .prompts import FOLLOW_UPS, prompt_hash  # noqa: PLC0415
     from .schema import FAMILIES, TRANSCRIPT_SCHEMAS  # noqa: PLC0415
 
-    opening = OPENING.format(transcript=transcript.strip())
+    system = TYPED_SYSTEM if typed else SYSTEM
+    opening = (TYPED_OPENING if typed else OPENING).format(transcript=transcript.strip())
     words = "\n\n".join([opening, *(FOLLOW_UPS[f] for f in FAMILIES[1:])])
     return Prompt(
         messages=(
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": opening},
         ),
-        prompt_hash=prompt_hash(SYSTEM, words, TRANSCRIPT_SCHEMAS),
+        prompt_hash=prompt_hash(system, words, TRANSCRIPT_SCHEMAS),
         follow_ups=tuple((f, FOLLOW_UPS[f]) for f in FAMILIES[1:]),
         version=PROMPT_VERSION,
         transcript=True,

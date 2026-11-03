@@ -237,21 +237,16 @@ def test_a_follow_up_inherits_the_subject_and_still_costs_one_generation(asking)
     assert "Perindopril" in asking.box.answering_calls[1]["text"]
 
 
-def test_the_conversation_is_capped_and_the_screen_is_told_how_much_is_left(asking):
-    body = asking.post("/api/ask", json={"question": "what am I taking"}).json()
-    assert body["turns_left"] == 2
-
+def test_the_conversation_has_no_cap(asking):
     body = asking.post(
         "/api/ask",
         json={
-            "question": "and when",
-            "history": [
-                {"question": "one", "answer": "a"},
-                {"question": "two", "answer": "b"},
-            ],
+            "question": "what am I taking",
+            "history": [{"question": f"q{n}", "answer": "a"} for n in range(12)],
         },
     ).json()
-    assert body["turns_left"] == 0
+    assert body["state"] == "answered"
+    assert "turns_left" not in body
 
 
 def test_more_history_than_the_cap_is_trimmed_not_refused(asking):

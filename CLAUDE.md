@@ -268,13 +268,29 @@ shown the question and the titles of wiki pages — nothing read out of an artef
 like a path arrives as the words in it. The vault syncs from a third party and
 nothing in it may steer what gets read next.
 
-**A conversation may carry three questions, and a follow-up inherits the
-previous turn's subject but not its predicate.** "When was that" is asking about
-a date; carrying "dose" into it would answer the first question twice, which is
-what a model refining across rounds looks like from the inside. Prior turns are
-dropped first when the prompt is tight: the current question's evidence outranks
-the conversation's memory. What the architecture forbids is the model refining
-across rounds, not the conversation having a memory.
+**A conversation has no length limit, and a follow-up inherits a recent turn's
+subject but not its predicate.** The three-question cap was lifted on 2026-11-03
+at the owner's request: Ask works as a running conversation. What is bounded is
+the prompt, not the conversation — at most the last eight turns reach it
+(`MAX_PRIOR_TURNS`), the oldest are dropped first when the prompt is tight, and
+the current question's evidence outranks the conversation's memory. A vague
+follow-up looks back only two turns for its subject (`INHERIT_FROM_TURNS`): "when
+was that" means what was just discussed. "When was that" is asking about a date;
+carrying "dose" into it would answer the first question twice, which is what a
+model refining across rounds looks like from the inside. What the architecture
+forbids is the model refining across rounds, not the conversation having a memory.
+
+**Ask takes files, and a message the person chooses to keep — and both reach the
+record only through the ordinary pipeline.** A file dropped, pasted or picked in
+Ask is captured exactly as Add captures it (source `chat`): stored in `raw/`,
+queued, read, proposed. When the reading finishes, what is waiting for a decision
+appears in the conversation as the same review items, with the same actions, the
+same events and the same gates as the review screen; a stop is still its own
+action. A typed message is never stored on its own account — questions are not
+events — but each one offers "Add to my record", which stores it as a
+`text/plain` artefact read by the transcript reader and held at
+`patient-reported`. The model writes nothing anywhere; invariants 1, 2 and 5 are
+unchanged.
 
 **There is no local record of the questions, and no setting that creates one.**
 It would be the one file accumulating what the patient asked, inside a folder
@@ -922,8 +938,8 @@ Architecture: **deterministic retrieval, single grounded generation.** Not an ag
    *search terms* — never file paths, never which files to open — and code retrieves against them
    deterministically. Exactly one round.
 4. One generation pass with that context and the question. No planning, no tool calls, no
-   multi-turn refinement. A conversation may carry three questions; prior turns feed the classifier
-   and the context, and are dropped first when the prompt is tight.
+   multi-turn refinement. A conversation has no length limit; the most recent prior turns feed the
+   classifier and the context, and are dropped first, oldest first, when the prompt is tight.
 
 Rules, all enforced in code rather than requested in the prompt:
 

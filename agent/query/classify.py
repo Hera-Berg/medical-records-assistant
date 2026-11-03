@@ -42,11 +42,18 @@ from ..projection import dates as dates_mod
 from .text import STOPWORDS, content_words, fold, words
 from .vocab import Vocabulary
 
-#: How many questions one conversation may carry before it starts again. The
-#: current question is the last of them, so at most two earlier turns reach the
-#: classifier and the prompt.
-MAX_TURNS = 3
-MAX_PRIOR_TURNS = MAX_TURNS - 1
+#: A conversation has no length limit: it goes on until the person starts a new
+#: one. What is bounded is how much of it reaches the prompt — the most recent
+#: earlier turns, at most this many, and fewer when the record's own extracts
+#: need the room (see :func:`agent.query.context.build`, which drops the oldest
+#: first). The evidence for the current question always outranks the
+#: conversation's memory.
+MAX_PRIOR_TURNS = 8
+
+#: How far back a follow-up looks for the subject it is about. Much shorter than
+#: the window above: "when was that" means what was just discussed, and a
+#: subject found seven questions ago is a guess about what the person meant.
+INHERIT_FROM_TURNS = 2
 
 #: Longer than any question anyone types, short enough that a pasted document
 #: cannot arrive here as a "question". Refused with a sentence, not truncated.
@@ -649,7 +656,7 @@ def _inherit(parsed: Question, history: Sequence[Turn]) -> Question:
     that" is asking about a date, and carrying the previous turn's "dose" into
     it would answer the earlier question a second time.
     """
-    for turn in reversed(list(history)[-MAX_PRIOR_TURNS:]):
+    for turn in reversed(list(history)[-INHERIT_FROM_TURNS:]):
         previous = turn.facets
         if previous is None or not previous.has_facets:
             continue
@@ -694,7 +701,7 @@ def _shapes(parsed: Question) -> frozenset[str]:
 __all__ = [
     "MAX_PRIOR_TURNS",
     "MAX_QUESTION_CHARS",
-    "MAX_TURNS",
+    "INHERIT_FROM_TURNS",
     "Question",
     "REFUSALS",
     "REFUSAL_NEXT",

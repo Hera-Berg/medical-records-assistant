@@ -42,7 +42,7 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle avoidance only
 #: Where bytes came from. Recorded, never inferred, and deliberately not a
 #: document category: what kind of document this is, is the model's job later.
 CAPTURE_SOURCES = frozenset(
-    {"cli", "import", "upload", "paste", "drop", "camera", "recorder"}
+    {"cli", "import", "upload", "paste", "drop", "camera", "recorder", "chat"}
 )
 
 STATUS_STORED = "stored"

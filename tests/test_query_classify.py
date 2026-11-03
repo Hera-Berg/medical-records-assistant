@@ -241,9 +241,9 @@ def test_a_question_that_names_its_own_subject_inherits_nothing():
     assert second.entities == ("med:atorvastatin",)
 
 
-def test_only_the_last_two_turns_are_looked_at():
-    assert classify_mod.MAX_TURNS == 3
-    assert classify_mod.MAX_PRIOR_TURNS == 2
+def test_a_follow_up_looks_back_only_two_turns_for_its_subject():
+    """The conversation is unlimited; what a vague follow-up inherits is not."""
+    assert classify_mod.INHERIT_FROM_TURNS == 2
 
     oldest = parse("what dose of perindopril am I on")
     history = [

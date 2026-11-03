@@ -106,12 +106,15 @@ def build(retrieval: Retrieval, history: Sequence[Turn] = ()) -> Context:
     def size(items: Sequence[Passage], history_text: str) -> int:
         return sum(len(item.line) + 1 for item in items) + len(history_text)
 
-    if size(passages, rendered_history) > budget and rendered_history:
-        # History yields first, whole. Half a conversation is worse than none:
-        # a question answered against the wrong earlier turn is answered wrongly
-        # and confidently.
-        dropped_history = len([t for t in list(history)[-MAX_PRIOR_TURNS:] if t.question.strip()])
-        rendered_history = ""
+    # History yields before any extract does, oldest turn first. A follow-up
+    # leans on the turn just before it, so the recent end of the conversation is
+    # the part worth keeping; the record's evidence for the current question
+    # outranks all of it.
+    kept = [t for t in list(history)[-MAX_PRIOR_TURNS:] if t.question.strip()]
+    while kept and size(passages, rendered_history) > budget:
+        kept.pop(0)
+        dropped_history += 1
+        rendered_history = render_history(kept)
 
     # Never the last one. Dropping every passage would leave an empty context
     # and an answer with nothing it could cite — which arrives looking like "your

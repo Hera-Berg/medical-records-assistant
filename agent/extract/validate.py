@@ -36,6 +36,10 @@ from . import dates as dates_mod
 _TIER_CEILING_BY_MIME = (
     ("audio/", "patient-reported"),
     ("video/", "patient-reported"),
+    # Text is the person's own words — a note typed into the app, or a file they
+    # chose to add. Held at patient-reported, the safe direction: a pasted letter
+    # read at a prescriber's tier could take a medication off the list.
+    ("text/plain", "patient-reported"),
 )
 
 
