@@ -167,7 +167,7 @@ def test_an_identity_from_another_computer_is_asked_about(controller, vault_root
     vault_mod.write_pointer(vault_root)
     device_mod.issue(label="elsewhere")
     path = device_mod.identity_path()
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     data["hostname"] = "some-other-machine"
     path.write_text(json.dumps(data))
 

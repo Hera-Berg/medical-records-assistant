@@ -125,7 +125,7 @@ def test_inherited_llama_variables_are_stripped(ready_store, tmp_path, monkeypat
     monkeypatch.setenv("FAKE_ENV_DUMP", str(dump))
     reader = make_reader(ready_store)
     reader.ensure_ready()
-    names = json.loads(dump.read_text())
+    names = json.loads(dump.read_text(encoding="utf-8"))
     assert "LLAMA_ARG_UI" not in names and "LLAMA_ARG_LOG_PROMPTS_DIR" not in names
     assert "LLAMA_API_KEY" in names
 
@@ -342,7 +342,7 @@ def test_shutdown_stops_the_process_and_removes_the_pidfile(ready_store):
 
 def _zombie(pid: int) -> bool:
     try:
-        return " Z " in Path(f"/proc/{pid}/stat").read_text()
+        return " Z " in Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
     except OSError:
         return True
 

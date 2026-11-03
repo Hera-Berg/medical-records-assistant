@@ -203,7 +203,7 @@ print('Progress UI rendering passed');
         for path in ('/calendar','/progress-notes','/doctor-notes','/calendar.js','/calendar.css'):
             self.get(path)
         if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
-        source=(base.ROOT/'frontend/public/calendar.js').read_text()
+        source=(base.ROOT/'frontend/public/calendar.js').read_text(encoding="utf-8")
         data=self.get('/api/calendar').json()
         script='''let Widget;globalThis.HTMLElement=class{};globalThis.customElements={define(n,c){Widget=c;}};
 const assert=(v,m)=>{if(!v)throw Error(m);};\n'''+source+'\nconst data='+json.dumps(data)+''';

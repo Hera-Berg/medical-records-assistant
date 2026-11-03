@@ -1,4 +1,5 @@
 """Optional OpenAI provider, tested without sending records or credentials online."""
+from pathlib import Path
 import json
 import unittest
 from unittest.mock import patch
@@ -49,7 +50,7 @@ class OpenAIProviderTests(unittest.TestCase):
             with self.assertRaises(ModelIdentityMismatch): client._check_identity('example-2026-02-01')
 
     def test_openai_never_uses_private_credentials(self):
-        with patch.dict('os.environ', {'PRIVATE_KEY':'private-secret'},clear=True), patch.object(credentials,'_from_keychain',return_value=None) as keychain, patch.object(credentials,'_from_file',return_value=None):
+        with patch.dict('os.environ', {'PRIVATE_KEY':'private-secret'},clear=True), patch.object(credentials,'_from_keychain',return_value=None) as keychain, patch.object(credentials,'_from_file',return_value=None), patch.object(credentials,'credentials_path',return_value=Path('unused-credentials')):
             with self.assertRaises(CredentialError): credentials.resolve('PRIVATE_KEY',openai=True)
             keychain.assert_called_once_with('openai-api-key')
         with patch.dict('os.environ',{'OPENAI_API_KEY':'cloud-secret','PRIVATE_KEY':'private-secret'},clear=True):
@@ -76,7 +77,7 @@ class OpenAISettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         store.assert_called_once_with('dummy-cloud-secret',self.vault.root,openai=True)
         self.assertNotIn('dummy-cloud-secret',response.text)
-        self.assertNotIn('dummy-cloud-secret',(self.root/'config.toml').read_text())
+        self.assertNotIn('dummy-cloud-secret',(self.root/'config.toml').read_text(encoding="utf-8"))
         settings=self.client.get('/api/settings').json()
         self.assertIn('sent to OpenAI',settings['endpoint']['explanation'])
         page=self.client.get('/settings')
@@ -171,6 +172,6 @@ class OpenAIAskDeliveryTests(OpenAISettingsRouteTests):
         self.assertEqual(response.status_code,200,response.text)
         self.assertTrue(response.json()['saved'],response.text)
         self.assertTrue(response.json()['check']['ok'])
-        self.assertIn(URL,(self.root/'config.toml').read_text())
+        self.assertIn(URL,(self.root/'config.toml').read_text(encoding="utf-8"))
         self.assertEqual(len(seen),2)
         self.assertTrue(any(isinstance(m.get('content'),list) for m in seen[-1]['messages']))

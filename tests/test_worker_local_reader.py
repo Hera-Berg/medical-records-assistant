@@ -211,7 +211,7 @@ def test_the_record_lock_is_not_held_while_a_document_is_read(vault):
 
 def test_the_choice_is_per_machine_and_never_in_config_toml(vault, ready_store):
     choice.save(choice.THIS_COMPUTER)
-    text = (vault.root / "config.toml").read_text()
+    text = (vault.root / "config.toml").read_text(encoding="utf-8")
     assert "this-computer" not in text and "reads_on" not in text
     assert not choice.path().is_relative_to(vault.root)
 

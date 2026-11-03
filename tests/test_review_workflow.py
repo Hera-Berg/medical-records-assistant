@@ -36,7 +36,7 @@ class ReviewWorkflowTests(unittest.TestCase):
  def issue(self,key,date=''):return next(i for i in self.data(date)['issues'] if i['id']==key)
  def test_dataset_grouping_dates_accounts_and_sources(self):
   self.assertEqual(sum(not i.get('submission') for i in SOURCES),14)
-  self.assertEqual(len(json.loads((self.root/'DATASET-MANIFEST.json').read_text())['sources']),19)
+  self.assertEqual(len(json.loads((self.root/'DATASET-MANIFEST.json').read_text(encoding="utf-8"))['sources']),19)
   self.login();d=self.data();self.assertEqual(d['comparison_date'],'2026-10-21');self.assertEqual(d['tab_counts']['reviewed'],0);self.assertEqual(d['tab_counts']['action_required'],0)
   walking=self.issue('walking');self.assertEqual(walking['source_count'],3);self.assertEqual({c['author'] for c in walking['contributions']},{'Morgan Bell','Emily Doe'})
   self.assertEqual(self.issue('dizziness')['source_count'],2)

@@ -111,7 +111,7 @@ def test_a_missing_sidecar_is_reported(stocked):
 def test_a_sidecar_naming_the_wrong_artefact_is_reported(stocked):
     vault, first, _ = stocked
     path = vault.root / (first.rel + ".json")
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     data["artifact"] = "something-else.jpg"
     path.write_text(json.dumps(data))
 

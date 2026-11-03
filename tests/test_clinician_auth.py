@@ -35,7 +35,7 @@ class ClinicianTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/doctor-notes',json={}).status_code,401)
 
     def test_login_hashes_bad_credentials_and_cookie(self):
-        saved=store_path(self.root).read_text()
+        saved=store_path(self.root).read_text(encoding="utf-8")
         for password in self.passwords.values(): self.assertNotIn(password,saved)
         for username in ['james.smith','unknown']:
             r=self.client.post('/api/auth/clinician/login',json={'username':username,'password':'incorrect'})

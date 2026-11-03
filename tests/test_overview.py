@@ -13,7 +13,7 @@ class OverviewTests(unittest.TestCase):
     def test_live_data_empty_states_escaping_and_partial_failures(self):
         if not js_runtime.runtime():
             self.skipTest('A JavaScript runtime is needed for the overview UI check')
-        source = (ROOT / 'frontend/public/overview.js').read_text()
+        source = (ROOT / 'frontend/public/overview.js').read_text(encoding="utf-8")
         prelude = r'''
 let Overview;
 globalThis.HTMLElement = class { addEventListener() {} removeEventListener() {} };
@@ -69,17 +69,17 @@ assert(!view.innerHTML.includes('No medications confirmed yet'),'failed retrieva
         static=ROOT/'agent/server/static_files'
         for asset in ('overview.js','overview.css','appearance.js','appearance.css','patient-profile.js','patient-profile.css'):
             self.assertEqual((static/asset).read_bytes(),(ROOT/'frontend/public'/asset).read_bytes(),asset)
-        index=(static/'index.html').read_text()
+        index=(static/'index.html').read_text(encoding="utf-8")
         self.assertIn('/overview.js',index)
         self.assertIn('/overview.css',index)
-        source=(ROOT/'frontend/src/components/Sidebar.tsx').read_text()
+        source=(ROOT/'frontend/src/components/Sidebar.tsx').read_text(encoding="utf-8")
         bundle=js_runtime.shipped_bundle()
         # Both workspaces: the patient and carer's, and the signed-in clinician's.
         for label in ('Home','Record an update','Notifications','Calendar','Documents','My care team','Timeline','Ask your record','My profile','Settings',
                       'Review dashboard','Clinical record','Progress notes','Care team','Upload or record information','Ask the patient record','Patient profile'):
             self.assertIn(label,source)
             self.assertIn(label,bundle)
-        self.assertIn('first === "overview"',(ROOT/'frontend/src/App.tsx').read_text())
+        self.assertIn('first === "overview"',(ROOT/'frontend/src/App.tsx').read_text(encoding="utf-8"))
         self.assertTrue(js_runtime.routes_to(bundle,'overview','health-overview'))
         self.assertTrue(js_runtime.routes_to(bundle,'profile','patient-profile'))
         # Native assets and the application bundle must remain syntactically valid.

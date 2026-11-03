@@ -354,7 +354,7 @@ def test_the_choice_file_is_private_and_readable_without_the_app():
         # and the half of this test that matters everywhere — that a person can
         # read it without this app — is below.
         assert choice.path().stat().st_mode & 0o077 == 0
-    assert json.loads(choice.path().read_text()) == {
+    assert json.loads(choice.path().read_text(encoding="utf-8")) == {
         "reads_on": "another-computer", "sleep_after_minutes": 30,
         "model": manifest.DEFAULT_VISION_MODEL,
     }

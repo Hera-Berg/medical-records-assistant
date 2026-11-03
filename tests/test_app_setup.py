@@ -132,7 +132,7 @@ def test_the_default_creates_a_working_record(home):
     assert vault_mod.resolve_root().path == vault.root, "the pointer names it"
     assert device_mod.load().machine_matches, "this computer has an identity"
     assert firstrun.pending(), "the reader question is still to be asked"
-    assert (vault.root / "config.toml").read_text() == plan.config_text, "the file shown is the file written"
+    assert (vault.root / "config.toml").read_text(encoding="utf-8") == plan.config_text, "the file shown is the file written"
 
 
 def test_a_new_record_reads_on_this_computer_and_points_nowhere(home):
@@ -164,7 +164,7 @@ def test_connecting_another_computer_later_still_writes_into_it(home):
     )
     reloaded = config_mod.load(path)
     assert reloaded.raw["models"]["vlm"]["model"] == "some-model"
-    assert "# Settings for this health record." in path.read_text(), "comments survive"
+    assert "# Settings for this health record." in path.read_text(encoding="utf-8"), "comments survive"
 
 
 def test_a_synced_location_writes_its_profile(home):
@@ -266,15 +266,15 @@ def test_a_record_whose_settings_will_not_load_is_refused_with_the_reason(home):
 def test_an_identity_from_another_computer_is_kept_and_replaced_only_when_asked(home):
     device_mod.issue(label="elsewhere")
     path = device_mod.identity_path()
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     data["hostname"] = "some-other-machine"
     path.chmod(0o600)
     path.write_text(json.dumps(data))
 
     setup_mod.ensure_identity()
-    assert json.loads(path.read_text())["hostname"] == "some-other-machine", "never replaced silently"
+    assert json.loads(path.read_text(encoding="utf-8"))["hostname"] == "some-other-machine", "never replaced silently"
 
     replaced = setup_mod.replace_identity()
     assert replaced.machine_matches
     kept = list(path.parent.glob("device.replaced-*"))
-    assert len(kept) == 1 and json.loads(kept[0].read_text())["id"] == data["id"]
+    assert len(kept) == 1 and json.loads(kept[0].read_text(encoding="utf-8"))["id"] == data["id"]

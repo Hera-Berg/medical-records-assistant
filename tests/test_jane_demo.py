@@ -132,13 +132,13 @@ class JaneDemoTests(unittest.TestCase):
         upload = ingest.ingest_bytes(self.vault,b'User uploaded original - retain me',
                     ingest.CaptureContext(original_filename='my-added-note.txt'))
         config = self.root/'config.toml'
-        config.write_text(config.read_text()+'\n# User setting kept\n')
+        config.write_text(config.read_text(encoding="utf-8")+'\n# User setting kept\n')
         before = self.vault.read().events
         original_bytes = (self.root/upload.rel).read_bytes()
         self.assertEqual(seed(self.root).events,0)
         self.assertEqual(self.vault.read().events,before)
         self.assertEqual((self.root/upload.rel).read_bytes(),original_bytes)
-        self.assertIn('# User setting kept',config.read_text())
+        self.assertIn('# User setting kept',config.read_text(encoding="utf-8"))
         values = profile.read(before)['values']
         self.assertEqual(values['preferred_name'],'My Jane')
         self.assertEqual(values['language'],'')
@@ -171,7 +171,7 @@ class JaneDemoTests(unittest.TestCase):
         self.assertEqual(list(other.iterdir()),[other/'patient-record.txt'])
         (other/'DEMO-DATA.md').write_text('An older, different demonstration')
         with self.assertRaises(HealthAgentError): seed(other)
-        self.assertEqual((other/'patient-record.txt').read_text(),'Keep actual user data')
+        self.assertEqual((other/'patient-record.txt').read_text(encoding="utf-8"),'Keep actual user data')
         empty = self.temp/'ordinary'; empty.mkdir()
         # An ordinary empty vault projection is not automatically seeded.
         self.assertEqual(projection.project([]).rows,())
@@ -264,7 +264,7 @@ class JaneDemoTests(unittest.TestCase):
         # Remove only the final ES module exports (if any) to parse as a script.
         syntax=js_runtime.run('new Function('+json.dumps(source)+'); print("parsed");',self.temp,'syntax.js')
         self.assertEqual(syntax.returncode,0,syntax.stdout+syntax.stderr)
-        overview=(ROOT/'frontend/public/overview.js').read_text()
+        overview=(ROOT/'frontend/public/overview.js').read_text(encoding="utf-8")
         rows=self.get('/api/timeline?limit=5').json()
         profile_data=self.get('/api/profile').json()
         script='''let Widget; globalThis.HTMLElement=class{};globalThis.customElements={define(n,c){Widget=c;}};'''+overview+'''

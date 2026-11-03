@@ -40,7 +40,7 @@ def run(script: str, directory: Path, name: str = "check.js", timeout: int = 30)
 
 def bundle_path(index_html: str | None = None) -> str:
     """The application bundle ``index.html`` loads — never whichever file a glob lists first."""
-    index = index_html if index_html is not None else (STATIC / "index.html").read_text()
+    index = index_html if index_html is not None else (STATIC / "index.html").read_text(encoding="utf-8")
     return re.search(r'src="(/assets/[^"]+\.js)"', index).group(1)
 
 

@@ -65,7 +65,7 @@ class DocumentsTests(unittest.TestCase):
         self.assertEqual(before,self.vault.read().events)
 
     def test_library_has_requested_correspondence_and_distinct_blood_dates(self):
-        samples=json.loads((ROOT/'frontend/public/document-examples.json').read_text())
+        samples=json.loads((ROOT/'frontend/public/document-examples.json').read_text(encoding="utf-8"))
         self.assertTrue(samples['example'])
         self.assertEqual(len(samples['documents']),12)
         self.assertEqual(len({doc['id'] for doc in samples['documents']}),12)
@@ -81,8 +81,8 @@ class DocumentsTests(unittest.TestCase):
 
     def test_document_ui_filters_previews_and_keeps_real_metadata_honest(self):
         if not js_runtime.runtime():self.skipTest('JavaScript runtime required')
-        data=(ROOT/'frontend/public/document-examples.json').read_text()
-        source=(ROOT/'frontend/public/documents.js').read_text()
+        data=(ROOT/'frontend/public/document-examples.json').read_text(encoding="utf-8")
+        source=(ROOT/'frontend/public/documents.js').read_text(encoding="utf-8")
         prelude='''let Widget;globalThis.HTMLElement=class {};globalThis.customElements={define(name,ctor){Widget=ctor;}};
 const assert=(v,m)=>{if(!v)throw Error(m);};const output=typeof print==='function'?print:console.log;
 '''

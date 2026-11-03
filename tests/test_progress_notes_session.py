@@ -27,7 +27,10 @@ class ProgressNotesSessionTests(unittest.TestCase):
   r=self.post_note();self.assertEqual(r.status_code,200,r.text)
   note=r.json()['notes'][0];self.assertEqual(note['author'],'Dr James Smith');self.assertEqual(note['role'],'Usual GP')
   before=len(self.vault.read().events);self.assertEqual(self.post_note().status_code,200);self.assertEqual(len(self.vault.read().events),before)
-  path=progress_notes.key_path(self.vault.root);self.assertFalse(path.is_relative_to(self.vault.root));self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o600)
+  path=progress_notes.key_path(self.vault.root);self.assertFalse(path.is_relative_to(self.vault.root))
+  # Windows has no owner-only mode bits: every file reads back 0o666. The key
+  # sits in the user's profile, whose ACL is what protects it there.
+  if os.name!='nt':self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o600)
   for file in self.vault.root.rglob('*'):
    if file.is_file():self.assertNotIn(note['text'].encode(),file.read_bytes())
   for endpoint in ('/api/timeline','/api/wiki','/api/profile','/api/documents','/api/patient/documents','/api/shared-care','/api/patient/updates'):

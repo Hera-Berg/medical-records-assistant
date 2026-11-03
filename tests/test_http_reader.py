@@ -172,7 +172,7 @@ def measured(tmp_path, monkeypatch):
     )
     import json as json_mod
 
-    data = json_mod.loads(path.read_text())
+    data = json_mod.loads(path.read_text(encoding="utf-8"))
     data["models"][manifest.QWEN_4B.alias]["known_failures"] = ["It read metformin as mefenamic acid."]
     path.write_text(json_mod.dumps(data))
     return path

@@ -151,7 +151,7 @@ class NativeDocumentTests(unittest.TestCase):
         if not js_runtime.runtime(): self.skipTest('JavaScript runtime unavailable')
         for name in ('native-documents.js','native-documents.css'):
             self.assertEqual(self.get('/'+name).content,(base.ROOT/'frontend/public'/name).read_bytes())
-        script='globalThis.HTMLElement=class{};globalThis.customElements={define(){}};\n'+(base.ROOT/'frontend/public/native-documents.js').read_text()
+        script='globalThis.HTMLElement=class{};globalThis.customElements={define(){}};\n'+(base.ROOT/'frontend/public/native-documents.js').read_text(encoding="utf-8")
         script+='\nconst docs='+json.dumps(meta)+';const rx='+json.dumps(rx)+''';
 const assert=(v,m)=>{if(!v)throw Error(m);};
 for(const doc of docs){const html=healthDocumentRendering.documentPage(doc);assert(html.includes('Back to Documents'),'back link');assert(!html.includes('<object')&&!html.includes('<iframe'),'native reading default');assert(html.includes('Fictional demo'),'demo label');assert(html.includes('Download original'),'original retained');}

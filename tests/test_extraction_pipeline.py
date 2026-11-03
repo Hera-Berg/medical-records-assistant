@@ -627,7 +627,7 @@ def test_state_is_the_fold_of_the_lines_not_the_last_one(vault):
 
     lines = [
         json.loads(line)
-        for line in queue.path.read_text().splitlines()
+        for line in queue.path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     assert len(lines) == 2, "every transition appends; nothing is rewritten"
