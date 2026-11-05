@@ -12,7 +12,9 @@ clinician sessions and Ask pipeline. A request reaches exactly one of the two, a
 every route reads ``request.app.state``, so a question asked of one record cannot
 retrieve a passage from the other: there is no code path that holds both. The only
 things the two share are the interface files, which are the same bytes, and, when
-Ask runs, the reader process, which is sent only what the receiving app retrieved.
+Ask runs, the reader — the process on this computer, or the computer the person's
+own record is connected to (its address and key, read live from the own record's
+settings) — which is sent only what the receiving app retrieved.
 
 **Which app a request reaches is decided per tab, not per browser.** A cookie is
 shared by every tab, so a cookie alone would let one tab switching to the sample
@@ -177,12 +179,18 @@ class SampleAuthStore(AuthStore):
             return token, session
 
 
-def build_app(root: Path):
-    """The sample's own app, over the working copy at *root*."""
+def build_app(root: Path, endpoint_from=None):
+    """The sample's own app, over the working copy at *root*.
+
+    *endpoint_from* is the person's own vault, whose ``[models.vlm]`` table the
+    sample reads with — the live object, so connecting the own record later
+    reaches the sample without a restart.
+    """
     from ..vault import Vault
     from .app import create_app
 
     vault = Vault.open(root)
+    vault.endpoint_from = endpoint_from
     app = create_app(vault, worker=False, clock=lambda: SNAPSHOT, sample=True)
     app.state.clinician_auth = SampleAuthStore(vault.root)
     return app
@@ -230,7 +238,8 @@ class RecordRouter:
                     if not available():
                         raise VaultError("This copy of the app does not include the demo record.")
                     root = materialise(self.own_root, self.sample_root)
-                    self._sample = build_app(root)
+                    own_state = getattr(self.own.state, "record", None)
+                    self._sample = build_app(root, getattr(own_state, "vault", None))
                 except Exception as exc:  # noqa: BLE001 - reported to the screen, never retried in a loop
                     self._failure = str(exc) or exc.__class__.__name__
             if self._sample is None:

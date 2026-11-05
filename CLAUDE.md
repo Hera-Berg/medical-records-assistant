@@ -523,6 +523,15 @@ the `care_record` cookie decides only navigations. A cookie alone would let a ta
 person's own record be answered from the demo after another tab switched — the one failure this
 design exists to prevent. `tests/test_sample_record.py` asserts both directions, Ask included.
 
+**The demo reads with the computer the person's own record is connected to.** Its settings file
+has no `[models.vlm]` table and is rebuilt at every start, so a connection could never be made on it
+and last, and Ask on the demo always said no computer was set up. `Vault.endpoint_from` points the
+sample at the own record's live `Vault`, so a later Connect reaches it without a restart. Only the
+address and how to authenticate cross over: what is retrieved and sent is decided by the demo's own
+app, from the demo's record. Connect and storing a key are refused on the demo (409), and the
+Settings screen says why at the disabled controls — a demo tab must not write the person's settings
+file. Under OpenAI this sends invented demo content to OpenAI, which the person already chose.
+
 **The demo is not labelled as a demonstration on screen**; the switch already says which record is
 open. `demo_metadata.is_sample` is the one test every such wording choice makes. A printed summary
 from it still says it is invented: a sheet of paper outlives the screen it was printed from.

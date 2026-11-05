@@ -168,6 +168,13 @@ class Vault:
         self.root = root
         self.config = config
         self._identity = identity
+        #: The vault whose ``[models.vlm]`` table this one reads with, when that
+        #: is not its own. Set only on the sample record served beside the
+        #: person's own, which has no table and is rebuilt at every start: it
+        #: reads with whatever computer the person's own record is connected to.
+        #: Held as the live object, so a Connect on the own record reaches the
+        #: sample without a restart. See :func:`agent.extract.session.endpoint_vault`.
+        self.endpoint_from: Vault | None = None
 
     @classmethod
     def open(

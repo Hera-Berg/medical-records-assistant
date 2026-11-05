@@ -529,6 +529,12 @@ export interface EndpointSettings {
   last_known: Health["endpoint"];
   /** Set when `[models.vlm]` is present but will not load. */
   problem: string | null;
+  /**
+   * Set on the demo record, which reads with the computer the person's own
+   * record is connected to: the sentence saying so, shown at the controls it
+   * disables. Connecting and storing a key happen on the own record.
+   */
+  from_own_record: string | null;
 }
 
 /**

@@ -22,6 +22,20 @@ from ..runtime import choice as choice_mod
 from ..runtime import supervisor
 
 
+def endpoint_vault(vault):
+    """The vault whose ``config.toml`` says which computer reads *vault*.
+
+    Itself, except for the sample record served beside the person's own. That
+    copy has no ``[models.vlm]`` table and is rebuilt at every start, so a
+    connection made on it would vanish at the next one; it reads with the
+    computer the person's own record is connected to instead. Only *where* and
+    *how to authenticate* cross over — what is retrieved and sent is still
+    decided entirely by the app serving the sample, from the sample's record.
+    """
+    source = getattr(vault, "endpoint_from", None)
+    return source if source is not None else vault
+
+
 def settings_for(vault) -> ModelSettings:
     """The validated ``[models]`` tables of this vault's config.
 
@@ -30,6 +44,15 @@ def settings_for(vault) -> ModelSettings:
     whether it is a demo. A demo vault deliberately carries no endpoint, and
     without that sentence its absence reads as something the user broke.
     """
+    source = endpoint_vault(vault)
+    if source is not vault:
+        try:
+            return parse_settings(source.config.raw)
+        except EndpointNotConfigured:
+            raise EndpointNotConfigured(
+                "the demo record reads with the computer your own record is "
+                "connected to, and your own record is not connected to one yet."
+            ) from None
     try:
         return parse_settings(vault.config.raw)
     except EndpointNotConfigured as exc:

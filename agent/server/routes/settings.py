@@ -211,7 +211,20 @@ def _endpoint(state: RecordState) -> dict[str, Any]:
         # screens cannot say different things about one machine.
         "last_known": state.endpoint.to_dict(),
         "problem": problem,
+        # The demo record reads with the computer the person's own record is
+        # connected to, so this screen shows that connection and cannot change
+        # it: the demo's own settings file is rebuilt at every start, and a
+        # demo tab writing the person's settings file is not a door to open.
+        "from_own_record": (
+            FROM_OWN_RECORD if session.endpoint_vault(vault) is not vault else None
+        ),
     }
+
+
+FROM_OWN_RECORD = (
+    "The demo uses the computer your own record is connected to. To change it, "
+    "switch the workspace to your own record and connect there."
+)
 
 
 @router.get("/api/settings")
@@ -362,6 +375,8 @@ def connect_endpoint(
     what stopped it, the detail behind it, and every step for whoever opens
     them.
     """
+    if session.endpoint_vault(state.vault) is not state.vault:
+        raise HTTPException(status_code=409, detail=FROM_OWN_RECORD)
     if not (base_url or "").strip():
         raise HTTPException(
             status_code=400,
@@ -420,6 +435,8 @@ def set_key(
     job, not a restart — MODELS.md — and the jobs that parked on the old one are
     exactly the work this key exists to let finish.
     """
+    if session.endpoint_vault(state.vault) is not state.vault:
+        raise HTTPException(status_code=409, detail=FROM_OWN_RECORD)
     try:
         from ...llm.endpoint import parse as parse_endpoint
         if base_url:

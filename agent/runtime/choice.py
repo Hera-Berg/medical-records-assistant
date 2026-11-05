@@ -82,6 +82,9 @@ def path() -> Path:
 
 def default_for(vault) -> str:
     """Another computer for a vault already set up with a box; this one otherwise."""
+    # The sample record has no table of its own and defers to the person's
+    # record for where it is read: see agent.extract.session.endpoint_vault.
+    vault = getattr(vault, "endpoint_from", None) or vault
     models = vault.config.raw.get("models")
     if isinstance(models, dict) and isinstance(models.get("vlm"), dict):
         return ANOTHER_COMPUTER

@@ -132,12 +132,18 @@ export function EndpointSettings({
   };
 
   const working = busy !== null;
+  // On the demo record: the connection is the own record's, shown and not
+  // changeable here. The sentence saying so sits at the controls it disables.
+  const shared = endpoint.from_own_record;
 
   return (
     <section>
       <h2 className="text-lg font-semibold">The computer that reads your documents</h2>
       <p className="mt-1 max-w-2xl">{endpoint.explanation}</p>
-      <button type="button" className="btn mt-2" disabled={working}
+      {shared ? (
+        <p className="mt-2 max-w-2xl font-semibold">{shared}</p>
+      ) : null}
+      <button type="button" className="btn mt-2" disabled={working || !!shared}
         onClick={() => { setAddress("https://api.openai.com/v1"); setModel(""); setHeader("Authorization"); setScheme("Bearer"); }}>
         Use OpenAI API
       </button>
@@ -162,6 +168,7 @@ export function EndpointSettings({
         </p>
       ) : null}
 
+      <fieldset disabled={!!shared} className="contents">
       <div className="mt-4 grid gap-3 md:max-w-2xl">
         <label className="block">
           <span className="block font-semibold">Address</span>
@@ -237,18 +244,21 @@ export function EndpointSettings({
           </label>
         </div>
       </details>
+      </fieldset>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
           className="btn btn-primary"
           onClick={() => connect(model)}
-          disabled={working || !address.trim()}
+          disabled={working || !address.trim() || !!shared}
         >
           {busy === "connect" ? "Connecting…" : "Connect"}
         </button>
         {/* Why Connect cannot be pressed, beside it. */}
-        {!working && !address.trim() ? (
+        {shared ? (
+          <span className="text-[color:var(--color-muted)]">{shared}</span>
+        ) : !working && !address.trim() ? (
           <span className="text-[color:var(--color-muted)]">Type the address first.</span>
         ) : working && busy !== "connect" ? (
           <span className="text-[color:var(--color-muted)]">
