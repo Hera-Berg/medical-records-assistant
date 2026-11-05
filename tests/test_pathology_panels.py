@@ -11,6 +11,14 @@ from agent.events import envelope
 from agent import ingest
 
 class PathologyPanelTests(workflow_base.ReviewWorkflowTests):
+ def setUp(self):
+  # The upgrade test places its fixture editions on 2 and 4 November 2026 and
+  # needs the seeded record to sort before them. Seeding stamps the wall clock,
+  # so without a fixed seed time this test passed until 4 November 2026 and
+  # failed every day after.
+  with patch.object(envelope,'now_ts',return_value='2026-11-02T09:00:00Z'):
+   super().setUp()
+
  def test_pdf_panels_have_complete_tables_and_preserved_key_values(self):
   self.login()
   data=self.data();panel=next(i for i in data['issues'] if i['id']=='critical-sodium')
